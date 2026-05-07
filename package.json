@@ -1,0 +1,44 @@
+{
+  "name": "koraforms",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "kora dev",
+    "dev:server": "tsx server.ts",
+    "build": "tsc && vite build",
+    "start": "node --import tsx server.ts",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "korajs": "^0.1.6",
+    "@korajs/react": "^0.1.6",
+    "@korajs/store": "^0.1.2",
+    "@sqlite.org/sqlite-wasm": ">=3.51.0-build1",
+    "lucide-react": "^0.468.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "ws": "^8.18.0",
+    "yjs": "^13.6.30"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "better-sqlite3",
+      "esbuild",
+      "protobufjs"
+    ]
+  },
+  "devDependencies": {
+    "@korajs/cli": "^0.2.0",
+    "@korajs/server": "^0.1.7",
+    "@tailwindcss/vite": "^4.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@types/ws": "^8.5.0",
+    "@vitejs/plugin-react": "^4.3.0",
+    "tailwindcss": "^4.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vite": "^6.0.0"
+  }
+}
