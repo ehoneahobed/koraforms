@@ -91,7 +91,7 @@ export function FormBuilder({ formId, navigate }: Props) {
 		return (
 			<div className="text-center py-20 text-gray-500 animate-fade-in">
 				<p className="text-lg mb-2">Form not found</p>
-				<button onClick={() => navigate('')} className="text-brand-500 hover:underline text-sm">
+				<button onClick={() => navigate('dashboard')} className="text-brand-500 hover:underline text-sm">
 					Go back to forms
 				</button>
 			</div>
@@ -115,7 +115,7 @@ export function FormBuilder({ formId, navigate }: Props) {
 			fields: JSON.stringify(fields),
 			status: 'published',
 		})
-		navigate('')
+		navigate('dashboard')
 	}
 
 	const addField = (afterIndex?: number) => {
@@ -161,7 +161,7 @@ export function FormBuilder({ formId, navigate }: Props) {
 			{/* Top bar */}
 			<div className="flex items-center justify-between mb-6">
 				<button
-					onClick={() => navigate('')}
+					onClick={() => navigate('dashboard')}
 					className="flex items-center gap-2 text-sm text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-smooth"
 				>
 					<ArrowLeft className="h-4 w-4" />

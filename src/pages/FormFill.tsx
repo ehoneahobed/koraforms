@@ -55,11 +55,29 @@ export function FormFill({ formId, navigate }: Props) {
 			return false
 		}
 		if (field.type === 'email' && value && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
-			setErrors({ ...errors, [field.id]: 'Please enter a valid email' })
+			setErrors({ ...errors, [field.id]: 'Please enter a valid email address' })
 			return false
 		}
-		if (field.type === 'number' && value && isNaN(Number(value))) {
-			setErrors({ ...errors, [field.id]: 'Please enter a valid number' })
+		if (field.type === 'number' && value) {
+			if (!/^-?\d*\.?\d+$/.test(value)) {
+				setErrors({ ...errors, [field.id]: 'Please enter a valid number' })
+				return false
+			}
+		}
+		if (field.type === 'phone' && value) {
+			// Must have at least 7 digits
+			const digitsOnly = value.replace(/\D/g, '')
+			if (digitsOnly.length < 7) {
+				setErrors({ ...errors, [field.id]: 'Please enter a valid phone number (at least 7 digits)' })
+				return false
+			}
+		}
+		if ((field.type === 'select' || field.type === 'radio') && field.required && !value) {
+			setErrors({ ...errors, [field.id]: 'Please select an option' })
+			return false
+		}
+		if (field.type === 'checkbox' && field.required && !value) {
+			setErrors({ ...errors, [field.id]: 'Please select at least one option' })
 			return false
 		}
 
@@ -128,7 +146,7 @@ export function FormFill({ formId, navigate }: Props) {
 				<div className="text-center animate-fade-in">
 					<p className="text-gray-500 text-lg mb-2">Form not found</p>
 					<button
-						onClick={() => navigate('')}
+						onClick={() => navigate('dashboard')}
 						className="text-brand-500 hover:underline text-sm"
 					>
 						Go back
@@ -167,7 +185,7 @@ export function FormFill({ formId, navigate }: Props) {
 							Submit another response
 						</button>
 						<button
-							onClick={() => navigate('')}
+							onClick={() => navigate('dashboard')}
 							className="inline-flex items-center gap-2 rounded-xl bg-gray-100 dark:bg-gray-800 px-6 py-3 text-sm font-medium text-gray-600 dark:text-gray-300 transition-smooth hover:bg-gray-200 dark:hover:bg-gray-700"
 						>
 							Back to forms
@@ -193,7 +211,7 @@ export function FormFill({ formId, navigate }: Props) {
 				{/* Back button */}
 				<div className="p-4">
 					<button
-						onClick={() => navigate('')}
+						onClick={() => navigate('dashboard')}
 						className="flex items-center gap-2 text-sm text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-smooth"
 					>
 						<ArrowLeft className="h-4 w-4" />
@@ -246,7 +264,7 @@ export function FormFill({ formId, navigate }: Props) {
 			{/* Top navigation */}
 			<div className="flex items-center justify-between p-4">
 				<button
-					onClick={() => navigate('')}
+					onClick={() => navigate('dashboard')}
 					className="flex items-center gap-2 text-sm text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-smooth"
 				>
 					<ArrowLeft className="h-4 w-4" />
@@ -464,10 +482,16 @@ function QuestionInput({
 			return (
 				<input
 					ref={inputRef as React.RefObject<HTMLInputElement>}
-					type="number"
-					inputMode="numeric"
+					type="text"
+					inputMode="decimal"
 					value={value}
-					onChange={(e) => onChange(e.target.value)}
+					onChange={(e) => {
+						// Only allow digits, decimal point, minus sign
+						const v = e.target.value
+						if (v === '' || v === '-' || /^-?\d*\.?\d*$/.test(v)) {
+							onChange(v)
+						}
+					}}
 					placeholder="Type a number..."
 					className={baseClass}
 				/>
@@ -504,7 +528,13 @@ function QuestionInput({
 					type="tel"
 					inputMode="tel"
 					value={value}
-					onChange={(e) => onChange(e.target.value)}
+					onChange={(e) => {
+						// Only allow digits, +, -, spaces, parentheses
+						const v = e.target.value
+						if (v === '' || /^[+\d\s()-]*$/.test(v)) {
+							onChange(v)
+						}
+					}}
 					placeholder="+233 XX XXX XXXX"
 					className={baseClass}
 				/>

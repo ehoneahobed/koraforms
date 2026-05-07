@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery, useCollection } from '@korajs/react'
-import { ArrowLeft, Download, FileSpreadsheet, ChevronDown, ChevronRight, BarChart3 } from 'lucide-react'
+import { ArrowLeft, Download, FileSpreadsheet, ChevronDown, ChevronRight, BarChart3, PieChart, TrendingUp } from 'lucide-react'
 import type { FormField } from '../types'
 
 interface Props {
@@ -18,14 +18,14 @@ export function FormResponses({ formId, navigate }: Props) {
 
 	const form = allForms.find((f) => f.id === formId)
 	const responses = allResponses.filter((r) => String(r.formId) === formId)
-	const [view, setView] = useState<'cards' | 'table'>('cards')
+	const [view, setView] = useState<'cards' | 'table' | 'analytics'>('cards')
 	const [expandedId, setExpandedId] = useState<string | null>(null)
 
 	if (!form) {
 		return (
 			<div className="text-center py-20 text-gray-500 animate-fade-in">
 				<p className="text-lg mb-2">Form not found</p>
-				<button onClick={() => navigate('')} className="text-brand-500 hover:underline text-sm">
+				<button onClick={() => navigate('dashboard')} className="text-brand-500 hover:underline text-sm">
 					Go back
 				</button>
 			</div>
@@ -76,7 +76,7 @@ export function FormResponses({ formId, navigate }: Props) {
 			{/* Header */}
 			<div className="flex items-center justify-between mb-6">
 				<button
-					onClick={() => navigate('')}
+					onClick={() => navigate('dashboard')}
 					className="flex items-center gap-2 text-sm text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-smooth"
 				>
 					<ArrowLeft className="h-4 w-4" />
@@ -86,26 +86,19 @@ export function FormResponses({ formId, navigate }: Props) {
 					{responses.length > 0 && (
 						<>
 							<div className="flex rounded-lg border border-gray-200 dark:border-gray-800 overflow-hidden">
-								<button
-									onClick={() => setView('cards')}
-									className={`px-3 py-1.5 text-xs font-medium transition-smooth ${
-										view === 'cards'
-											? 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100'
-											: 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'
-									}`}
-								>
-									Cards
-								</button>
-								<button
-									onClick={() => setView('table')}
-									className={`px-3 py-1.5 text-xs font-medium transition-smooth ${
-										view === 'table'
-											? 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100'
-											: 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'
-									}`}
-								>
-									Table
-								</button>
+								{(['cards', 'table', 'analytics'] as const).map((v) => (
+									<button
+										key={v}
+										onClick={() => setView(v)}
+										className={`px-3 py-1.5 text-xs font-medium transition-smooth capitalize ${
+											view === v
+												? 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100'
+												: 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'
+										}`}
+									>
+										{v}
+									</button>
+								))}
 							</div>
 							<button
 								onClick={exportCsv}
@@ -285,6 +278,206 @@ export function FormResponses({ formId, navigate }: Props) {
 					</table>
 				</div>
 			)}
+
+			{/* Analytics view */}
+			{responses.length > 0 && view === 'analytics' && (
+				<AnalyticsView fields={fields} responses={responses} />
+			)}
+		</div>
+	)
+}
+
+function AnalyticsView({
+	fields,
+	responses,
+}: {
+	fields: FormField[]
+	responses: Record<string, unknown>[]
+}) {
+	const analytics = useMemo(() => {
+		const allData: Record<string, string>[] = responses.map((r) => {
+			try {
+				return JSON.parse(String(r.data || '{}'))
+			} catch {
+				return {}
+			}
+		})
+
+		return fields.map((field) => {
+			const values = allData.map((d) => d[field.id] || '').filter(Boolean)
+			const total = values.length
+			const fillRate = responses.length > 0 ? Math.round((total / responses.length) * 100) : 0
+
+			// Count occurrences for categorical fields
+			if (['select', 'radio', 'checkbox'].includes(field.type)) {
+				const counts: Record<string, number> = {}
+				for (const v of values) {
+					// Checkboxes can have comma-separated values
+					const parts = field.type === 'checkbox' ? v.split(',') : [v]
+					for (const p of parts) {
+						const trimmed = p.trim()
+						if (trimmed) counts[trimmed] = (counts[trimmed] || 0) + 1
+					}
+				}
+				const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1])
+				return { field, type: 'categorical' as const, counts: sorted, total, fillRate }
+			}
+
+			// Numeric stats
+			if (field.type === 'number') {
+				const nums = values.map(Number).filter((n) => !isNaN(n))
+				if (nums.length > 0) {
+					const sum = nums.reduce((a, b) => a + b, 0)
+					const avg = sum / nums.length
+					const min = Math.min(...nums)
+					const max = Math.max(...nums)
+					return { field, type: 'numeric' as const, sum, avg, min, max, count: nums.length, fillRate }
+				}
+			}
+
+			// Text summary
+			return { field, type: 'text' as const, total, fillRate, uniqueCount: new Set(values).size }
+		})
+	}, [fields, responses])
+
+	// Responses over time
+	const timeData = useMemo(() => {
+		const byDate: Record<string, number> = {}
+		for (const r of responses) {
+			if (r.submittedAt) {
+				const date = new Date(Number(r.submittedAt)).toLocaleDateString()
+				byDate[date] = (byDate[date] || 0) + 1
+			}
+		}
+		return Object.entries(byDate).slice(-14) // Last 14 days
+	}, [responses])
+
+	return (
+		<div className="space-y-4 animate-fade-in">
+			{/* Summary cards */}
+			<div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+				<MiniStat label="Total Responses" value={String(responses.length)} icon={<BarChart3 className="h-4 w-4" />} />
+				<MiniStat label="Fields" value={String(fields.length)} icon={<PieChart className="h-4 w-4" />} />
+				<MiniStat
+					label="Avg. Fill Rate"
+					value={`${analytics.length > 0 ? Math.round(analytics.reduce((s, a) => s + a.fillRate, 0) / analytics.length) : 0}%`}
+					icon={<TrendingUp className="h-4 w-4" />}
+				/>
+				<MiniStat
+					label="Active Days"
+					value={String(timeData.length)}
+					icon={<BarChart3 className="h-4 w-4" />}
+				/>
+			</div>
+
+			{/* Responses over time */}
+			{timeData.length > 1 && (
+				<div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-surface-elevated-dark p-5">
+					<h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-4">Responses Over Time</h3>
+					<div className="flex items-end gap-1 h-24">
+						{timeData.map(([date, count]) => {
+							const maxCount = Math.max(...timeData.map(([, c]) => c))
+							const height = maxCount > 0 ? (count / maxCount) * 100 : 0
+							return (
+								<div key={date} className="flex-1 flex flex-col items-center gap-1 group">
+									<span className="text-[10px] text-gray-400 opacity-0 group-hover:opacity-100 transition-smooth tabular-nums">
+										{count}
+									</span>
+									<div
+										className="w-full rounded-t-sm bg-brand-500/80 hover:bg-brand-500 transition-smooth min-h-[2px]"
+										style={{ height: `${height}%` }}
+										title={`${date}: ${count} response${count !== 1 ? 's' : ''}`}
+									/>
+								</div>
+							)
+						})}
+					</div>
+					<div className="flex justify-between mt-2">
+						<span className="text-[10px] text-gray-400">{timeData[0]?.[0]}</span>
+						<span className="text-[10px] text-gray-400">{timeData[timeData.length - 1]?.[0]}</span>
+					</div>
+				</div>
+			)}
+
+			{/* Per-field analytics */}
+			{analytics.map((a) => (
+				<div
+					key={a.field.id}
+					className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-surface-elevated-dark p-5"
+				>
+					<div className="flex items-center justify-between mb-3">
+						<h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+							{a.field.label || a.field.id}
+						</h3>
+						<span className="text-xs text-gray-400">{a.fillRate}% fill rate</span>
+					</div>
+
+					{a.type === 'categorical' && (
+						<div className="space-y-2">
+							{a.counts.map(([label, count]) => {
+								const maxCount = a.counts[0]?.[1] || 1
+								const width = (count / maxCount) * 100
+								return (
+									<div key={label}>
+										<div className="flex items-center justify-between mb-1">
+											<span className="text-sm text-gray-700 dark:text-gray-300">{label}</span>
+											<span className="text-xs text-gray-400 tabular-nums">
+												{count} ({responses.length > 0 ? Math.round((count / responses.length) * 100) : 0}%)
+											</span>
+										</div>
+										<div className="h-2 rounded-full bg-gray-100 dark:bg-gray-800 overflow-hidden">
+											<div
+												className="h-full rounded-full bg-brand-500 transition-all duration-500"
+												style={{ width: `${width}%` }}
+											/>
+										</div>
+									</div>
+								)
+							})}
+						</div>
+					)}
+
+					{a.type === 'numeric' && (
+						<div className="grid grid-cols-4 gap-3">
+							<NumStat label="Sum" value={a.sum.toLocaleString()} />
+							<NumStat label="Average" value={a.avg.toFixed(1)} />
+							<NumStat label="Min" value={a.min.toLocaleString()} />
+							<NumStat label="Max" value={a.max.toLocaleString()} />
+						</div>
+					)}
+
+					{a.type === 'text' && (
+						<div className="flex gap-6 text-sm">
+							<div>
+								<span className="text-gray-400 text-xs">Responses</span>
+								<p className="font-medium text-gray-900 dark:text-gray-100">{a.total}</p>
+							</div>
+							<div>
+								<span className="text-gray-400 text-xs">Unique values</span>
+								<p className="font-medium text-gray-900 dark:text-gray-100">{a.uniqueCount}</p>
+							</div>
+						</div>
+					)}
+				</div>
+			))}
+		</div>
+	)
+}
+
+function MiniStat({ label, value, icon }: { label: string; value: string; icon: React.ReactNode }) {
+	return (
+		<div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-surface-elevated-dark p-4">
+			<div className="flex items-center gap-1.5 text-gray-400 mb-1">{icon}<span className="text-[11px] font-medium">{label}</span></div>
+			<p className="text-xl font-bold text-gray-900 dark:text-gray-100">{value}</p>
+		</div>
+	)
+}
+
+function NumStat({ label, value }: { label: string; value: string }) {
+	return (
+		<div>
+			<span className="text-[11px] text-gray-400 font-medium">{label}</span>
+			<p className="text-lg font-semibold text-gray-900 dark:text-gray-100 tabular-nums">{value}</p>
 		</div>
 	)
 }

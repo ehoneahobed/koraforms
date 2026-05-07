@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* Use class-based dark mode instead of media query */
+@custom-variant dark (&:is(.dark *));
+
 @theme {
 	--color-brand-50: #EEF2FF;
 	--color-brand-100: #E0E7FF;
@@ -24,29 +27,20 @@
 		font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 	}
 
-	@media (prefers-color-scheme: dark) {
-		body {
-			@apply bg-surface-dark text-gray-100;
-		}
+	.dark body,
+	.dark {
+		@apply bg-surface-dark text-gray-100;
 	}
-}
 
-/* Dark mode — applied via class for manual toggle */
-.dark body, .dark {
-	@apply bg-surface-dark text-gray-100;
+	:focus-visible {
+		@apply outline-2 outline-offset-2 outline-brand-500;
+	}
 }
 
 /* Smooth transitions for all interactive elements */
 @layer utilities {
 	.transition-smooth {
 		transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-	}
-}
-
-/* Focus ring for accessibility */
-@layer base {
-	:focus-visible {
-		@apply outline-2 outline-offset-2 outline-brand-500;
 	}
 }
 
@@ -69,11 +63,6 @@
 @keyframes scaleIn {
 	from { opacity: 0; transform: scale(0.95); }
 	to { opacity: 1; transform: scale(1); }
-}
-
-@keyframes checkmark {
-	from { stroke-dashoffset: 24; }
-	to { stroke-dashoffset: 0; }
 }
 
 @keyframes shake {

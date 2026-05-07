@@ -10,12 +10,14 @@ import {
 	Moon,
 	Sun,
 } from 'lucide-react'
+import { Landing } from './pages/Landing'
 import { FormList } from './pages/FormList'
 import { FormBuilder } from './pages/FormBuilder'
 import { FormFill } from './pages/FormFill'
 import { FormResponses } from './pages/FormResponses'
 
 type Route =
+	| { page: 'landing' }
 	| { page: 'list' }
 	| { page: 'builder'; formId?: string }
 	| { page: 'fill'; formId: string }
@@ -26,7 +28,8 @@ function parseRoute(hash: string): Route {
 	if (parts[0] === 'build') return { page: 'builder', formId: parts[1] }
 	if (parts[0] === 'fill' && parts[1]) return { page: 'fill', formId: parts[1] }
 	if (parts[0] === 'responses' && parts[1]) return { page: 'responses', formId: parts[1] }
-	return { page: 'list' }
+	if (parts[0] === 'dashboard') return { page: 'list' }
+	return { page: 'landing' }
 }
 
 export function App() {
@@ -58,6 +61,15 @@ export function App() {
 		setHash('#' + path)
 	}
 
+	// Landing page — clean, no header
+	if (route.page === 'landing') {
+		return (
+			<div className={dark ? 'dark' : ''}>
+				<Landing navigate={navigate} />
+			</div>
+		)
+	}
+
 	// Form fill page gets a clean, distraction-free layout
 	if (route.page === 'fill') {
 		return (
@@ -73,7 +85,7 @@ export function App() {
 			<header className="sticky top-0 z-40 border-b border-gray-200 dark:border-gray-800 bg-white/80 dark:bg-surface-dark/80 backdrop-blur-xl">
 				<div className="mx-auto max-w-5xl flex items-center justify-between px-4 sm:px-6 h-14">
 					<button
-						onClick={() => navigate('')}
+						onClick={() => navigate('dashboard')}
 						className="flex items-center gap-2.5 hover:opacity-80 transition-smooth"
 					>
 						<div className="w-8 h-8 rounded-lg bg-brand-600 flex items-center justify-center">
