@@ -1,7 +1,144 @@
 @import "tailwindcss";
 
+@theme {
+	--color-brand-50: #EEF2FF;
+	--color-brand-100: #E0E7FF;
+	--color-brand-200: #C7D2FE;
+	--color-brand-300: #A5B4FC;
+	--color-brand-400: #818CF8;
+	--color-brand-500: #6366F1;
+	--color-brand-600: #4F46E5;
+	--color-brand-700: #4338CA;
+	--color-brand-800: #3730A3;
+	--color-brand-900: #312E81;
+
+	--color-surface: #FAFAFA;
+	--color-surface-dark: #111111;
+	--color-surface-elevated: #FFFFFF;
+	--color-surface-elevated-dark: #1A1A1A;
+}
+
 @layer base {
 	body {
-		@apply bg-gray-950 text-gray-100 antialiased;
+		@apply bg-surface text-gray-900 antialiased;
+		font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 	}
+
+	@media (prefers-color-scheme: dark) {
+		body {
+			@apply bg-surface-dark text-gray-100;
+		}
+	}
+}
+
+/* Dark mode — applied via class for manual toggle */
+.dark body, .dark {
+	@apply bg-surface-dark text-gray-100;
+}
+
+/* Smooth transitions for all interactive elements */
+@layer utilities {
+	.transition-smooth {
+		transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+	}
+}
+
+/* Focus ring for accessibility */
+@layer base {
+	:focus-visible {
+		@apply outline-2 outline-offset-2 outline-brand-500;
+	}
+}
+
+/* Question slide animations */
+@keyframes slideUp {
+	from { opacity: 0; transform: translateY(24px); }
+	to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideDown {
+	from { opacity: 1; transform: translateY(0); }
+	to { opacity: 0; transform: translateY(-24px); }
+}
+
+@keyframes fadeIn {
+	from { opacity: 0; }
+	to { opacity: 1; }
+}
+
+@keyframes scaleIn {
+	from { opacity: 0; transform: scale(0.95); }
+	to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes checkmark {
+	from { stroke-dashoffset: 24; }
+	to { stroke-dashoffset: 0; }
+}
+
+@keyframes shake {
+	0%, 100% { transform: translateX(0); }
+	20%, 60% { transform: translateX(-4px); }
+	40%, 80% { transform: translateX(4px); }
+}
+
+.animate-slide-up {
+	animation: slideUp 0.35s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+.animate-slide-down {
+	animation: slideDown 0.25s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+.animate-fade-in {
+	animation: fadeIn 0.3s ease forwards;
+}
+
+.animate-scale-in {
+	animation: scaleIn 0.25s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+.animate-shake {
+	animation: shake 0.3s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.animate-slide-up,
+	.animate-slide-down,
+	.animate-fade-in,
+	.animate-scale-in {
+		animation: fadeIn 0.15s ease forwards;
+	}
+	.animate-shake {
+		animation: none;
+	}
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+	width: 6px;
+}
+
+::-webkit-scrollbar-track {
+	background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+	background: #D1D5DB;
+	border-radius: 3px;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+	background: #374151;
+}
+
+/* Input autofill styling */
+input:-webkit-autofill {
+	-webkit-box-shadow: 0 0 0 30px #F8F9FA inset !important;
+	-webkit-text-fill-color: #1A1A1A !important;
+}
+
+.dark input:-webkit-autofill {
+	-webkit-box-shadow: 0 0 0 30px #1A1A1A inset !important;
+	-webkit-text-fill-color: #F0F0F0 !important;
 }
