@@ -36,6 +36,14 @@ export function FormFill({ formId, navigate }: Props) {
 		// ignore
 	}
 
+	// Section breaks and statements are display-only — not counted as questions
+	const isDisplayOnly = (type: string) => type === 'section' || type === 'statement'
+	const totalQuestions = fields.filter((f) => !isDisplayOnly(f.type)).length
+	const questionNumber =
+		currentIndex >= 0
+			? fields.slice(0, currentIndex + 1).filter((f) => !isDisplayOnly(f.type)).length
+			: 0
+
 	const progress = fields.length > 0 ? Math.max(0, (currentIndex / fields.length) * 100) : 0
 
 	// Focus input when question changes
@@ -249,7 +257,7 @@ export function FormFill({ formId, navigate }: Props) {
 							<ArrowRight className="h-4 w-4" />
 						</button>
 						<p className="mt-6 text-xs text-gray-400 dark:text-gray-500">
-							{fields.length} question{fields.length !== 1 ? 's' : ''} &middot; Works offline
+							{totalQuestions} question{totalQuestions !== 1 ? 's' : ''} &middot; Works offline
 						</p>
 					</div>
 				</div>
@@ -282,9 +290,6 @@ export function FormFill({ formId, navigate }: Props) {
 						<ArrowLeft className="h-4 w-4" />
 						Exit
 					</button>
-					<span className="text-xs text-gray-400 dark:text-gray-500 tabular-nums">
-						{currentIndex + 1} of {fields.length}
-					</span>
 				</div>
 
 				<div className="flex-1 flex items-center justify-center px-4">
@@ -347,9 +352,6 @@ export function FormFill({ formId, navigate }: Props) {
 						<ArrowLeft className="h-4 w-4" />
 						Exit
 					</button>
-					<span className="text-xs text-gray-400 dark:text-gray-500 tabular-nums">
-						{currentIndex + 1} of {fields.length}
-					</span>
 				</div>
 
 				<div className="flex-1 flex items-center justify-center px-4 sm:px-8">
@@ -429,7 +431,7 @@ export function FormFill({ formId, navigate }: Props) {
 					Exit
 				</button>
 				<span className="text-xs text-gray-400 dark:text-gray-500 tabular-nums">
-					{currentIndex + 1} of {fields.length}
+					{questionNumber} of {totalQuestions}
 				</span>
 			</div>
 
@@ -442,10 +444,10 @@ export function FormFill({ formId, navigate }: Props) {
 					{/* Question number + label */}
 					<div className="mb-6">
 						<span className="text-sm font-medium text-brand-500 mb-2 block">
-							{currentIndex + 1} →
+							{questionNumber} →
 						</span>
 						<h2 className="text-xl sm:text-2xl font-semibold text-gray-900 dark:text-gray-100 leading-snug">
-							{field.label || `Question ${currentIndex + 1}`}
+							{field.label || `Question ${questionNumber}`}
 							{field.required && (
 								<span className="text-red-400 ml-1">*</span>
 							)}
