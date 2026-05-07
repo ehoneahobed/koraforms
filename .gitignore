@@ -1,6 +1,7 @@
 node_modules
 dist
 .kora
+kora/
 *.db
 .env
 *.db-shm
