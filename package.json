@@ -35,8 +35,10 @@
       "@korajs/auth": "link:../Kora/packages/auth",
       "@korajs/server": "link:../Kora/packages/server",
       "@korajs/core": "link:../Kora/packages/core",
+      "@korajs/store": "link:../Kora/packages/store",
       "@korajs/sync": "link:../Kora/packages/sync",
       "@korajs/merge": "link:../Kora/packages/merge",
+      "@korajs/react": "link:../Kora/packages/react",
       "@korajs/cli": "link:../Kora/packages/cli",
       "korajs": "link:../Kora/kora"
     }
