@@ -36,7 +36,9 @@
       "@korajs/server": "link:../Kora/packages/server",
       "@korajs/core": "link:../Kora/packages/core",
       "@korajs/sync": "link:../Kora/packages/sync",
-      "@korajs/merge": "link:../Kora/packages/merge"
+      "@korajs/merge": "link:../Kora/packages/merge",
+      "@korajs/cli": "link:../Kora/packages/cli",
+      "korajs": "link:../Kora/kora"
     }
   },
   "devDependencies": {
