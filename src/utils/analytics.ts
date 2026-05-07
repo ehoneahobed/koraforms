@@ -149,7 +149,7 @@ function computeRating(values: string[], maxStars: number): ChartData & { type: 
 	for (const val of values) {
 		const n = parseInt(val, 10)
 		if (n >= 1 && n <= maxStars) {
-			distribution[n - 1]++
+			distribution[n - 1] = (distribution[n - 1] ?? 0) + 1
 			sum += n
 			count++
 		}

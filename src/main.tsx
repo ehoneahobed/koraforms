@@ -18,7 +18,8 @@ const app = createApp({
 		url: syncUrl,
 		auth: async () => {
 			const token = await authClient.getAccessToken()
-			return token ? { token } : undefined
+			if (!token) throw new Error('Not authenticated')
+			return { token }
 		},
 	},
 	store: {

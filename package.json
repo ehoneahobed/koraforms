@@ -21,6 +21,7 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-router-dom": "^7.15.0",
+    "postgres": "^3.4.0",
     "ws": "^8.18.0",
     "yjs": "^13.6.30"
   },
@@ -31,7 +32,11 @@
       "protobufjs"
     ],
     "overrides": {
-      "@korajs/auth": "link:../Kora/packages/auth"
+      "@korajs/auth": "link:../Kora/packages/auth",
+      "@korajs/server": "link:../Kora/packages/server",
+      "@korajs/core": "link:../Kora/packages/core",
+      "@korajs/sync": "link:../Kora/packages/sync",
+      "@korajs/merge": "link:../Kora/packages/merge"
     }
   },
   "devDependencies": {
