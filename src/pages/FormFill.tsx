@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useQuery, useMutation, useCollection } from '@korajs/react'
-import { ArrowLeft, ArrowRight, ArrowUp, Check, ChevronDown, Send, Star, X } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Check, Send, Star, X } from 'lucide-react'
 import type { FormField } from '../types'
 
 interface Props {
@@ -287,7 +287,7 @@ export function FormFill({ formId, navigate }: Props) {
 						onClick={() => navigate('dashboard')}
 						className="flex items-center gap-2 text-sm text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-smooth"
 					>
-						<ArrowLeft className="h-4 w-4" />
+						<X className="h-4 w-4" />
 						Exit
 					</button>
 				</div>
@@ -302,28 +302,28 @@ export function FormFill({ formId, navigate }: Props) {
 								{field.placeholder}
 							</p>
 						)}
-						<button
-							onClick={goNext}
-							className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-8 py-3.5 text-base font-medium text-white shadow-lg shadow-brand-600/25 transition-smooth hover:bg-brand-500 hover:shadow-xl hover:shadow-brand-600/30 active:scale-[0.98]"
-						>
-							Continue
-							<ArrowRight className="h-4 w-4" />
-						</button>
+						<div className="flex items-center justify-center gap-3">
+							{currentIndex > 0 && (
+								<button
+									onClick={goBack}
+									className="inline-flex items-center gap-1.5 rounded-xl border-2 border-gray-200 dark:border-gray-700 px-5 py-3.5 text-base font-medium text-gray-500 dark:text-gray-400 transition-smooth hover:border-gray-300 dark:hover:border-gray-600 hover:text-gray-700 dark:hover:text-gray-200 active:scale-[0.98]"
+								>
+									<ArrowLeft className="h-4 w-4" />
+									Back
+								</button>
+							)}
+							<button
+								onClick={goNext}
+								className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-8 py-3.5 text-base font-medium text-white shadow-lg shadow-brand-600/25 transition-smooth hover:bg-brand-500 hover:shadow-xl hover:shadow-brand-600/30 active:scale-[0.98]"
+							>
+								Continue
+								<ArrowRight className="h-4 w-4" />
+							</button>
+						</div>
 					</div>
 				</div>
 
-				{/* Bottom navigation */}
-				<div className="p-4 flex justify-between items-center">
-					<div className="flex gap-1">
-						<button
-							onClick={goBack}
-							disabled={currentIndex <= 0}
-							className="p-2 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-smooth disabled:opacity-30 disabled:cursor-not-allowed"
-							aria-label="Previous question"
-						>
-							<ArrowUp className="h-4 w-4" />
-						</button>
-					</div>
+				<div className="p-4 flex justify-center items-center">
 					<span className="text-[10px] text-gray-300 dark:text-gray-700">
 						Powered by KoraForms
 					</span>
@@ -349,7 +349,7 @@ export function FormFill({ formId, navigate }: Props) {
 						onClick={() => navigate('dashboard')}
 						className="flex items-center gap-2 text-sm text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-smooth"
 					>
-						<ArrowLeft className="h-4 w-4" />
+						<X className="h-4 w-4" />
 						Exit
 					</button>
 				</div>
@@ -366,7 +366,16 @@ export function FormFill({ formId, navigate }: Props) {
 								</p>
 							)}
 						</div>
-						<div className="mt-8">
+						<div className="mt-8 flex items-center gap-3">
+							{currentIndex > 0 && (
+								<button
+									onClick={goBack}
+									className="inline-flex items-center gap-1.5 rounded-xl border-2 border-gray-200 dark:border-gray-700 px-4 py-3 text-sm font-medium text-gray-500 dark:text-gray-400 transition-smooth hover:border-gray-300 dark:hover:border-gray-600 hover:text-gray-700 dark:hover:text-gray-200 active:scale-[0.98]"
+								>
+									<ArrowLeft className="h-3.5 w-3.5" />
+									Back
+								</button>
+							)}
 							<button
 								onClick={goNext}
 								className={`inline-flex items-center gap-2 rounded-xl px-6 py-3 text-sm font-medium text-white shadow-sm transition-smooth active:scale-[0.98] ${
@@ -391,18 +400,7 @@ export function FormFill({ formId, navigate }: Props) {
 					</div>
 				</div>
 
-				{/* Bottom navigation */}
-				<div className="p-4 flex justify-between items-center">
-					<div className="flex gap-1">
-						<button
-							onClick={goBack}
-							disabled={currentIndex <= 0}
-							className="p-2 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-smooth disabled:opacity-30 disabled:cursor-not-allowed"
-							aria-label="Previous question"
-						>
-							<ArrowUp className="h-4 w-4" />
-						</button>
-					</div>
+				<div className="p-4 flex justify-center items-center">
 					<span className="text-[10px] text-gray-300 dark:text-gray-700">
 						Powered by KoraForms
 					</span>
@@ -421,13 +419,13 @@ export function FormFill({ formId, navigate }: Props) {
 				/>
 			</div>
 
-			{/* Top navigation */}
+			{/* Top bar — exit + counter */}
 			<div className="flex items-center justify-between p-4">
 				<button
 					onClick={() => navigate('dashboard')}
 					className="flex items-center gap-2 text-sm text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-smooth"
 				>
-					<ArrowLeft className="h-4 w-4" />
+					<X className="h-4 w-4" />
 					Exit
 				</button>
 				<span className="text-xs text-gray-400 dark:text-gray-500 tabular-nums">
@@ -469,8 +467,17 @@ export function FormFill({ formId, navigate }: Props) {
 						<p className="mt-3 text-sm text-red-500 animate-fade-in">{error}</p>
 					)}
 
-					{/* Next / Submit button */}
+					{/* Next / Submit + Back buttons */}
 					<div className="mt-8 flex items-center gap-3">
+						{currentIndex > 0 && (
+							<button
+								onClick={goBack}
+								className="inline-flex items-center gap-1.5 rounded-xl border-2 border-gray-200 dark:border-gray-700 px-4 py-3 text-sm font-medium text-gray-500 dark:text-gray-400 transition-smooth hover:border-gray-300 dark:hover:border-gray-600 hover:text-gray-700 dark:hover:text-gray-200 active:scale-[0.98]"
+							>
+								<ArrowLeft className="h-3.5 w-3.5" />
+								Back
+							</button>
+						)}
 						<button
 							onClick={goNext}
 							className={`inline-flex items-center gap-2 rounded-xl px-6 py-3 text-sm font-medium text-white shadow-sm transition-smooth active:scale-[0.98] ${
@@ -498,25 +505,8 @@ export function FormFill({ formId, navigate }: Props) {
 				</div>
 			</div>
 
-			{/* Bottom navigation */}
-			<div className="p-4 flex justify-between items-center">
-				<div className="flex gap-1">
-					<button
-						onClick={goBack}
-						disabled={currentIndex <= 0}
-						className="p-2 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-smooth disabled:opacity-30 disabled:cursor-not-allowed"
-						aria-label="Previous question"
-					>
-						<ArrowUp className="h-4 w-4" />
-					</button>
-					<button
-						onClick={goNext}
-						className="p-2 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-smooth"
-						aria-label="Next question"
-					>
-						<ChevronDown className="h-4 w-4" />
-					</button>
-				</div>
+			{/* Bottom bar */}
+			<div className="p-4 flex justify-center items-center">
 				<span className="text-[10px] text-gray-300 dark:text-gray-700">
 					Powered by KoraForms
 				</span>
