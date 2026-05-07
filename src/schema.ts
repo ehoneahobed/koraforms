@@ -1,9 +1,9 @@
 import { defineSchema, t } from 'korajs'
 
 export default defineSchema({
-	version: 2,
+	version: 3,
 	collections: {
-		// A form definition (e.g. "Church Member Registration", "Sunday Attendance")
+		// A form definition (e.g. "Customer Feedback", "Event Registration")
 		forms: {
 			fields: {
 				title: t.string(),
@@ -11,13 +11,17 @@ export default defineSchema({
 				// JSON-encoded array of field definitions
 				// Each field: { id, type, label, required, options? }
 				fields: t.string().default('[]'),
-				status: t.string().default('draft'), // draft | published | archived
+				status: t.string().default('draft'), // draft | published | closed
 				// Color theme preset id (e.g. 'indigo', 'rose', 'emerald')
 				theme: t.string().default('indigo'),
 				responseCount: t.number().default(0),
+				// User who created this form
+				ownerId: t.string().default(''),
+				// URL-friendly slug for shareable links
+				slug: t.string().default(''),
 				createdAt: t.timestamp().auto(),
 			},
-			indexes: ['status', 'createdAt'],
+			indexes: ['status', 'createdAt', 'ownerId', 'slug'],
 		},
 
 		// A single form submission

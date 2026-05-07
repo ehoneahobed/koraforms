@@ -29,6 +29,12 @@ import {
 } from 'lucide-react'
 import { FIELD_TYPES, type FormField, type FieldType } from '../types'
 import { THEME_PRESETS, getThemeById } from '../themes'
+import { generateSlug } from '../utils/slug'
+import { useSlashCommand } from '../hooks/useSlashCommand'
+import { SlashCommandMenu } from '../components/editor/SlashCommandMenu'
+import { ShareModal } from '../components/shared/ShareModal'
+import { FormSettings } from '../components/editor/FormSettings'
+import { Share2 } from 'lucide-react'
 
 const FIELD_ICONS: Record<FieldType, React.ReactNode> = {
 	text: <Type className="h-3.5 w-3.5" />,
@@ -53,9 +59,10 @@ const FIELD_ICONS: Record<FieldType, React.ReactNode> = {
 interface Props {
 	formId?: string
 	navigate: (path: string) => void
+	userId: string
 }
 
-export function FormBuilder({ formId, navigate }: Props) {
+export function FormBuilder({ formId, navigate, userId }: Props) {
 	const forms = useCollection('forms')
 	const allForms = useQuery(forms.where({}).orderBy('createdAt', 'desc'))
 	const form = allForms.find((f) => f.id === formId)
@@ -72,6 +79,66 @@ export function FormBuilder({ formId, navigate }: Props) {
 	const [saved, setSaved] = useState(false)
 	const [activeField, setActiveField] = useState<string | null>(null)
 	const [showThemePicker, setShowThemePicker] = useState(false)
+	const [showSettings, setShowSettings] = useState(false)
+	const [showShareModal, setShowShareModal] = useState(false)
+
+	// Slash command: add a field of a specific type
+	const addFieldOfType = useCallback((type: FieldType, afterIndex: number | null) => {
+		const newField: FormField = {
+			id: `field_${Date.now()}`,
+			type,
+			label: '',
+			required: false,
+			...((['select', 'radio', 'checkbox'].includes(type)) ? { options: 'Option 1, Option 2, Option 3' } : {}),
+		}
+		if (afterIndex !== null && afterIndex >= 0) {
+			const next = [...fields]
+			next.splice(afterIndex + 1, 0, newField)
+			setFields(next)
+		} else {
+			setFields([...fields, newField])
+		}
+		setActiveField(newField.id)
+		slashCommand.close()
+	}, [fields])
+
+	const slashCommand = useSlashCommand(addFieldOfType)
+
+	// Drag-and-drop state
+	const [dragIndex, setDragIndex] = useState<number | null>(null)
+	const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
+
+	const moveField = useCallback((from: number, to: number) => {
+		setFields(prev => {
+			if (to < 0 || to >= prev.length) return prev
+			const next = [...prev]
+			const [item] = next.splice(from, 1)
+			next.splice(to, 0, item!)
+			return next
+		})
+	}, [])
+
+	const handleDragStart = useCallback((index: number) => {
+		setDragIndex(index)
+	}, [])
+
+	const handleDragOver = useCallback((e: React.DragEvent, index: number) => {
+		e.preventDefault()
+		setDragOverIndex(index)
+	}, [])
+
+	const handleDrop = useCallback((index: number) => {
+		if (dragIndex !== null && dragIndex !== index) {
+			moveField(dragIndex, index)
+		}
+		setDragIndex(null)
+		setDragOverIndex(null)
+	}, [dragIndex, moveField])
+
+	const handleDragEnd = useCallback(() => {
+		setDragIndex(null)
+		setDragOverIndex(null)
+	}, [])
 
 	useEffect(() => {
 		if (form && !loaded) {
@@ -95,10 +162,11 @@ export function FormBuilder({ formId, navigate }: Props) {
 			description,
 			fields: JSON.stringify(fields),
 			theme,
+			ownerId: userId,
 		})
 		setSaved(true)
 		setTimeout(() => setSaved(false), 2000)
-	}, [formId, title, description, fields, theme, updateForm])
+	}, [formId, title, description, fields, theme, userId, updateForm])
 
 	// Auto-save on changes (debounced)
 	useEffect(() => {
@@ -129,14 +197,24 @@ export function FormBuilder({ formId, navigate }: Props) {
 	}
 
 	const publish = () => {
+		const formTitle = title || 'Untitled Form'
+		const existingSlug = form ? String(form.slug || '') : ''
+		const slug = existingSlug || generateSlug(formTitle)
 		updateForm(formId, {
-			title: title || 'Untitled Form',
+			title: formTitle,
 			description,
 			fields: JSON.stringify(fields),
 			theme,
 			status: 'published',
+			ownerId: userId,
+			slug,
 		})
-		navigate('dashboard')
+		// Show share modal after first publish, otherwise just go to dashboard
+		if (!existingSlug) {
+			setShowShareModal(true)
+		} else {
+			navigate('dashboard')
+		}
 	}
 
 	const addField = (afterIndex?: number) => {
@@ -167,14 +245,6 @@ export function FormBuilder({ formId, navigate }: Props) {
 		setActiveField(null)
 	}
 
-	const moveField = (from: number, to: number) => {
-		if (to < 0 || to >= fields.length) return
-		const next = [...fields]
-		const [item] = next.splice(from, 1)
-		next.splice(to, 0, item!)
-		setFields(next)
-	}
-
 	const isPublished = form ? String(form.status) === 'published' : false
 
 	return (
@@ -197,11 +267,22 @@ export function FormBuilder({ formId, navigate }: Props) {
 					)}
 					{isPublished && (
 						<button
+							onClick={() => setShowShareModal(true)}
+							className="inline-flex items-center gap-1.5 rounded-lg bg-gray-100 dark:bg-gray-800 px-2.5 py-2 sm:px-3 text-sm text-gray-600 dark:text-gray-300 transition-smooth hover:bg-gray-200 dark:hover:bg-gray-700"
+							title="Share"
+						>
+							<Share2 className="h-3.5 w-3.5" />
+							<span className="hidden sm:inline">Share</span>
+						</button>
+					)}
+					{isPublished && (
+						<button
 							onClick={() => navigate(`fill/${formId}`)}
-							className="inline-flex items-center gap-1.5 rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 text-sm text-gray-600 dark:text-gray-300 transition-smooth hover:bg-gray-200 dark:hover:bg-gray-700"
+							className="inline-flex items-center gap-1.5 rounded-lg bg-gray-100 dark:bg-gray-800 px-2.5 py-2 sm:px-3 text-sm text-gray-600 dark:text-gray-300 transition-smooth hover:bg-gray-200 dark:hover:bg-gray-700"
+							title="Preview"
 						>
 							<Eye className="h-3.5 w-3.5" />
-							Preview
+							<span className="hidden sm:inline">Preview</span>
 						</button>
 					)}
 					<button
@@ -281,6 +362,22 @@ export function FormBuilder({ formId, navigate }: Props) {
 				)}
 			</div>
 
+			{/* Form settings (slug, status) */}
+			{isPublished && (
+				<FormSettings
+					slug={String(form?.slug || '')}
+					status={String(form?.status || 'draft')}
+					onSlugChange={(newSlug) => {
+						if (formId) updateForm(formId, { slug: newSlug })
+					}}
+					onStatusChange={(newStatus) => {
+						if (formId) updateForm(formId, { status: newStatus })
+					}}
+					isOpen={showSettings}
+					onToggle={() => setShowSettings(!showSettings)}
+				/>
+			)}
+
 			{/* Fields */}
 			<div className="space-y-2">
 				{fields.map((field, index) => (
@@ -290,32 +387,71 @@ export function FormBuilder({ formId, navigate }: Props) {
 						index={index}
 						total={fields.length}
 						isActive={activeField === field.id}
+						isDragging={dragIndex === index}
+						isDragOver={dragOverIndex === index && dragIndex !== index}
 						onFocus={() => setActiveField(field.id)}
 						onUpdate={(updates) => updateField(index, updates)}
 						onRemove={() => removeField(index)}
 						onMove={(dir) => moveField(index, index + dir)}
 						onAddAfter={() => addField(index)}
+						onDragStart={() => handleDragStart(index)}
+						onDragOver={(e) => handleDragOver(e, index)}
+						onDrop={() => handleDrop(index)}
+						onDragEnd={handleDragEnd}
 					/>
 				))}
 			</div>
 
-			{/* Add field */}
-			<button
-				onClick={() => addField()}
-				className="mt-3 w-full rounded-2xl border-2 border-dashed border-gray-200 dark:border-gray-800 py-4 text-gray-400 dark:text-gray-500 transition-smooth hover:border-brand-300 dark:hover:border-brand-700 hover:text-brand-500 flex items-center justify-center gap-2 text-sm font-medium active:scale-[0.99]"
-			>
-				<Plus className="h-4 w-4" />
-				Add field
-			</button>
+			{/* Add field — click or type / for slash command */}
+			<div className="relative mt-3">
+				<div className="flex gap-2">
+					<button
+						onClick={() => addField()}
+						className="flex-1 rounded-2xl border-2 border-dashed border-gray-200 dark:border-gray-800 py-4 text-gray-400 dark:text-gray-500 transition-smooth hover:border-brand-300 dark:hover:border-brand-700 hover:text-brand-500 flex items-center justify-center gap-2 text-sm font-medium active:scale-[0.99]"
+					>
+						<Plus className="h-4 w-4" />
+						Add field
+					</button>
+					<button
+						onClick={() => slashCommand.open(fields.length - 1)}
+						className="rounded-2xl border-2 border-dashed border-gray-200 dark:border-gray-800 px-4 py-4 text-gray-400 dark:text-gray-500 transition-smooth hover:border-brand-300 dark:hover:border-brand-700 hover:text-brand-500 flex items-center justify-center text-sm font-medium active:scale-[0.99]"
+						title="Choose field type (or press /)"
+					>
+						/
+					</button>
+				</div>
+				<SlashCommandMenu
+					isOpen={slashCommand.isOpen}
+					query={slashCommand.query}
+					filteredTypes={slashCommand.filteredTypes}
+					selectedIndex={slashCommand.selectedIndex}
+					onQueryChange={slashCommand.updateQuery}
+					onSelect={slashCommand.selectCurrent}
+					onClose={slashCommand.close}
+				/>
+			</div>
 
 			{fields.length === 0 && (
 				<p className="text-center text-gray-400 dark:text-gray-500 text-sm mt-6">
-					Click "Add field" to start building your form.
+					Click "Add field" or press <kbd className="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-xs font-mono">/</kbd> to choose a field type.
 					<br />
 					<span className="text-xs text-gray-300 dark:text-gray-600">
 						Fields auto-save as you edit.
 					</span>
 				</p>
+			)}
+
+			{/* Share modal */}
+			{showShareModal && (
+				<ShareModal
+					slug={String(form?.slug || formId)}
+					title={title || 'Untitled Form'}
+					onClose={() => {
+						setShowShareModal(false)
+						// If this was the first publish, go to dashboard after closing
+						if (isPublished) navigate('dashboard')
+					}}
+				/>
 			)}
 
 			{/* Bottom spacer */}
@@ -329,21 +465,33 @@ function FieldEditor({
 	index,
 	total,
 	isActive,
+	isDragging,
+	isDragOver,
 	onFocus,
 	onUpdate,
 	onRemove,
 	onMove,
 	onAddAfter,
+	onDragStart,
+	onDragOver,
+	onDrop,
+	onDragEnd,
 }: {
 	field: FormField
 	index: number
 	total: number
 	isActive: boolean
+	isDragging?: boolean
+	isDragOver?: boolean
 	onFocus: () => void
 	onUpdate: (updates: Partial<FormField>) => void
 	onRemove: () => void
 	onMove: (direction: number) => void
 	onAddAfter: () => void
+	onDragStart?: () => void
+	onDragOver?: (e: React.DragEvent) => void
+	onDrop?: () => void
+	onDragEnd?: () => void
 }) {
 	const needsOptions = ['select', 'radio', 'checkbox'].includes(field.type)
 	const needsScaleLabels = field.type === 'scale'
@@ -353,15 +501,27 @@ function FieldEditor({
 	return (
 		<div
 			onClick={onFocus}
+			draggable
+			onDragStart={(e) => {
+				e.dataTransfer.effectAllowed = 'move'
+				onDragStart?.()
+			}}
+			onDragOver={(e) => onDragOver?.(e)}
+			onDrop={() => onDrop?.()}
+			onDragEnd={() => onDragEnd?.()}
 			className={`rounded-2xl border bg-white dark:bg-surface-elevated-dark p-4 sm:p-5 transition-smooth cursor-pointer ${
-				isActive
-					? 'border-brand-300 dark:border-brand-700 shadow-sm shadow-brand-100 dark:shadow-none'
-					: 'border-gray-200 dark:border-gray-800 hover:border-gray-300 dark:hover:border-gray-700'
+				isDragging
+					? 'opacity-40 border-brand-300 dark:border-brand-700'
+					: isDragOver
+						? 'border-brand-400 dark:border-brand-600 shadow-md shadow-brand-100 dark:shadow-none'
+						: isActive
+							? 'border-brand-300 dark:border-brand-700 shadow-sm shadow-brand-100 dark:shadow-none'
+							: 'border-gray-200 dark:border-gray-800 hover:border-gray-300 dark:hover:border-gray-700'
 			}`}
 		>
 			<div className="flex items-start gap-3">
 				{/* Reorder / drag handle */}
-				<div className="flex flex-col items-center gap-0.5 pt-1.5 opacity-40 hover:opacity-100 transition-smooth">
+				<div className="flex flex-col items-center gap-0.5 pt-1.5 opacity-40 hover:opacity-100 transition-smooth cursor-grab active:cursor-grabbing">
 					<button
 						onClick={(e) => {
 							e.stopPropagation()

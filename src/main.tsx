@@ -3,6 +3,7 @@ import { KoraProvider } from '@korajs/react'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import schema from './schema'
+import { authClient } from './auth'
 import { App } from './App'
 import './index.css'
 import koraWorkerUrl from './kora-worker.ts?worker&url'
@@ -15,6 +16,10 @@ const app = createApp({
 	schema,
 	sync: {
 		url: syncUrl,
+		auth: async () => {
+			const token = await authClient.getAccessToken()
+			return token ? { token } : undefined
+		},
 	},
 	store: {
 		workerUrl: koraWorkerUrl,

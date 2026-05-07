@@ -35,6 +35,15 @@
 	:focus-visible {
 		@apply outline-2 outline-offset-2 outline-brand-500;
 	}
+
+	button,
+	a,
+	[role="button"],
+	label[for],
+	select,
+	summary {
+		cursor: pointer;
+	}
 }
 
 /* Smooth transitions for all interactive elements */

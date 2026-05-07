@@ -69,11 +69,19 @@ export default defineConfig({
 	},
 	server: {
 		allowedHosts: true,
+		fs: {
+			// Allow serving files from linked Kora monorepo (pnpm link)
+			allow: ['..'],
+		},
 		proxy: {
 			'/kora-sync': {
 				target: 'ws://localhost:3001',
 				ws: true,
 				rewriteWsOrigin: true,
+			},
+			'/auth': {
+				target: 'http://localhost:3001',
+				changeOrigin: true,
 			},
 		},
 	},

@@ -3,6 +3,7 @@ import { useQuery, useMutation, useCollection } from '@korajs/react'
 import { ArrowLeft, ArrowRight, Check, Send, Star, X } from 'lucide-react'
 import type { FormField } from '../types'
 import { getThemeCSSVars } from '../themes'
+import { PoweredByBadge } from '../components/shared/PoweredByBadge'
 
 interface Props {
 	formId: string
@@ -13,7 +14,9 @@ export function FormFill({ formId, navigate }: Props) {
 	const forms = useCollection('forms')
 	const responses = useCollection('responses')
 	const allForms = useQuery(forms.where({}).orderBy('createdAt', 'desc'))
-	const form = allForms.find((f) => f.id === formId)
+	// Support lookup by ID or slug
+	const form = allForms.find((f) => f.id === formId) ||
+		allForms.find((f) => String(f.slug) === formId && String(f.status) === 'published')
 
 	const { mutate: createResponse } = useMutation(
 		(data: { formId: string; data: string; submittedBy: string }) =>
@@ -119,14 +122,15 @@ export function FormFill({ formId, navigate }: Props) {
 			setDirection('forward')
 			setCurrentIndex(currentIndex + 1)
 		} else {
-			// Submit
+			// Submit — use form.id (not the slug from the URL) as the real record ID
+			const realFormId = String(form?.id || formId)
 			createResponse({
-				formId,
+				formId: realFormId,
 				data: JSON.stringify(values),
 				submittedBy: '',
 			})
 			const currentCount = Number(form?.responseCount) || 0
-			updateForm(formId, { responseCount: currentCount + 1 })
+			updateForm(realFormId, { responseCount: currentCount + 1 })
 			setSubmitted(true)
 		}
 	}, [currentIndex, fields.length, formId, values, form, validateCurrent, createResponse, updateForm])
@@ -206,12 +210,9 @@ export function FormFill({ formId, navigate }: Props) {
 						>
 							Submit another response
 						</button>
-						<button
-							onClick={() => navigate('dashboard')}
-							className="inline-flex items-center gap-2 rounded-xl bg-gray-100 dark:bg-gray-800 px-6 py-3 text-sm font-medium text-gray-600 dark:text-gray-300 transition-smooth hover:bg-gray-200 dark:hover:bg-gray-700"
-						>
-							Back to forms
-						</button>
+					</div>
+					<div className="mt-10">
+						<PoweredByBadge slug={String(form?.slug || formId)} variant="prominent" />
 					</div>
 				</div>
 			</div>
@@ -510,9 +511,7 @@ export function FormFill({ formId, navigate }: Props) {
 
 			{/* Bottom bar */}
 			<div className="p-4 flex justify-center items-center">
-				<span className="text-[10px] text-gray-300 dark:text-gray-700">
-					Powered by KoraForms
-				</span>
+				<PoweredByBadge slug={String(form?.slug || formId)} />
 			</div>
 		</div>
 	)
@@ -705,7 +704,7 @@ function QuestionInput({
 							aria-label={`${star} star${star !== 1 ? 's' : ''}`}
 						>
 							<Star
-								className={`h-10 w-10 sm:h-12 sm:w-12 transition-smooth ${
+								className={`h-11 w-11 sm:h-12 sm:w-12 transition-smooth ${
 									star <= currentRating
 										? 'text-amber-400 fill-amber-400'
 										: 'text-gray-300 dark:text-gray-600'
@@ -728,7 +727,7 @@ function QuestionInput({
 							<button
 								key={num}
 								onClick={() => onChange(String(num))}
-								className={`w-10 h-10 sm:w-12 sm:h-12 rounded-xl border-2 text-sm font-semibold transition-smooth ${
+								className={`w-11 h-11 sm:w-12 sm:h-12 rounded-xl border-2 text-sm font-semibold transition-smooth ${
 									value === String(num)
 										? 'border-brand-500 bg-brand-50 dark:bg-brand-900/20 text-brand-700 dark:text-brand-300'
 										: 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 text-gray-600 dark:text-gray-400'

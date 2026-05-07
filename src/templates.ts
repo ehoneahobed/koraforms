@@ -1,6 +1,9 @@
 import type { FormTemplate } from './types'
 
 export const FORM_TEMPLATES: Record<string, FormTemplate> = {
+	// -----------------------------------------------------------------------
+	// Church & Religious
+	// -----------------------------------------------------------------------
 	'church-members': {
 		title: 'Church Member Registration',
 		description: 'Register new members with their contact and family details.',
@@ -72,6 +75,9 @@ export const FORM_TEMPLATES: Record<string, FormTemplate> = {
 		],
 	},
 
+	// -----------------------------------------------------------------------
+	// Events & Registration
+	// -----------------------------------------------------------------------
 	'event-registration': {
 		title: 'Event Registration',
 		description: 'Register participants for an event or program.',
@@ -91,7 +97,62 @@ export const FORM_TEMPLATES: Record<string, FormTemplate> = {
 		],
 	},
 
-	'survey': {
+	rsvp: {
+		title: 'RSVP',
+		description: 'Quick event RSVP form.',
+		fields: [
+			{ id: 'name', type: 'text', label: 'Your Name', required: true },
+			{ id: 'email', type: 'email', label: 'Email', required: true },
+			{ id: 'attending', type: 'yesno', label: 'Will you attend?', required: true },
+			{ id: 'guests', type: 'number', label: 'Number of guests', required: false },
+			{ id: 'dietary', type: 'select', label: 'Dietary preference', required: false, options: 'No preference,Vegetarian,Vegan,Halal,Gluten-free,Other' },
+			{ id: 'message', type: 'textarea', label: 'Message (optional)', required: false },
+		],
+	},
+
+	// -----------------------------------------------------------------------
+	// Feedback & Surveys
+	// -----------------------------------------------------------------------
+	'customer-satisfaction': {
+		title: 'Customer Satisfaction Survey',
+		description: 'Measure how happy your customers are.',
+		fields: [
+			{ id: 'intro', type: 'statement', label: 'We value your feedback! This survey takes about 2 minutes.', required: false },
+			{ id: 'overall', type: 'rating', label: 'How would you rate your overall experience?', required: true },
+			{ id: 'service_quality', type: 'rating', label: 'How would you rate our service quality?', required: true },
+			{ id: 'recommend', type: 'scale', label: 'How likely are you to recommend us? (1-10)', required: true },
+			{ id: 'best_part', type: 'textarea', label: 'What did you enjoy most?', required: false },
+			{ id: 'improve', type: 'textarea', label: 'What could we improve?', required: false },
+			{ id: 'contact', type: 'yesno', label: 'May we contact you for follow-up?', required: false },
+			{ id: 'email', type: 'email', label: 'Email (if yes above)', required: false },
+		],
+	},
+
+	'nps-survey': {
+		title: 'NPS Survey',
+		description: 'Net Promoter Score — one simple question.',
+		fields: [
+			{ id: 'score', type: 'scale', label: 'How likely are you to recommend us to a friend or colleague? (0-10)', required: true },
+			{ id: 'reason', type: 'textarea', label: 'What is the main reason for your score?', required: false },
+			{ id: 'improve', type: 'textarea', label: 'What could we do better?', required: false },
+		],
+	},
+
+	'product-feedback': {
+		title: 'Product Feedback',
+		description: 'Collect feedback on your product or feature.',
+		fields: [
+			{ id: 'feature', type: 'text', label: 'Which feature are you reviewing?', required: true },
+			{ id: 'ease', type: 'rating', label: 'Ease of use', required: true },
+			{ id: 'usefulness', type: 'rating', label: 'How useful is this feature?', required: true },
+			{ id: 'frequency', type: 'select', label: 'How often do you use it?', required: true, options: 'Daily,Weekly,Monthly,Rarely,First time' },
+			{ id: 'likes', type: 'textarea', label: 'What do you like about it?', required: false },
+			{ id: 'dislikes', type: 'textarea', label: 'What frustrates you?', required: false },
+			{ id: 'suggestion', type: 'textarea', label: 'Any suggestions for improvement?', required: false },
+		],
+	},
+
+	survey: {
 		title: 'Community Survey',
 		description: 'Collect feedback and information from the community.',
 		fields: [
@@ -110,9 +171,172 @@ export const FORM_TEMPLATES: Record<string, FormTemplate> = {
 		],
 	},
 
+	// -----------------------------------------------------------------------
+	// HR & Business
+	// -----------------------------------------------------------------------
+	'job-application': {
+		title: 'Job Application',
+		description: 'Collect applications for an open position.',
+		fields: [
+			{ id: 'section_personal', type: 'section', label: 'Personal Information', required: false },
+			{ id: 'name', type: 'text', label: 'Full Name', required: true },
+			{ id: 'email', type: 'email', label: 'Email Address', required: true },
+			{ id: 'phone', type: 'phone', label: 'Phone Number', required: true },
+			{ id: 'section_exp', type: 'section', label: 'Experience', required: false },
+			{ id: 'position', type: 'text', label: 'Position Applied For', required: true },
+			{ id: 'experience', type: 'select', label: 'Years of Experience', required: true, options: 'Less than 1,1-3,3-5,5-10,10+' },
+			{ id: 'current_employer', type: 'text', label: 'Current Employer', required: false },
+			{ id: 'resume_link', type: 'url', label: 'Link to Resume / CV', required: false },
+			{ id: 'cover_letter', type: 'textarea', label: 'Why do you want this role?', required: true },
+			{ id: 'start_date', type: 'date', label: 'Earliest Start Date', required: false },
+		],
+	},
+
+	'employee-onboarding': {
+		title: 'Employee Onboarding',
+		description: 'Collect new employee details for HR records.',
+		fields: [
+			{ id: 'full_name', type: 'text', label: 'Full Legal Name', required: true },
+			{ id: 'preferred_name', type: 'text', label: 'Preferred Name', required: false },
+			{ id: 'dob', type: 'date', label: 'Date of Birth', required: true },
+			{ id: 'email', type: 'email', label: 'Personal Email', required: true },
+			{ id: 'phone', type: 'phone', label: 'Phone Number', required: true },
+			{ id: 'address', type: 'textarea', label: 'Home Address', required: true },
+			{ id: 'emergency_name', type: 'text', label: 'Emergency Contact Name', required: true },
+			{ id: 'emergency_phone', type: 'phone', label: 'Emergency Contact Phone', required: true },
+			{ id: 'shirt_size', type: 'select', label: 'T-Shirt Size', required: false, options: 'XS,S,M,L,XL,XXL' },
+			{ id: 'dietary', type: 'text', label: 'Dietary Restrictions', required: false },
+		],
+	},
+
+	'contact-form': {
+		title: 'Contact Form',
+		description: 'Simple contact form for websites.',
+		fields: [
+			{ id: 'name', type: 'text', label: 'Your Name', required: true },
+			{ id: 'email', type: 'email', label: 'Email Address', required: true },
+			{ id: 'subject', type: 'select', label: 'Subject', required: true, options: 'General Inquiry,Support,Feedback,Partnership,Other' },
+			{ id: 'message', type: 'textarea', label: 'Message', required: true },
+		],
+	},
+
+	'order-form': {
+		title: 'Order Form',
+		description: 'Simple product or service order form.',
+		fields: [
+			{ id: 'customer_name', type: 'text', label: 'Full Name', required: true },
+			{ id: 'phone', type: 'phone', label: 'Phone Number', required: true },
+			{ id: 'email', type: 'email', label: 'Email', required: false },
+			{ id: 'product', type: 'text', label: 'Product / Service', required: true },
+			{ id: 'quantity', type: 'number', label: 'Quantity', required: true },
+			{ id: 'delivery_address', type: 'textarea', label: 'Delivery Address', required: true },
+			{ id: 'delivery_date', type: 'date', label: 'Preferred Delivery Date', required: false },
+			{ id: 'notes', type: 'textarea', label: 'Special Instructions', required: false },
+		],
+	},
+
+	// -----------------------------------------------------------------------
+	// Education
+	// -----------------------------------------------------------------------
+	'student-enrollment': {
+		title: 'Student Enrollment',
+		description: 'Enroll students for a course or program.',
+		fields: [
+			{ id: 'student_name', type: 'text', label: 'Student Name', required: true },
+			{ id: 'dob', type: 'date', label: 'Date of Birth', required: true },
+			{ id: 'parent_name', type: 'text', label: 'Parent / Guardian Name', required: true },
+			{ id: 'phone', type: 'phone', label: 'Contact Phone', required: true },
+			{ id: 'email', type: 'email', label: 'Email Address', required: false },
+			{ id: 'grade', type: 'select', label: 'Grade / Level', required: true, options: 'Nursery,KG1,KG2,Grade 1,Grade 2,Grade 3,Grade 4,Grade 5,Grade 6,JHS 1,JHS 2,JHS 3' },
+			{ id: 'previous_school', type: 'text', label: 'Previous School', required: false },
+			{ id: 'medical', type: 'textarea', label: 'Medical Conditions (if any)', required: false },
+		],
+	},
+
+	'course-feedback': {
+		title: 'Course Feedback',
+		description: 'Collect student feedback on a course or training.',
+		fields: [
+			{ id: 'course_name', type: 'text', label: 'Course Name', required: true },
+			{ id: 'instructor_rating', type: 'rating', label: 'Instructor Rating', required: true },
+			{ id: 'content_rating', type: 'rating', label: 'Content Quality', required: true },
+			{ id: 'pace', type: 'radio', label: 'Course Pace', required: true, options: 'Too slow,Just right,Too fast' },
+			{ id: 'most_useful', type: 'textarea', label: 'What was most useful?', required: false },
+			{ id: 'least_useful', type: 'textarea', label: 'What was least useful?', required: false },
+			{ id: 'recommend', type: 'yesno', label: 'Would you recommend this course?', required: true },
+			{ id: 'overall', type: 'rating', label: 'Overall Rating', required: true },
+		],
+	},
+
+	'workshop-signup': {
+		title: 'Workshop Sign-Up',
+		description: 'Register participants for a workshop or training.',
+		fields: [
+			{ id: 'name', type: 'text', label: 'Full Name', required: true },
+			{ id: 'email', type: 'email', label: 'Email', required: true },
+			{ id: 'phone', type: 'phone', label: 'Phone', required: true },
+			{ id: 'organization', type: 'text', label: 'Organization / Company', required: false },
+			{ id: 'experience', type: 'select', label: 'Experience Level', required: true, options: 'Beginner,Intermediate,Advanced' },
+			{ id: 'expectations', type: 'textarea', label: 'What do you hope to learn?', required: false },
+			{ id: 'laptop', type: 'yesno', label: 'Will you bring a laptop?', required: false },
+		],
+	},
+
+	// -----------------------------------------------------------------------
+	// Field Data Collection
+	// -----------------------------------------------------------------------
+	'bug-report': {
+		title: 'Bug Report',
+		description: 'Report a bug or issue.',
+		fields: [
+			{ id: 'title', type: 'text', label: 'Bug Title', required: true },
+			{ id: 'severity', type: 'radio', label: 'Severity', required: true, options: 'Critical,High,Medium,Low' },
+			{ id: 'steps', type: 'textarea', label: 'Steps to Reproduce', required: true },
+			{ id: 'expected', type: 'textarea', label: 'Expected Behavior', required: true },
+			{ id: 'actual', type: 'textarea', label: 'Actual Behavior', required: true },
+			{ id: 'browser', type: 'select', label: 'Browser', required: false, options: 'Chrome,Firefox,Safari,Edge,Other' },
+			{ id: 'screenshot_url', type: 'url', label: 'Screenshot URL (if any)', required: false },
+			{ id: 'email', type: 'email', label: 'Your Email (for follow-up)', required: false },
+		],
+	},
+
+	'health-screening': {
+		title: 'Health Screening Form',
+		description: 'Community health screening data collection.',
+		fields: [
+			{ id: 'section_patient', type: 'section', label: 'Patient Information', required: false },
+			{ id: 'name', type: 'text', label: 'Full Name', required: true },
+			{ id: 'age', type: 'number', label: 'Age', required: true },
+			{ id: 'gender', type: 'radio', label: 'Gender', required: true, options: 'Male,Female,Other' },
+			{ id: 'section_vitals', type: 'section', label: 'Vitals', required: false },
+			{ id: 'blood_pressure', type: 'text', label: 'Blood Pressure (e.g. 120/80)', required: true },
+			{ id: 'weight', type: 'number', label: 'Weight (kg)', required: true },
+			{ id: 'height', type: 'number', label: 'Height (cm)', required: true },
+			{ id: 'temperature', type: 'number', label: 'Temperature (°C)', required: false },
+			{ id: 'section_history', type: 'section', label: 'Medical History', required: false },
+			{ id: 'conditions', type: 'checkbox', label: 'Known Conditions', required: false, options: 'Diabetes,Hypertension,Asthma,Heart Disease,None' },
+			{ id: 'medications', type: 'textarea', label: 'Current Medications', required: false },
+			{ id: 'notes', type: 'textarea', label: 'Examiner Notes', required: false },
+			{ id: 'signature', type: 'signature', label: 'Examiner Signature', required: true },
+		],
+	},
+
+	// -----------------------------------------------------------------------
+	// Blank
+	// -----------------------------------------------------------------------
 	blank: {
 		title: '',
 		description: '',
 		fields: [],
 	},
 }
+
+// Template categories for the gallery
+export const TEMPLATE_CATEGORIES: { label: string; keys: string[] }[] = [
+	{ label: 'Church & Religious', keys: ['church-members', 'church-attendance', 'church-offering'] },
+	{ label: 'Events & Registration', keys: ['event-registration', 'rsvp', 'workshop-signup'] },
+	{ label: 'Feedback & Surveys', keys: ['customer-satisfaction', 'nps-survey', 'product-feedback', 'survey', 'course-feedback'] },
+	{ label: 'Business & HR', keys: ['contact-form', 'order-form', 'job-application', 'employee-onboarding'] },
+	{ label: 'Education', keys: ['student-enrollment', 'course-feedback', 'workshop-signup'] },
+	{ label: 'Data Collection', keys: ['bug-report', 'health-screening'] },
+]

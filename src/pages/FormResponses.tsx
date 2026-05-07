@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useCollection } from '@korajs/react'
-import { ArrowLeft, Download, FileSpreadsheet, ChevronDown, ChevronRight, BarChart3 } from 'lucide-react'
+import { ArrowLeft, Download, FileSpreadsheet, ChevronDown, ChevronRight, BarChart3, Share2, ExternalLink, Clock, TrendingUp } from 'lucide-react'
 import type { FormField } from '../types'
 
 interface Props {
@@ -71,76 +71,136 @@ export function FormResponses({ formId, navigate }: Props) {
 		URL.revokeObjectURL(url)
 	}
 
+	const latestResponseTime = responses.length > 0 && responses[0]?.submittedAt
+		? formatTimeSince(Number(responses[0].submittedAt))
+		: null
+
 	return (
 		<div className="animate-fade-in">
-			{/* Header */}
-			<div className="flex items-center justify-between mb-6">
-				<button
-					onClick={() => navigate('dashboard')}
-					className="flex items-center gap-2 text-sm text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-smooth"
-				>
-					<ArrowLeft className="h-4 w-4" />
-					Back
-				</button>
-				<div className="flex items-center gap-2">
-					{responses.length > 0 && (
-						<>
-							<div className="flex rounded-lg border border-gray-200 dark:border-gray-800 overflow-hidden">
-								{(['cards', 'table', 'analytics'] as const).map((v) => (
-									<button
-										key={v}
-										onClick={() => setView(v)}
-										className={`px-3 py-1.5 text-xs font-medium transition-smooth capitalize ${
-											view === v
-												? 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100'
-												: 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'
-										}`}
-									>
-										{v}
-									</button>
-								))}
+			{/* Hero header */}
+			<div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-emerald-600 via-emerald-600 to-teal-600 p-6 sm:p-8 mb-8 shadow-lg shadow-emerald-600/10">
+				<div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/3" />
+				<div className="absolute bottom-0 left-0 w-40 h-40 bg-white/5 rounded-full translate-y-1/2 -translate-x-1/4" />
+
+				<div className="relative">
+					<button
+						onClick={() => navigate('dashboard')}
+						className="inline-flex items-center gap-1.5 text-sm text-emerald-200 hover:text-white mb-5 transition-smooth"
+					>
+						<ArrowLeft className="h-4 w-4" />
+						Back to dashboard
+					</button>
+
+					<div className="flex flex-col sm:flex-row sm:items-end justify-between gap-5">
+						<div>
+							<h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight mb-1">
+								{String(form.title)}
+							</h1>
+							<div className="flex flex-wrap items-center gap-3 text-sm text-emerald-200">
+								<span className="flex items-center gap-1.5">
+									<BarChart3 className="h-3.5 w-3.5" />
+									{responses.length} response{responses.length !== 1 ? 's' : ''}
+								</span>
+								<span className="flex items-center gap-1.5">
+									<FileSpreadsheet className="h-3.5 w-3.5" />
+									{fields.length} field{fields.length !== 1 ? 's' : ''}
+								</span>
+								{latestResponseTime && (
+									<span className="flex items-center gap-1.5">
+										<Clock className="h-3.5 w-3.5" />
+										Last {latestResponseTime}
+									</span>
+								)}
 							</div>
+						</div>
+
+						<div className="flex items-center gap-2 shrink-0">
+							{responses.length > 0 && (
+								<button
+									onClick={exportCsv}
+									className="inline-flex items-center gap-1.5 rounded-xl bg-white/10 border border-white/20 px-4 py-2.5 text-sm font-medium text-white transition-smooth hover:bg-white/20 backdrop-blur-sm"
+								>
+									<Download className="h-3.5 w-3.5" />
+									Export CSV
+								</button>
+							)}
 							<button
-								onClick={exportCsv}
-								className="inline-flex items-center gap-1.5 rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 transition-smooth hover:bg-gray-200 dark:hover:bg-gray-700"
+								onClick={() => navigate(`fill/${formId}`)}
+								className="inline-flex items-center gap-1.5 rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-emerald-700 transition-smooth hover:bg-emerald-50 shadow-sm"
 							>
-								<Download className="h-3.5 w-3.5" />
-								CSV
+								<ExternalLink className="h-3.5 w-3.5" />
+								Open form
 							</button>
-						</>
-					)}
+						</div>
+					</div>
 				</div>
 			</div>
 
-			{/* Title + stats */}
-			<div className="mb-8">
-				<h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-1">
-					{String(form.title)}
-				</h1>
-				<div className="flex items-center gap-4 text-sm text-gray-500 dark:text-gray-400">
-					<span className="flex items-center gap-1.5">
-						<BarChart3 className="h-4 w-4" />
-						{responses.length} response{responses.length !== 1 ? 's' : ''}
-					</span>
+			{/* Stats + view toggle bar */}
+			{responses.length > 0 && (
+				<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+					{/* Mini stats */}
+					<div className="flex items-center gap-3">
+						<div className="flex items-center gap-2 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-surface-elevated-dark px-4 py-2.5">
+							<div className="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 flex items-center justify-center">
+								<TrendingUp className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+							</div>
+							<div>
+								<p className="text-lg font-bold text-gray-900 dark:text-gray-100 leading-none">{responses.length}</p>
+								<p className="text-[10px] text-gray-400 font-medium mt-0.5">Responses</p>
+							</div>
+						</div>
+					</div>
+
+					{/* View toggle */}
+					<div className="flex items-center bg-gray-100 dark:bg-gray-800/80 rounded-xl p-1">
+						{(['cards', 'table', 'analytics'] as const).map((v) => (
+							<button
+								key={v}
+								onClick={() => setView(v)}
+								className={`px-4 py-2 rounded-lg text-xs font-medium transition-smooth capitalize ${
+									view === v
+										? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm'
+										: 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+								}`}
+							>
+								{v}
+							</button>
+						))}
+					</div>
 				</div>
-			</div>
+			)}
 
 			{/* Empty state */}
 			{responses.length === 0 && (
 				<div className="flex flex-col items-center justify-center py-20">
-					<div className="w-16 h-16 rounded-2xl bg-gray-100 dark:bg-gray-800 flex items-center justify-center mb-6">
-						<FileSpreadsheet className="h-8 w-8 text-gray-400" />
+					<div className="relative mb-8">
+						<div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-gray-100 to-gray-50 dark:from-gray-800 dark:to-gray-800/50 flex items-center justify-center shadow-lg shadow-gray-100/50 dark:shadow-none">
+							<FileSpreadsheet className="h-10 w-10 text-gray-400" />
+						</div>
+						<div className="absolute -top-1 -right-1 w-7 h-7 rounded-lg bg-emerald-500 flex items-center justify-center shadow-md">
+							<BarChart3 className="h-3.5 w-3.5 text-white" />
+						</div>
 					</div>
-					<h2 className="text-lg font-semibold mb-2">No responses yet</h2>
-					<p className="text-gray-500 dark:text-gray-400 text-sm text-center max-w-sm mb-6">
-						Share the form to start collecting responses. All data is saved locally and syncs when connected.
+					<h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-2">No responses yet</h2>
+					<p className="text-gray-500 dark:text-gray-400 text-sm text-center max-w-sm mb-8 leading-relaxed">
+						Share your form to start collecting responses. All data saves locally and syncs when connected.
 					</p>
-					<button
-						onClick={() => navigate(`fill/${formId}`)}
-						className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-5 py-2.5 text-sm font-medium text-white transition-smooth hover:bg-brand-500 active:scale-[0.98]"
-					>
-						Test form yourself
-					</button>
+					<div className="flex items-center gap-3">
+						<button
+							onClick={() => navigate(`fill/${formId}`)}
+							className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-5 py-2.5 text-sm font-semibold text-white transition-smooth hover:bg-brand-500 active:scale-[0.98] shadow-sm shadow-brand-600/25"
+						>
+							Test form yourself
+						</button>
+						<button
+							onClick={() => navigate(`build/${formId}`)}
+							className="inline-flex items-center gap-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-5 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-300 transition-smooth hover:bg-gray-50 dark:hover:bg-gray-700"
+						>
+							<Share2 className="h-3.5 w-3.5" />
+							Share form
+						</button>
+					</div>
 				</div>
 			)}
 
@@ -665,9 +725,9 @@ function CalendarHeatmap({
 	const cellSize = 13
 	const cellGap = 2
 	const dayLabelWidth = 28
-	const topPad = 16
+	const topPad = 18
 
-	const gridWidth = dayLabelWidth + weeks.length * (cellSize + cellGap)
+	const gridWidth = dayLabelWidth + weeks.length * (cellSize + cellGap) + cellSize
 	const gridHeight = topPad + 7 * (cellSize + cellGap)
 
 	function heatColor(count: number): string {
@@ -681,9 +741,13 @@ function CalendarHeatmap({
 	}
 
 	const dayLabels = [
+		{ dow: 0, label: 'Sun' },
 		{ dow: 1, label: 'Mon' },
+		{ dow: 2, label: 'Tue' },
 		{ dow: 3, label: 'Wed' },
+		{ dow: 4, label: 'Thu' },
 		{ dow: 5, label: 'Fri' },
+		{ dow: 6, label: 'Sat' },
 	]
 
 	return (
@@ -693,7 +757,7 @@ function CalendarHeatmap({
 			</h3>
 			<div className="overflow-x-auto relative">
 				<ChartTooltip tooltip={tooltip} />
-				<svg width={gridWidth} height={gridHeight} className="overflow-visible">
+				<svg width="100%" viewBox={`0 0 ${gridWidth} ${gridHeight}`} preserveAspectRatio="xMinYMid meet" className="overflow-visible">
 					{/* Month labels */}
 					{monthLabels.map((m) => (
 						<text
@@ -1389,4 +1453,16 @@ function AnalyticsView({
 			)}
 		</div>
 	)
+}
+
+function formatTimeSince(timestamp: number): string {
+	const seconds = Math.floor((Date.now() - timestamp) / 1000)
+	if (seconds < 60) return 'just now'
+	const minutes = Math.floor(seconds / 60)
+	if (minutes < 60) return `${minutes}m ago`
+	const hours = Math.floor(minutes / 60)
+	if (hours < 24) return `${hours}h ago`
+	const days = Math.floor(hours / 24)
+	if (days < 7) return `${days}d ago`
+	return new Date(timestamp).toLocaleDateString('en', { month: 'short', day: 'numeric' })
 }
