@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useQuery, useMutation, useCollection } from '@korajs/react'
 import { ArrowLeft, ArrowRight, Check, Send, Star, X } from 'lucide-react'
 import type { FormField } from '../types'
+import { getThemeCSSVars } from '../themes'
 
 interface Props {
 	formId: string
@@ -35,6 +36,8 @@ export function FormFill({ formId, navigate }: Props) {
 	} catch {
 		// ignore
 	}
+
+	const themeVars = getThemeCSSVars(String(form?.theme || 'indigo'))
 
 	// Section breaks and statements are display-only — not counted as questions
 	const isDisplayOnly = (type: string) => type === 'section' || type === 'statement'
@@ -178,7 +181,7 @@ export function FormFill({ formId, navigate }: Props) {
 	// Submitted screen
 	if (submitted) {
 		return (
-			<div className="flex items-center justify-center min-h-screen px-4">
+			<div className="flex items-center justify-center min-h-screen px-4" style={themeVars as React.CSSProperties}>
 				<div className="text-center animate-scale-in max-w-md">
 					<div className="w-16 h-16 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center mx-auto mb-6">
 						<Check className="h-8 w-8 text-emerald-500" strokeWidth={2.5} />
@@ -218,7 +221,7 @@ export function FormFill({ formId, navigate }: Props) {
 	// Welcome screen
 	if (currentIndex === -1) {
 		return (
-			<div className="flex flex-col min-h-screen">
+			<div className="flex flex-col min-h-screen" style={themeVars as React.CSSProperties}>
 				{/* Progress bar */}
 				<div className="fixed top-0 left-0 right-0 h-1 bg-gray-100 dark:bg-gray-800 z-50">
 					<div
@@ -273,7 +276,7 @@ export function FormFill({ formId, navigate }: Props) {
 	// Section break - full screen slide with title and description
 	if (field.type === 'section') {
 		return (
-			<div className="flex flex-col min-h-screen">
+			<div className="flex flex-col min-h-screen" style={themeVars as React.CSSProperties}>
 				{/* Progress bar */}
 				<div className="fixed top-0 left-0 right-0 h-1 bg-gray-100 dark:bg-gray-800 z-50">
 					<div
@@ -335,7 +338,7 @@ export function FormFill({ formId, navigate }: Props) {
 	// Statement - info block display
 	if (field.type === 'statement') {
 		return (
-			<div className="flex flex-col min-h-screen">
+			<div className="flex flex-col min-h-screen" style={themeVars as React.CSSProperties}>
 				{/* Progress bar */}
 				<div className="fixed top-0 left-0 right-0 h-1 bg-gray-100 dark:bg-gray-800 z-50">
 					<div
@@ -410,7 +413,7 @@ export function FormFill({ formId, navigate }: Props) {
 	}
 
 	return (
-		<div className="flex flex-col min-h-screen">
+		<div className="flex flex-col min-h-screen" style={themeVars as React.CSSProperties}>
 			{/* Progress bar */}
 			<div className="fixed top-0 left-0 right-0 h-1 bg-gray-100 dark:bg-gray-800 z-50">
 				<div

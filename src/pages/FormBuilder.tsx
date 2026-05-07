@@ -28,6 +28,7 @@ import {
 	PenTool,
 } from 'lucide-react'
 import { FIELD_TYPES, type FormField, type FieldType } from '../types'
+import { THEME_PRESETS, getThemeById } from '../themes'
 
 const FIELD_ICONS: Record<FieldType, React.ReactNode> = {
 	text: <Type className="h-3.5 w-3.5" />,
@@ -66,14 +67,17 @@ export function FormBuilder({ formId, navigate }: Props) {
 	const [title, setTitle] = useState('')
 	const [description, setDescription] = useState('')
 	const [fields, setFields] = useState<FormField[]>([])
+	const [theme, setTheme] = useState('indigo')
 	const [loaded, setLoaded] = useState(false)
 	const [saved, setSaved] = useState(false)
 	const [activeField, setActiveField] = useState<string | null>(null)
+	const [showThemePicker, setShowThemePicker] = useState(false)
 
 	useEffect(() => {
 		if (form && !loaded) {
 			setTitle(String(form.title || ''))
 			setDescription(String(form.description || ''))
+			setTheme(String(form.theme || 'indigo'))
 			try {
 				setFields(JSON.parse(String(form.fields || '[]')))
 			} catch {
@@ -90,17 +94,18 @@ export function FormBuilder({ formId, navigate }: Props) {
 			title: title || 'Untitled Form',
 			description,
 			fields: JSON.stringify(fields),
+			theme,
 		})
 		setSaved(true)
 		setTimeout(() => setSaved(false), 2000)
-	}, [formId, title, description, fields, updateForm])
+	}, [formId, title, description, fields, theme, updateForm])
 
 	// Auto-save on changes (debounced)
 	useEffect(() => {
 		if (!loaded) return
 		const timer = setTimeout(save, 1500)
 		return () => clearTimeout(timer)
-	}, [title, description, fields, loaded, save])
+	}, [title, description, fields, theme, loaded, save])
 
 	if (!formId || (!form && loaded)) {
 		return (
@@ -128,6 +133,7 @@ export function FormBuilder({ formId, navigate }: Props) {
 			title: title || 'Untitled Form',
 			description,
 			fields: JSON.stringify(fields),
+			theme,
 			status: 'published',
 		})
 		navigate('dashboard')
@@ -224,6 +230,55 @@ export function FormBuilder({ formId, navigate }: Props) {
 					placeholder="Add a description..."
 					className="w-full bg-transparent text-gray-500 dark:text-gray-400 outline-none placeholder-gray-300 dark:placeholder-gray-700 text-sm sm:text-base"
 				/>
+			</div>
+
+			{/* Theme picker */}
+			<div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-surface-elevated-dark mb-4 overflow-hidden">
+				<button
+					onClick={() => setShowThemePicker(!showThemePicker)}
+					className="w-full flex items-center justify-between px-6 py-3.5 text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-smooth"
+				>
+					<div className="flex items-center gap-3">
+						<div
+							className="w-5 h-5 rounded-full shadow-inner ring-1 ring-black/10"
+							style={{ backgroundColor: getThemeById(theme).preview }}
+						/>
+						<span className="font-medium">Theme</span>
+						<span className="text-gray-400 dark:text-gray-500">{getThemeById(theme).name}</span>
+					</div>
+					<ChevronDown className={`h-4 w-4 text-gray-400 transition-transform duration-200 ${showThemePicker ? 'rotate-180' : ''}`} />
+				</button>
+				{showThemePicker && (
+					<div className="px-6 pb-4 pt-1 animate-fade-in">
+						<div className="grid grid-cols-6 sm:grid-cols-12 gap-2">
+							{THEME_PRESETS.map((preset) => (
+								<button
+									key={preset.id}
+									onClick={() => setTheme(preset.id)}
+									className={`group relative flex flex-col items-center gap-1.5 rounded-xl p-2 transition-smooth ${
+										theme === preset.id
+											? 'bg-gray-100 dark:bg-gray-800'
+											: 'hover:bg-gray-50 dark:hover:bg-gray-800/50'
+									}`}
+									title={preset.name}
+								>
+									<div
+										className={`w-8 h-8 rounded-full shadow-sm transition-smooth group-hover:scale-110 ${
+											theme === preset.id ? 'ring-2 ring-offset-2 ring-offset-white dark:ring-offset-gray-900' : ''
+										}`}
+										style={{
+											backgroundColor: preset.preview,
+											...(theme === preset.id ? { '--tw-ring-color': preset.preview } as React.CSSProperties : {}),
+										}}
+									/>
+									<span className="text-[10px] text-gray-500 dark:text-gray-400 leading-none truncate w-full text-center">
+										{preset.name}
+									</span>
+								</button>
+							))}
+						</div>
+					</div>
+				)}
 			</div>
 
 			{/* Fields */}

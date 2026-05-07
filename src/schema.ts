@@ -1,7 +1,7 @@
 import { defineSchema, t } from 'korajs'
 
 export default defineSchema({
-	version: 1,
+	version: 2,
 	collections: {
 		// A form definition (e.g. "Church Member Registration", "Sunday Attendance")
 		forms: {
@@ -12,6 +12,8 @@ export default defineSchema({
 				// Each field: { id, type, label, required, options? }
 				fields: t.string().default('[]'),
 				status: t.string().default('draft'), // draft | published | archived
+				// Color theme preset id (e.g. 'indigo', 'rose', 'emerald')
+				theme: t.string().default('indigo'),
 				responseCount: t.number().default(0),
 				createdAt: t.timestamp().auto(),
 			},
