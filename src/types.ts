@@ -1,5 +1,5 @@
 // Form field types supported by the form builder
-export type FieldType = 'text' | 'number' | 'email' | 'phone' | 'textarea' | 'select' | 'radio' | 'checkbox' | 'date'
+export type FieldType = 'text' | 'number' | 'email' | 'phone' | 'textarea' | 'select' | 'radio' | 'checkbox' | 'date' | 'rating' | 'scale' | 'yesno' | 'time' | 'url' | 'section' | 'statement' | 'signature'
 
 export interface FormField {
 	id: string
@@ -21,6 +21,14 @@ export const FIELD_TYPES: { value: FieldType; label: string }[] = [
 	{ value: 'select', label: 'Dropdown' },
 	{ value: 'radio', label: 'Multiple Choice' },
 	{ value: 'checkbox', label: 'Checkboxes' },
+	{ value: 'rating', label: 'Rating' },
+	{ value: 'scale', label: 'Linear Scale' },
+	{ value: 'yesno', label: 'Yes / No' },
+	{ value: 'time', label: 'Time' },
+	{ value: 'url', label: 'Website URL' },
+	{ value: 'section', label: 'Section Break' },
+	{ value: 'statement', label: 'Statement' },
+	{ value: 'signature', label: 'Signature' },
 ]
 
 // Pre-built form templates

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useQuery, useMutation, useCollection } from '@korajs/react'
-import { ArrowLeft, ArrowRight, ArrowUp, Check, ChevronDown, Send } from 'lucide-react'
+import { ArrowLeft, ArrowRight, ArrowUp, Check, ChevronDown, Send, Star, X } from 'lucide-react'
 import type { FormField } from '../types'
 
 interface Props {
@@ -50,6 +50,9 @@ export function FormFill({ formId, navigate }: Props) {
 		const field = fields[currentIndex]!
 		const value = values[field.id] || ''
 
+		// Section and statement are display-only, always valid
+		if (field.type === 'section' || field.type === 'statement') return true
+
 		if (field.required && !value.trim()) {
 			setErrors({ ...errors, [field.id]: 'This field is required' })
 			return false
@@ -72,12 +75,20 @@ export function FormFill({ formId, navigate }: Props) {
 				return false
 			}
 		}
+		if (field.type === 'url' && value && !/^https?:\/\/.+\..+/.test(value)) {
+			setErrors({ ...errors, [field.id]: 'Please enter a valid URL (e.g. https://example.com)' })
+			return false
+		}
 		if ((field.type === 'select' || field.type === 'radio') && field.required && !value) {
 			setErrors({ ...errors, [field.id]: 'Please select an option' })
 			return false
 		}
 		if (field.type === 'checkbox' && field.required && !value) {
 			setErrors({ ...errors, [field.id]: 'Please select at least one option' })
+			return false
+		}
+		if (field.type === 'signature' && field.required && !value) {
+			setErrors({ ...errors, [field.id]: 'Please draw your signature' })
 			return false
 		}
 
@@ -250,6 +261,153 @@ export function FormFill({ formId, navigate }: Props) {
 	const field = fields[currentIndex]!
 	const isLast = currentIndex === fields.length - 1
 	const error = errors[field.id]
+
+	// Section break - full screen slide with title and description
+	if (field.type === 'section') {
+		return (
+			<div className="flex flex-col min-h-screen">
+				{/* Progress bar */}
+				<div className="fixed top-0 left-0 right-0 h-1 bg-gray-100 dark:bg-gray-800 z-50">
+					<div
+						className="h-full bg-brand-500 transition-all duration-500 ease-out"
+						style={{ width: `${progress}%` }}
+					/>
+				</div>
+
+				<div className="p-4 flex items-center justify-between">
+					<button
+						onClick={() => navigate('dashboard')}
+						className="flex items-center gap-2 text-sm text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-smooth"
+					>
+						<ArrowLeft className="h-4 w-4" />
+						Exit
+					</button>
+					<span className="text-xs text-gray-400 dark:text-gray-500 tabular-nums">
+						{currentIndex + 1} of {fields.length}
+					</span>
+				</div>
+
+				<div className="flex-1 flex items-center justify-center px-4">
+					<div className={`text-center max-w-lg ${direction === 'forward' ? 'animate-slide-up' : 'animate-fade-in'}`}>
+						<h2 className="text-3xl sm:text-4xl font-bold text-gray-900 dark:text-gray-100 mb-4 leading-tight">
+							{field.label || 'Section'}
+						</h2>
+						{field.placeholder && (
+							<p className="text-lg text-gray-500 dark:text-gray-400 mb-10 leading-relaxed">
+								{field.placeholder}
+							</p>
+						)}
+						<button
+							onClick={goNext}
+							className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-8 py-3.5 text-base font-medium text-white shadow-lg shadow-brand-600/25 transition-smooth hover:bg-brand-500 hover:shadow-xl hover:shadow-brand-600/30 active:scale-[0.98]"
+						>
+							Continue
+							<ArrowRight className="h-4 w-4" />
+						</button>
+					</div>
+				</div>
+
+				{/* Bottom navigation */}
+				<div className="p-4 flex justify-between items-center">
+					<div className="flex gap-1">
+						<button
+							onClick={goBack}
+							disabled={currentIndex <= 0}
+							className="p-2 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-smooth disabled:opacity-30 disabled:cursor-not-allowed"
+							aria-label="Previous question"
+						>
+							<ArrowUp className="h-4 w-4" />
+						</button>
+					</div>
+					<span className="text-[10px] text-gray-300 dark:text-gray-700">
+						Powered by KoraForms
+					</span>
+				</div>
+			</div>
+		)
+	}
+
+	// Statement - info block display
+	if (field.type === 'statement') {
+		return (
+			<div className="flex flex-col min-h-screen">
+				{/* Progress bar */}
+				<div className="fixed top-0 left-0 right-0 h-1 bg-gray-100 dark:bg-gray-800 z-50">
+					<div
+						className="h-full bg-brand-500 transition-all duration-500 ease-out"
+						style={{ width: `${progress}%` }}
+					/>
+				</div>
+
+				<div className="p-4 flex items-center justify-between">
+					<button
+						onClick={() => navigate('dashboard')}
+						className="flex items-center gap-2 text-sm text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-smooth"
+					>
+						<ArrowLeft className="h-4 w-4" />
+						Exit
+					</button>
+					<span className="text-xs text-gray-400 dark:text-gray-500 tabular-nums">
+						{currentIndex + 1} of {fields.length}
+					</span>
+				</div>
+
+				<div className="flex-1 flex items-center justify-center px-4 sm:px-8">
+					<div className={`w-full max-w-lg ${direction === 'forward' ? 'animate-slide-up' : 'animate-fade-in'}`}>
+						<div className="rounded-2xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 p-6 sm:p-8">
+							<h2 className="text-xl sm:text-2xl font-semibold text-gray-900 dark:text-gray-100 mb-3 leading-snug">
+								{field.label || 'Information'}
+							</h2>
+							{field.placeholder && (
+								<p className="text-base text-gray-500 dark:text-gray-400 leading-relaxed">
+									{field.placeholder}
+								</p>
+							)}
+						</div>
+						<div className="mt-8">
+							<button
+								onClick={goNext}
+								className={`inline-flex items-center gap-2 rounded-xl px-6 py-3 text-sm font-medium text-white shadow-sm transition-smooth active:scale-[0.98] ${
+									isLast
+										? 'bg-emerald-600 shadow-emerald-600/25 hover:bg-emerald-500'
+										: 'bg-brand-600 shadow-brand-600/25 hover:bg-brand-500'
+								}`}
+							>
+								{isLast ? (
+									<>
+										Submit
+										<Send className="h-3.5 w-3.5" />
+									</>
+								) : (
+									<>
+										Continue
+										<ArrowRight className="h-3.5 w-3.5" />
+									</>
+								)}
+							</button>
+						</div>
+					</div>
+				</div>
+
+				{/* Bottom navigation */}
+				<div className="p-4 flex justify-between items-center">
+					<div className="flex gap-1">
+						<button
+							onClick={goBack}
+							disabled={currentIndex <= 0}
+							className="p-2 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-smooth disabled:opacity-30 disabled:cursor-not-allowed"
+							aria-label="Previous question"
+						>
+							<ArrowUp className="h-4 w-4" />
+						</button>
+					</div>
+					<span className="text-[10px] text-gray-300 dark:text-gray-700">
+						Powered by KoraForms
+					</span>
+				</div>
+			</div>
+		)
+	}
 
 	return (
 		<div className="flex flex-col min-h-screen">
@@ -540,6 +698,119 @@ function QuestionInput({
 				/>
 			)
 
+		case 'rating': {
+			const currentRating = parseInt(value) || 0
+			return (
+				<div className="flex gap-2">
+					{[1, 2, 3, 4, 5].map((star) => (
+						<button
+							key={star}
+							onClick={() => onChange(String(star))}
+							className="p-1 transition-smooth hover:scale-110 active:scale-95"
+							aria-label={`${star} star${star !== 1 ? 's' : ''}`}
+						>
+							<Star
+								className={`h-10 w-10 sm:h-12 sm:w-12 transition-smooth ${
+									star <= currentRating
+										? 'text-amber-400 fill-amber-400'
+										: 'text-gray-300 dark:text-gray-600'
+								}`}
+							/>
+						</button>
+					))}
+				</div>
+			)
+		}
+
+		case 'scale': {
+			const labels = (field.options || '').split(',').map((l) => l.trim())
+			const lowLabel = labels[0] || ''
+			const highLabel = labels[1] || ''
+			return (
+				<div>
+					<div className="flex flex-wrap gap-2">
+						{[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((num) => (
+							<button
+								key={num}
+								onClick={() => onChange(String(num))}
+								className={`w-10 h-10 sm:w-12 sm:h-12 rounded-xl border-2 text-sm font-semibold transition-smooth ${
+									value === String(num)
+										? 'border-brand-500 bg-brand-50 dark:bg-brand-900/20 text-brand-700 dark:text-brand-300'
+										: 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 text-gray-600 dark:text-gray-400'
+								}`}
+							>
+								{num}
+							</button>
+						))}
+					</div>
+					{(lowLabel || highLabel) && (
+						<div className="flex justify-between mt-2 text-xs text-gray-400 dark:text-gray-500">
+							<span>{lowLabel}</span>
+							<span>{highLabel}</span>
+						</div>
+					)}
+				</div>
+			)
+		}
+
+		case 'yesno':
+			return (
+				<div className="flex gap-3">
+					<button
+						onClick={() => onChange('yes')}
+						className={`flex-1 rounded-xl border-2 px-6 py-4 text-lg font-semibold transition-smooth ${
+							value === 'yes'
+								? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300'
+								: 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 text-gray-600 dark:text-gray-400'
+						}`}
+					>
+						Yes
+					</button>
+					<button
+						onClick={() => onChange('no')}
+						className={`flex-1 rounded-xl border-2 px-6 py-4 text-lg font-semibold transition-smooth ${
+							value === 'no'
+								? 'border-red-500 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300'
+								: 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 text-gray-600 dark:text-gray-400'
+						}`}
+					>
+						No
+					</button>
+				</div>
+			)
+
+		case 'time':
+			return (
+				<input
+					ref={inputRef as React.RefObject<HTMLInputElement>}
+					type="time"
+					value={value}
+					onChange={(e) => onChange(e.target.value)}
+					className={baseClass}
+				/>
+			)
+
+		case 'url':
+			return (
+				<input
+					ref={inputRef as React.RefObject<HTMLInputElement>}
+					type="url"
+					inputMode="url"
+					value={value}
+					onChange={(e) => onChange(e.target.value)}
+					placeholder="https://example.com"
+					className={baseClass}
+				/>
+			)
+
+		case 'signature':
+			return <SignatureInput value={value} onChange={onChange} />
+
+		// section and statement are handled at the screen level, not as inputs
+		case 'section':
+		case 'statement':
+			return null
+
 		default:
 			return (
 				<input
@@ -552,4 +823,128 @@ function QuestionInput({
 				/>
 			)
 	}
+}
+
+function SignatureInput({
+	value,
+	onChange,
+}: {
+	value: string
+	onChange: (value: string) => void
+}) {
+	const canvasRef = useRef<HTMLCanvasElement>(null)
+	const isDrawingRef = useRef(false)
+
+	useEffect(() => {
+		const canvas = canvasRef.current
+		if (!canvas) return
+		const ctx = canvas.getContext('2d')
+		if (!ctx) return
+
+		// Set canvas dimensions
+		const rect = canvas.getBoundingClientRect()
+		canvas.width = rect.width * 2
+		canvas.height = rect.height * 2
+		ctx.scale(2, 2)
+		ctx.lineCap = 'round'
+		ctx.lineJoin = 'round'
+		ctx.lineWidth = 2
+		ctx.strokeStyle = document.documentElement.classList.contains('dark') ? '#e5e7eb' : '#1f2937'
+
+		// Restore existing signature if value exists
+		if (value) {
+			const img = new Image()
+			img.onload = () => {
+				ctx.drawImage(img, 0, 0, rect.width, rect.height)
+			}
+			img.src = value
+		}
+	}, []) // Only run once on mount
+
+	const getPosition = (e: React.MouseEvent | React.TouchEvent) => {
+		const canvas = canvasRef.current
+		if (!canvas) return { x: 0, y: 0 }
+		const rect = canvas.getBoundingClientRect()
+		if ('touches' in e) {
+			return {
+				x: e.touches[0]!.clientX - rect.left,
+				y: e.touches[0]!.clientY - rect.top,
+			}
+		}
+		return {
+			x: (e as React.MouseEvent).clientX - rect.left,
+			y: (e as React.MouseEvent).clientY - rect.top,
+		}
+	}
+
+	const startDrawing = (e: React.MouseEvent | React.TouchEvent) => {
+		e.preventDefault()
+		isDrawingRef.current = true
+		const canvas = canvasRef.current
+		const ctx = canvas?.getContext('2d')
+		if (!ctx) return
+		const pos = getPosition(e)
+		ctx.beginPath()
+		ctx.moveTo(pos.x, pos.y)
+	}
+
+	const draw = (e: React.MouseEvent | React.TouchEvent) => {
+		e.preventDefault()
+		if (!isDrawingRef.current) return
+		const canvas = canvasRef.current
+		const ctx = canvas?.getContext('2d')
+		if (!ctx) return
+		const pos = getPosition(e)
+		ctx.lineTo(pos.x, pos.y)
+		ctx.stroke()
+	}
+
+	const stopDrawing = () => {
+		if (!isDrawingRef.current) return
+		isDrawingRef.current = false
+		const canvas = canvasRef.current
+		if (!canvas) return
+		onChange(canvas.toDataURL('image/png'))
+	}
+
+	const clearSignature = () => {
+		const canvas = canvasRef.current
+		const ctx = canvas?.getContext('2d')
+		if (!ctx || !canvas) return
+		const rect = canvas.getBoundingClientRect()
+		ctx.clearRect(0, 0, rect.width, rect.height)
+		onChange('')
+	}
+
+	return (
+		<div>
+			<div className="rounded-xl border-2 border-gray-200 dark:border-gray-700 overflow-hidden bg-white dark:bg-gray-900">
+				<canvas
+					ref={canvasRef}
+					className="w-full h-40 sm:h-48 cursor-crosshair touch-none"
+					onMouseDown={startDrawing}
+					onMouseMove={draw}
+					onMouseUp={stopDrawing}
+					onMouseLeave={stopDrawing}
+					onTouchStart={startDrawing}
+					onTouchMove={draw}
+					onTouchEnd={stopDrawing}
+				/>
+			</div>
+			<div className="flex items-center justify-between mt-2">
+				<p className="text-xs text-gray-400 dark:text-gray-500">
+					Draw your signature above
+				</p>
+				{value && (
+					<button
+						onClick={clearSignature}
+						className="inline-flex items-center gap-1 text-xs text-gray-400 hover:text-red-500 transition-smooth"
+					>
+						<X className="h-3 w-3" />
+						Clear
+					</button>
+				)}
+			</div>
+		</div>
+	)
 }

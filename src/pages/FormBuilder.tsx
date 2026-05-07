@@ -19,6 +19,13 @@ import {
 	CircleDot,
 	CheckSquare,
 	Eye,
+	Star,
+	ToggleLeft,
+	Clock,
+	Link,
+	SeparatorHorizontal,
+	MessageSquare,
+	PenTool,
 } from 'lucide-react'
 import { FIELD_TYPES, type FormField, type FieldType } from '../types'
 
@@ -32,6 +39,14 @@ const FIELD_ICONS: Record<FieldType, React.ReactNode> = {
 	select: <List className="h-3.5 w-3.5" />,
 	radio: <CircleDot className="h-3.5 w-3.5" />,
 	checkbox: <CheckSquare className="h-3.5 w-3.5" />,
+	rating: <Star className="h-3.5 w-3.5" />,
+	scale: <Hash className="h-3.5 w-3.5" />,
+	yesno: <ToggleLeft className="h-3.5 w-3.5" />,
+	time: <Clock className="h-3.5 w-3.5" />,
+	url: <Link className="h-3.5 w-3.5" />,
+	section: <SeparatorHorizontal className="h-3.5 w-3.5" />,
+	statement: <MessageSquare className="h-3.5 w-3.5" />,
+	signature: <PenTool className="h-3.5 w-3.5" />,
 }
 
 interface Props {
@@ -276,6 +291,9 @@ function FieldEditor({
 	onAddAfter: () => void
 }) {
 	const needsOptions = ['select', 'radio', 'checkbox'].includes(field.type)
+	const needsScaleLabels = field.type === 'scale'
+	const isDisplayOnly = field.type === 'section' || field.type === 'statement'
+	const isSignature = field.type === 'signature'
 
 	return (
 		<div
@@ -370,6 +388,26 @@ function FieldEditor({
 						</div>
 					)}
 
+					{/* Scale labels input */}
+					{needsScaleLabels && isActive && (
+						<div className="animate-fade-in">
+							<input
+								type="text"
+								value={field.options || ''}
+								onChange={(e) => onUpdate({ options: e.target.value })}
+								placeholder="Labels (comma-separated: Not likely, Very likely)"
+								className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2 text-sm outline-none focus:border-brand-400 dark:focus:border-brand-600 transition-smooth"
+							/>
+						</div>
+					)}
+
+					{/* Signature note */}
+					{isSignature && isActive && (
+						<p className="text-xs text-gray-400 dark:text-gray-500 animate-fade-in">
+							Respondent will draw their signature
+						</p>
+					)}
+
 					{/* Options preview (when not active) */}
 					{needsOptions && !isActive && field.options && (
 						<div className="flex flex-wrap gap-1.5">
@@ -388,19 +426,33 @@ function FieldEditor({
 						</div>
 					)}
 
+					{/* Scale labels preview (when not active) */}
+					{needsScaleLabels && !isActive && field.options && (
+						<div className="flex items-center gap-2 text-xs text-gray-400 dark:text-gray-500">
+							<span>1-10</span>
+							<span className="text-gray-300 dark:text-gray-600">|</span>
+							<span>{field.options}</span>
+						</div>
+					)}
+
 					{/* Bottom controls */}
 					{isActive && (
 						<div className="flex items-center justify-between pt-1 animate-fade-in">
 							<div className="flex items-center gap-4">
-								<label className="flex items-center gap-2 text-xs text-gray-500 cursor-pointer select-none">
-									<input
-										type="checkbox"
-										checked={field.required}
-										onChange={(e) => onUpdate({ required: e.target.checked })}
-										className="rounded border-gray-300"
-									/>
-									Required
-								</label>
+								{!isDisplayOnly && (
+									<label className="flex items-center gap-2 text-xs text-gray-500 cursor-pointer select-none">
+										<input
+											type="checkbox"
+											checked={field.required}
+											onChange={(e) => onUpdate({ required: e.target.checked })}
+											className="rounded border-gray-300"
+										/>
+										Required
+									</label>
+								)}
+								{isDisplayOnly && (
+									<span className="text-xs text-gray-400 dark:text-gray-500 italic">Display only</span>
+								)}
 							</div>
 							<div className="flex items-center gap-1">
 								<button
