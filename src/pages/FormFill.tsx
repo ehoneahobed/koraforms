@@ -15,8 +15,32 @@ export function FormFill({ formId, navigate }: Props) {
 	const responses = useCollection('responses')
 	const allForms = useQuery(forms.where({}).orderBy('createdAt', 'desc'))
 	// Support lookup by ID or slug
-	const form = allForms.find((f) => f.id === formId) ||
+	const localForm = allForms.find((f) => f.id === formId) ||
 		allForms.find((f) => String(f.slug) === formId && String(f.status) === 'published')
+
+	// If form not found locally, fetch from the public API (for unauthenticated visitors)
+	const [remoteForm, setRemoteForm] = useState<Record<string, unknown> | null>(null)
+	const [remoteFetched, setRemoteFetched] = useState(false)
+
+	useEffect(() => {
+		if (localForm || remoteFetched) return
+		const controller = new AbortController()
+		fetch(`/api/public/forms/${encodeURIComponent(formId)}`, { signal: controller.signal })
+			.then((res) => {
+				if (res.ok) return res.json()
+				return null
+			})
+			.then((data) => {
+				if (data && !data.error) setRemoteForm(data)
+			})
+			.catch(() => {
+				// Fetch failed (offline, network error) — stay with local data
+			})
+			.finally(() => setRemoteFetched(true))
+		return () => controller.abort()
+	}, [formId, localForm, remoteFetched])
+
+	const form = localForm || remoteForm
 
 	const { mutate: createResponse } = useMutation(
 		(data: { formId: string; data: string; submittedBy: string }) =>
@@ -167,6 +191,17 @@ export function FormFill({ formId, navigate }: Props) {
 	}, [goNext])
 
 	if (!form) {
+		// Still loading from API — show a brief loading state
+		if (!remoteFetched) {
+			return (
+				<div className="flex items-center justify-center min-h-screen">
+					<div className="text-center animate-fade-in">
+						<div className="w-8 h-8 border-2 border-gray-200 dark:border-gray-700 border-t-brand-500 rounded-full animate-spin mx-auto mb-4" />
+						<p className="text-gray-400 text-sm">Loading form...</p>
+					</div>
+				</div>
+			)
+		}
 		return (
 			<div className="flex items-center justify-center min-h-screen">
 				<div className="text-center animate-fade-in">

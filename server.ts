@@ -205,6 +205,27 @@ async function main(): Promise<void> {
 			return
 		}
 
+		// --- Public API: get published form by slug ---
+		const apiFormMatch = url.pathname.match(/^\/api\/public\/forms\/([^/]+)$/)
+		if (apiFormMatch && method === 'GET') {
+			const slug = apiFormMatch[1]
+			try {
+				const forms = await store.materializeCollection('forms')
+				const form = forms.find(
+					(f) => String(f.slug) === slug && String(f.status) === 'published',
+				)
+				if (form) {
+					sendJson(res, 200, form)
+				} else {
+					sendJson(res, 404, { error: 'Form not found' })
+				}
+			} catch (err) {
+				console.error('Public form API error:', err)
+				sendJson(res, 500, { error: 'Internal server error' })
+			}
+			return
+		}
+
 		// --- Public form OG meta injection for /f/:slug ---
 		const formMatch = url.pathname.match(/^\/f\/([^/]+)$/)
 		if (formMatch) {
@@ -212,14 +233,13 @@ async function main(): Promise<void> {
 			const indexPath = join(distDir, 'index.html')
 			if (existsSync(indexPath)) {
 				let html = readFileSync(indexPath, 'utf-8')
-				// Try to look up form by slug from the server store for OG tags
+				// Look up form by slug from the server store for OG tags
 				try {
-					const rows = await store.query<{ title: string; description: string }>(
-						'SELECT title, description FROM forms WHERE slug = ? AND status = ? LIMIT 1',
-						[slug, 'published'],
+					const forms = await store.materializeCollection('forms')
+					const formData = forms.find(
+						(f) => String(f.slug) === slug && String(f.status) === 'published',
 					)
-					if (rows.length > 0) {
-						const formData = rows[0]!
+					if (formData) {
 						const publicUrl = process.env.PUBLIC_URL || `http://localhost:${port}`
 						const ogTags = [
 							`<meta property="og:title" content="${escapeHtml(String(formData.title))}" />`,
@@ -233,7 +253,7 @@ async function main(): Promise<void> {
 						html = html.replace('</head>', `    ${ogTags}\n  </head>`)
 					}
 				} catch {
-					// If query fails (e.g., no forms table yet), just serve vanilla index.html
+					// If materialization fails, just serve vanilla index.html
 				}
 				res.writeHead(200, { 'Content-Type': 'text/html' })
 				res.end(html)
