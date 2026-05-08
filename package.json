@@ -12,10 +12,10 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@korajs/auth": "^0.3.2",
+    "@korajs/auth": "^0.3.3",
     "@korajs/core": "^0.3.2",
     "@korajs/react": "^0.3.2",
-    "@korajs/server": "^0.3.2",
+    "@korajs/server": "^0.3.3",
     "@korajs/store": "^0.3.2",
     "@sqlite.org/sqlite-wasm": ">=3.51.0-build1",
     "better-sqlite3": "^12.9.0",

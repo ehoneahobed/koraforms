@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@korajs/auth':
-        specifier: ^0.3.2
-        version: 0.3.2(better-sqlite3@12.9.0)(postgres@3.4.9)(react@19.2.6)
+        specifier: ^0.3.3
+        version: 0.3.3(better-sqlite3@12.9.0)(postgres@3.4.9)(react@19.2.6)
       '@korajs/core':
         specifier: ^0.3.2
         version: 0.3.2
@@ -18,8 +18,8 @@ importers:
         specifier: ^0.3.2
         version: 0.3.2(@sqlite.org/sqlite-wasm@3.51.0-build1)(react@19.2.6)
       '@korajs/server':
-        specifier: ^0.3.2
-        version: 0.3.2(@types/better-sqlite3@7.6.13)(postgres@3.4.9)
+        specifier: ^0.3.3
+        version: 0.3.3(@types/better-sqlite3@7.6.13)(postgres@3.4.9)
       '@korajs/store':
         specifier: ^0.3.2
         version: 0.3.2(@sqlite.org/sqlite-wasm@3.51.0-build1)
@@ -665,8 +665,8 @@ packages:
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
 
-  '@korajs/auth@0.3.2':
-    resolution: {integrity: sha512-C/PwapOotC+gzaM0Sq0/5i5KfYiAOLMEXWQrG9uZ3iZhGQMejOJO/XITZOfhlg5R9o5mxhbr5MA9jBIFEpY3Qg==}
+  '@korajs/auth@0.3.3':
+    resolution: {integrity: sha512-whkC+EE1rgVSlrN2PdKnK2zvQKEK8rSH8/uLUQoNMVg+N7HRJOe+NTZBEFKlV+quE0zOfPCUyXg8QaVbhMu6ig==}
     peerDependencies:
       better-sqlite3: ^12.0.0
       postgres: ^3.4.0
@@ -697,8 +697,8 @@ packages:
     peerDependencies:
       react: ^18.0.0 || ^19.0.0
 
-  '@korajs/server@0.3.2':
-    resolution: {integrity: sha512-z6p5NuH3jAyjhpoc/G/DDKDylqzmzi3UD7gahsckISvuZCGqTDTJEgSK/rcV7Zyj9zAmY6ph5db+ZiIsgTk3aw==}
+  '@korajs/server@0.3.3':
+    resolution: {integrity: sha512-bsWSp6E7bynm95is18GtX+NFEvUwN5RNCAv6a25NEgHdJZ5SFHi+qpJgvAvZLnkcw8Tg5O9Ro32gTlpK0j6Nbw==}
     peerDependencies:
       postgres: ^3.4.0
     peerDependenciesMeta:
@@ -2042,7 +2042,7 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
 
-  '@korajs/auth@0.3.2(better-sqlite3@12.9.0)(postgres@3.4.9)(react@19.2.6)':
+  '@korajs/auth@0.3.3(better-sqlite3@12.9.0)(postgres@3.4.9)(react@19.2.6)':
     dependencies:
       '@korajs/core': 0.3.2
     optionalDependencies:
@@ -2082,7 +2082,7 @@ snapshots:
     transitivePeerDependencies:
       - '@sqlite.org/sqlite-wasm'
 
-  '@korajs/server@0.3.2(@types/better-sqlite3@7.6.13)(postgres@3.4.9)':
+  '@korajs/server@0.3.3(@types/better-sqlite3@7.6.13)(postgres@3.4.9)':
     dependencies:
       '@korajs/core': 0.3.2
       '@korajs/sync': 0.3.2
