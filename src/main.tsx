@@ -17,9 +17,11 @@ const app = createApp({
 	sync: {
 		url: syncUrl,
 		auth: async () => {
+			// Return token if authenticated, empty string for anonymous sync.
+			// The server accepts both: authenticated users get full access,
+			// anonymous users get scoped write access to 'responses' only.
 			const token = await authClient.getAccessToken()
-			if (!token) throw new Error('Not authenticated')
-			return { token }
+			return { token: token ?? '' }
 		},
 	},
 	store: {

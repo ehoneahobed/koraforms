@@ -11,7 +11,7 @@ import {
 	createSqliteUserStore,
 	createPostgresUserStore,
 } from '@korajs/auth/server'
-import { defineSchema, t, generateUUIDv7, HybridLogicalClock, createOperation } from '@korajs/core'
+import { defineSchema, t } from '@korajs/core'
 import type { ServerStore } from '@korajs/server'
 import type { UserStore } from '@korajs/auth/server'
 
@@ -88,18 +88,34 @@ async function main(): Promise<void> {
 		tokenManager,
 	})
 
-	// Server-side clock + nodeId for creating operations from public API
-	const serverNodeId = generateUUIDv7()
-	const serverClock = new HybridLogicalClock(serverNodeId)
-	let serverSeqNum = 0
-
 	// -----------------------------------------------------------------------
-	// Sync server with auth
+	// Sync server with auth (supports both authenticated + anonymous users)
 	// -----------------------------------------------------------------------
 
+	// Authenticated users get full access. Anonymous users (public form
+	// respondents) get scoped access: they can only sync the 'responses'
+	// collection. This preserves full offline-first for everyone — a
+	// respondent in a remote area saves locally and syncs when connected.
+	const authenticatedAuthProvider = authRoutes.toSyncAuthProvider()
 	const syncServer = new KoraSyncServer({
 		store,
-		auth: authRoutes.toSyncAuthProvider(),
+		auth: {
+			async authenticate(token: string) {
+				// Try authenticated path first
+				if (token) {
+					const ctx = await authenticatedAuthProvider.authenticate(token)
+					if (ctx) return ctx
+				}
+				// Fall back to anonymous scoped access
+				return {
+					userId: `anon-${Date.now()}`,
+					scopes: {
+						// Anonymous users can only sync the responses collection
+						responses: {},
+					},
+				}
+			},
+		},
 	})
 
 	// -----------------------------------------------------------------------
@@ -268,64 +284,6 @@ async function main(): Promise<void> {
 			} catch (err) {
 				console.error('Public form API error:', err)
 				sendJson(res, 500, { error: 'Internal server error' })
-			}
-			return
-		}
-
-		// --- Public API: submit a form response (no auth required) ---
-		if (url.pathname === '/api/public/responses' && method === 'POST') {
-			try {
-				const body = JSON.parse(await readBody(req))
-				const { formId, data } = body
-				if (!formId || typeof formId !== 'string') {
-					sendJson(res, 400, { error: 'formId is required' })
-					return
-				}
-
-				// Verify the form exists and is published
-				const [form] = await store.queryCollection('forms', {
-					where: { id: formId, status: 'published' },
-					limit: 1,
-				})
-				if (!form) {
-					// Also try finding by slug
-					const [formBySlug] = await store.queryCollection('forms', {
-						where: { slug: formId, status: 'published' },
-						limit: 1,
-					})
-					if (!formBySlug) {
-						sendJson(res, 404, { error: 'Form not found or not published' })
-						return
-					}
-				}
-				const realFormId = form ? String(form.id) : formId
-
-				const recordId = generateUUIDv7()
-				serverSeqNum++
-				const op = await createOperation(
-					{
-						nodeId: serverNodeId,
-						type: 'insert',
-						collection: 'responses',
-						recordId,
-						data: {
-							formId: realFormId,
-							data: typeof data === 'string' ? data : JSON.stringify(data ?? {}),
-							submittedBy: body.submittedBy ?? '',
-						},
-						previousData: null,
-						sequenceNumber: serverSeqNum,
-						causalDeps: [],
-						schemaVersion: 3,
-					},
-					serverClock,
-				)
-
-				await store.applyRemoteOperation(op)
-				sendJson(res, 201, { id: recordId, status: 'saved' })
-			} catch (err) {
-				console.error('Public response submission error:', err)
-				sendJson(res, 500, { error: 'Failed to save response' })
 			}
 			return
 		}

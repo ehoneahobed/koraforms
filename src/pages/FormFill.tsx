@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useQuery, useMutation, useCollection } from '@korajs/react'
-import { useAuth } from '@korajs/auth/react'
 import { ArrowLeft, ArrowRight, Check, Send, Star, X } from 'lucide-react'
 import type { FormField } from '../types'
 import { getThemeCSSVars } from '../themes'
@@ -12,7 +11,6 @@ interface Props {
 }
 
 export function FormFill({ formId, navigate }: Props) {
-	const { isAuthenticated } = useAuth()
 	const forms = useCollection('forms')
 	const responses = useCollection('responses')
 	const allForms = useQuery(forms.where({}).orderBy('createdAt', 'desc'))
@@ -150,32 +148,16 @@ export function FormFill({ formId, navigate }: Props) {
 		} else {
 			// Submit — use form.id (not the slug from the URL) as the real record ID
 			const realFormId = String(form?.id || formId)
-
-			if (isAuthenticated) {
-				// Authenticated user: submit via Kora sync
-				createResponse({
-					formId: realFormId,
-					data: JSON.stringify(values),
-					submittedBy: '',
-				})
-				const currentCount = Number(form?.responseCount) || 0
-				updateForm(realFormId, { responseCount: currentCount + 1 })
-			} else {
-				// Public respondent: submit via REST API (no sync auth needed)
-				fetch('/api/public/responses', {
-					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({
-						formId: realFormId,
-						data: JSON.stringify(values),
-					}),
-				}).catch(() => {
-					// Offline — response cannot be saved without auth
-				})
-			}
+			createResponse({
+				formId: realFormId,
+				data: JSON.stringify(values),
+				submittedBy: '',
+			})
+			const currentCount = Number(form?.responseCount) || 0
+			updateForm(realFormId, { responseCount: currentCount + 1 })
 			setSubmitted(true)
 		}
-	}, [currentIndex, fields.length, formId, values, form, validateCurrent, createResponse, updateForm, isAuthenticated])
+	}, [currentIndex, fields.length, formId, values, form, validateCurrent, createResponse, updateForm])
 
 	const goBack = () => {
 		if (currentIndex > 0) {
