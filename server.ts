@@ -11,8 +11,42 @@ import {
 	createSqliteUserStore,
 	createPostgresUserStore,
 } from '@korajs/auth/server'
+import { defineSchema, t } from '@korajs/core'
 import type { ServerStore } from '@korajs/server'
 import type { UserStore } from '@korajs/auth/server'
+
+// ---------------------------------------------------------------------------
+// KoraForms schema (shared between client and server for materialized tables)
+// ---------------------------------------------------------------------------
+
+const koraFormsSchema = defineSchema({
+	version: 3,
+	collections: {
+		forms: {
+			fields: {
+				title: t.string(),
+				description: t.string().default(''),
+				fields: t.string().default('[]'),
+				status: t.string().default('draft'),
+				theme: t.string().default('indigo'),
+				responseCount: t.number().default(0),
+				ownerId: t.string().default(''),
+				slug: t.string().default(''),
+				createdAt: t.timestamp().auto(),
+			},
+			indexes: ['status', 'createdAt', 'ownerId', 'slug'],
+		},
+		responses: {
+			fields: {
+				formId: t.string(),
+				data: t.string().default('{}'),
+				submittedBy: t.string().default(''),
+				submittedAt: t.timestamp().auto(),
+			},
+			indexes: ['formId', 'submittedAt'],
+		},
+	},
+})
 
 // ---------------------------------------------------------------------------
 // Storage & Auth setup
@@ -38,6 +72,12 @@ async function createStores(): Promise<{ store: ServerStore; userStore: UserStor
 
 async function main(): Promise<void> {
 	const { store, userStore } = await createStores()
+
+	// Enable materialized collection tables for efficient indexed queries.
+	// This creates actual 'forms' and 'responses' tables alongside the operations log,
+	// and backfills them from existing operations if any.
+	await store.setSchema(koraFormsSchema)
+	console.log('Materialized collection tables initialized')
 
 	const tokenManager = new TokenManager({
 		secret: process.env.AUTH_SECRET || 'koraforms-dev-secret-change-in-production',
@@ -210,10 +250,11 @@ async function main(): Promise<void> {
 		if (apiFormMatch && method === 'GET') {
 			const slug = apiFormMatch[1]
 			try {
-				const forms = await store.materializeCollection('forms')
-				const form = forms.find(
-					(f) => String(f.slug) === slug && String(f.status) === 'published',
-				)
+				// Indexed query on materialized 'forms' table — O(1) via slug + status indexes
+				const [form] = await store.queryCollection('forms', {
+					where: { slug, status: 'published' },
+					limit: 1,
+				})
 				if (form) {
 					sendJson(res, 200, form)
 				} else {
@@ -233,12 +274,12 @@ async function main(): Promise<void> {
 			const indexPath = join(distDir, 'index.html')
 			if (existsSync(indexPath)) {
 				let html = readFileSync(indexPath, 'utf-8')
-				// Look up form by slug from the server store for OG tags
+				// Look up form by slug from the materialized table for OG tags
 				try {
-					const forms = await store.materializeCollection('forms')
-					const formData = forms.find(
-						(f) => String(f.slug) === slug && String(f.status) === 'published',
-					)
+					const [formData] = await store.queryCollection('forms', {
+						where: { slug, status: 'published' },
+						limit: 1,
+					})
 					if (formData) {
 						const publicUrl = process.env.PUBLIC_URL || `http://localhost:${port}`
 						const ogTags = [
