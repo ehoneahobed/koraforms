@@ -22,7 +22,6 @@ RUN corepack enable
 # Copy built assets and server files
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/server.ts ./
-COPY --from=builder /app/sqlite-user-store.ts ./
 COPY --from=builder /app/package.json ./
 COPY --from=builder /app/pnpm-lock.yaml ./
 

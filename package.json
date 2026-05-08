@@ -12,14 +12,14 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@korajs/auth": "^0.3.0",
-    "@korajs/core": "^0.3.0",
-    "@korajs/react": "^0.3.0",
-    "@korajs/server": "^0.3.0",
-    "@korajs/store": "^0.3.0",
+    "@korajs/auth": "^0.3.2",
+    "@korajs/core": "^0.3.2",
+    "@korajs/react": "^0.3.2",
+    "@korajs/server": "^0.3.2",
+    "@korajs/store": "^0.3.2",
     "@sqlite.org/sqlite-wasm": ">=3.51.0-build1",
     "better-sqlite3": "^12.9.0",
-    "korajs": "^0.3.0",
+    "korajs": "^0.3.2",
     "lucide-react": "^0.468.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
@@ -34,21 +34,10 @@
       "better-sqlite3",
       "esbuild",
       "protobufjs"
-    ],
-    "overrides": {
-      "@korajs/auth": "link:../Kora/packages/auth",
-      "@korajs/server": "link:../Kora/packages/server",
-      "@korajs/core": "link:../Kora/packages/core",
-      "@korajs/store": "link:../Kora/packages/store",
-      "@korajs/sync": "link:../Kora/packages/sync",
-      "@korajs/merge": "link:../Kora/packages/merge",
-      "@korajs/react": "link:../Kora/packages/react",
-      "@korajs/cli": "link:../Kora/packages/cli",
-      "korajs": "link:../Kora/kora"
-    }
+    ]
   },
   "devDependencies": {
-    "@korajs/cli": "^0.3.0",
+    "@korajs/cli": "^0.3.2",
     "@tailwindcss/vite": "^4.0.0",
     "@types/better-sqlite3": "^7.6.13",
     "@types/react": "^19.0.0",
