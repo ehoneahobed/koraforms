@@ -1,7 +1,7 @@
 import { defineSchema, t } from 'korajs'
 
 export default defineSchema({
-	version: 3,
+	version: 4,
 	collections: {
 		// A form definition (e.g. "Customer Feedback", "Event Registration")
 		forms: {
@@ -11,10 +11,15 @@ export default defineSchema({
 				// JSON-encoded array of field definitions
 				// Each field: { id, type, label, required, options? }
 				fields: t.string().default('[]'),
-				status: t.string().default('draft'), // draft | published | closed
+				status: t.enum(['draft', 'published', 'closed']).default('draft').transitions({
+					draft: ['published', 'closed'],
+					published: ['draft', 'closed'],
+					closed: [],
+				}),
 				// Color theme preset id (e.g. 'indigo', 'rose', 'emerald')
 				theme: t.string().default('indigo'),
-				responseCount: t.number().default(0),
+				// Counter merge: concurrent submissions add rather than overwrite
+				responseCount: t.number().default(0).merge('counter'),
 				// User who created this form
 				ownerId: t.string().default(''),
 				// URL-friendly slug for shareable links
@@ -22,6 +27,12 @@ export default defineSchema({
 				createdAt: t.timestamp().auto(),
 			},
 			indexes: ['status', 'createdAt', 'ownerId', 'slug'],
+			constraints: [{
+				type: 'unique',
+				fields: ['slug'],
+				where: { status: { $ne: 'draft' } },
+				onConflict: 'first-write-wins',
+			}],
 		},
 
 		// A single form submission

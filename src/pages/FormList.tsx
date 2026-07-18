@@ -34,11 +34,13 @@ interface Props {
 
 export function FormList({ navigate, userId }: Props) {
 	const forms = useCollection('forms')
+	const responsesCol = useCollection('responses')
 	const allForms = useQuery(
 		userId
 			? forms.where({ ownerId: userId }).orderBy('createdAt', 'desc')
 			: forms.where({}).orderBy('createdAt', 'desc'),
 	)
+	const allResponses = useQuery(responsesCol.where({}).orderBy('submittedAt', 'desc'))
 	const { mutate: deleteForm } = useMutation((id: string) => forms.delete(id))
 	const { mutate: createForm } = useMutation(
 		(data: { title: string; description: string; fields: string; status: string; ownerId: string }) =>
@@ -88,7 +90,15 @@ export function FormList({ navigate, userId }: Props) {
 
 	const published = allForms.filter((f) => String(f.status) === 'published')
 	const drafts = allForms.filter((f) => String(f.status) !== 'published')
-	const totalResponses = allForms.reduce((sum, f) => sum + (Number(f.responseCount) || 0), 0)
+
+	// Derive response counts from actual responses data (not the stored responseCount field,
+	// which can't be updated by anonymous respondents due to sync scoping)
+	const responseCountMap = new Map<string, number>()
+	for (const r of allResponses) {
+		const fid = String(r.formId)
+		responseCountMap.set(fid, (responseCountMap.get(fid) || 0) + 1)
+	}
+	const totalResponses = allResponses.length
 
 	const filteredForms =
 		filter === 'published' ? published
@@ -222,6 +232,7 @@ export function FormList({ navigate, userId }: Props) {
 							onCopyLink={() => handleCopyLink(form)}
 							onShare={() => setShareForm(form)}
 							isCopied={copiedId === form.id}
+							responseCount={responseCountMap.get(String(form.id)) || 0}
 						/>
 					))}
 				</div>
@@ -306,6 +317,7 @@ function FormCard({
 	onCopyLink,
 	onShare,
 	isCopied,
+	responseCount,
 }: {
 	form: Record<string, unknown>
 	navigate: (path: string) => void
@@ -314,11 +326,11 @@ function FormCard({
 	onCopyLink: () => void
 	onShare: () => void
 	isCopied: boolean
+	responseCount: number
 }) {
 	const [menuOpen, setMenuOpen] = useState(false)
 	const menuRef = useRef<HTMLDivElement>(null)
 	const isPublished = String(form.status) === 'published'
-	const responseCount = Number(form.responseCount) || 0
 	const themeColor = getThemeById(String(form.theme || 'indigo')).preview
 
 	let fieldCount = 0

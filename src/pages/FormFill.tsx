@@ -46,9 +46,6 @@ export function FormFill({ formId, navigate }: Props) {
 		(data: { formId: string; data: string; submittedBy: string }) =>
 			responses.insert(data),
 	)
-	const { mutate: updateForm } = useMutation(
-		(id: string, data: Record<string, unknown>) => forms.update(id, data),
-	)
 
 	const [currentIndex, setCurrentIndex] = useState(-1) // -1 = welcome screen
 	const [values, setValues] = useState<Record<string, string>>({})
@@ -153,11 +150,9 @@ export function FormFill({ formId, navigate }: Props) {
 				data: JSON.stringify(values),
 				submittedBy: '',
 			})
-			const currentCount = Number(form?.responseCount) || 0
-			updateForm(realFormId, { responseCount: currentCount + 1 })
 			setSubmitted(true)
 		}
-	}, [currentIndex, fields.length, formId, values, form, validateCurrent, createResponse, updateForm])
+	}, [currentIndex, fields.length, formId, values, form, validateCurrent, createResponse])
 
 	const goBack = () => {
 		if (currentIndex > 0) {

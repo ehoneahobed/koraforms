@@ -2,12 +2,11 @@ import { createServer } from 'node:http'
 import { createReadStream, existsSync, statSync, readFileSync } from 'node:fs'
 import { extname, join, resolve } from 'node:path'
 import { WebSocketServer } from 'ws'
-import { createSqliteServerStore, createPostgresServerStore } from '@korajs/server'
+import { createSqliteServerStore, createPostgresServerStore, MixedAuthProvider } from '@korajs/server'
 import { KoraSyncServer } from '@korajs/server'
 import { WsServerTransport } from '@korajs/server'
 import {
-	BuiltInAuthRoutes,
-	TokenManager,
+	createKoraAuthServer,
 	createSqliteUserStore,
 	createPostgresUserStore,
 } from '@korajs/auth/server'
@@ -20,21 +19,31 @@ import type { UserStore } from '@korajs/auth/server'
 // ---------------------------------------------------------------------------
 
 const koraFormsSchema = defineSchema({
-	version: 3,
+	version: 4,
 	collections: {
 		forms: {
 			fields: {
 				title: t.string(),
 				description: t.string().default(''),
 				fields: t.string().default('[]'),
-				status: t.string().default('draft'),
+				status: t.enum(['draft', 'published', 'closed']).default('draft').transitions({
+					draft: ['published', 'closed'],
+					published: ['draft', 'closed'],
+					closed: [],
+				}),
 				theme: t.string().default('indigo'),
-				responseCount: t.number().default(0),
+				responseCount: t.number().default(0).merge('counter'),
 				ownerId: t.string().default(''),
 				slug: t.string().default(''),
 				createdAt: t.timestamp().auto(),
 			},
 			indexes: ['status', 'createdAt', 'ownerId', 'slug'],
+			constraints: [{
+				type: 'unique',
+				fields: ['slug'],
+				where: { status: { $ne: 'draft' } },
+				onConflict: 'first-write-wins',
+			}],
 		},
 		responses: {
 			fields: {
@@ -70,6 +79,24 @@ async function createStores(): Promise<{ store: ServerStore; userStore: UserStor
 	return { store, userStore }
 }
 
+/** Convert Node IncomingMessage to KoraAuthHttpRequest for handleRequest() */
+function toAuthRequest(
+	req: import('node:http').IncomingMessage,
+	url: URL,
+	body?: unknown,
+): import('@korajs/auth/server').KoraAuthHttpRequest {
+	const forwarded = req.headers['x-forwarded-for']
+	const ip = typeof forwarded === 'string' ? forwarded.split(',')[0]!.trim() : req.socket.remoteAddress || '127.0.0.1'
+	return {
+		method: req.method || 'GET',
+		path: url.pathname,
+		body,
+		headers: req.headers as Record<string, string | string[] | undefined>,
+		query: Object.fromEntries(url.searchParams.entries()),
+		ip,
+	}
+}
+
 async function main(): Promise<void> {
 	const { store, userStore } = await createStores()
 
@@ -79,13 +106,9 @@ async function main(): Promise<void> {
 	await store.setSchema(koraFormsSchema)
 	console.log('Materialized collection tables initialized')
 
-	const tokenManager = new TokenManager({
-		secret: process.env.AUTH_SECRET || 'koraforms-dev-secret-change-in-production',
-	})
-
-	const authRoutes = new BuiltInAuthRoutes({
+	const auth = createKoraAuthServer({
 		userStore,
-		tokenManager,
+		jwtSecret: process.env.KORA_AUTH_SECRET || 'koraforms-dev-secret-change-in-production',
 	})
 
 	// -----------------------------------------------------------------------
@@ -96,26 +119,12 @@ async function main(): Promise<void> {
 	// respondents) get scoped access: they can only sync the 'responses'
 	// collection. This preserves full offline-first for everyone — a
 	// respondent in a remote area saves locally and syncs when connected.
-	const authenticatedAuthProvider = authRoutes.toSyncAuthProvider()
 	const syncServer = new KoraSyncServer({
 		store,
-		auth: {
-			async authenticate(token: string) {
-				// Try authenticated path first
-				if (token) {
-					const ctx = await authenticatedAuthProvider.authenticate(token)
-					if (ctx) return ctx
-				}
-				// Fall back to anonymous scoped access
-				return {
-					userId: `anon-${Date.now()}`,
-					scopes: {
-						// Anonymous users can only sync the responses collection
-						responses: {},
-					},
-				}
-			},
-		},
+		auth: new MixedAuthProvider({
+			primary: auth.auth,
+			anonymousScopes: { responses: {} },
+		}),
 	})
 
 	// -----------------------------------------------------------------------
@@ -160,17 +169,6 @@ async function main(): Promise<void> {
 		res.end(JSON.stringify(data))
 	}
 
-	function getToken(req: import('node:http').IncomingMessage): string | undefined {
-		const auth = req.headers.authorization
-		if (auth?.startsWith('Bearer ')) return auth.slice(7)
-		return undefined
-	}
-
-	function getClientIp(req: import('node:http').IncomingMessage): string {
-		const forwarded = req.headers['x-forwarded-for']
-		if (typeof forwarded === 'string') return forwarded.split(',')[0]!.trim()
-		return req.socket.remoteAddress || '127.0.0.1'
-	}
 
 	function escapeHtml(str: string): string {
 		return str.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -210,59 +208,17 @@ async function main(): Promise<void> {
 			return
 		}
 
-		// --- Auth routes ---
-		try {
-			if (url.pathname === '/auth/signup' && method === 'POST') {
-				const body = JSON.parse(await readBody(req))
-				const result = await authRoutes.handleSignUp(body, getClientIp(req))
+		// --- Auth routes (delegated to createKoraAuthServer handleRequest) ---
+		if (url.pathname.startsWith('/auth/')) {
+			try {
+				const body = method === 'POST' ? JSON.parse(await readBody(req)) : undefined
+				const result = await auth.handleRequest(toAuthRequest(req, url, body))
 				sendJson(res, result.status, result.body)
-				return
+			} catch (err) {
+				const message = err instanceof Error ? err.message : String(err)
+				console.error('Auth route error:', message)
+				sendJson(res, 500, { error: message || 'Internal server error' })
 			}
-
-			if (url.pathname === '/auth/signin' && method === 'POST') {
-				const body = JSON.parse(await readBody(req))
-				const result = await authRoutes.handleSignIn(body, getClientIp(req))
-				sendJson(res, result.status, result.body)
-				return
-			}
-
-			if (url.pathname === '/auth/refresh' && method === 'POST') {
-				const body = JSON.parse(await readBody(req))
-				const result = await authRoutes.handleRefresh(body)
-				sendJson(res, result.status, result.body)
-				return
-			}
-
-			if (url.pathname === '/auth/signout' && method === 'POST') {
-				const token = getToken(req)
-				if (!token) { sendJson(res, 401, { error: 'Unauthorized' }); return }
-				const body = JSON.parse(await readBody(req))
-				const result = await authRoutes.handleSignOut(token, body)
-				sendJson(res, result.status, result.body)
-				return
-			}
-
-			if (url.pathname === '/auth/me' && method === 'GET') {
-				const token = getToken(req)
-				if (!token) { sendJson(res, 401, { error: 'Unauthorized' }); return }
-				const result = await authRoutes.handleGetMe(token)
-				sendJson(res, result.status, result.body)
-				return
-			}
-
-			if (url.pathname === '/auth/devices' && method === 'GET') {
-				const token = getToken(req)
-				if (!token) { sendJson(res, 401, { error: 'Unauthorized' }); return }
-				const result = await authRoutes.handleListDevices(token)
-				sendJson(res, result.status, result.body)
-				return
-			}
-		} catch (err) {
-			const message = err instanceof Error ? err.message : String(err)
-			const stack = err instanceof Error ? err.stack : undefined
-			console.error('Auth route error:', message)
-			if (stack) console.error(stack)
-			sendJson(res, 500, { error: message || 'Internal server error' })
 			return
 		}
 
