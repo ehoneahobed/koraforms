@@ -1,0 +1,54 @@
+# Azure Container Apps configuration
+# Apply with: az containerapp update --name koraforms --resource-group koraforms-rg --yaml containerapp.yaml
+#
+# This file configures:
+#   - Volume mount for SQLite persistence (Azure Files)
+#   - Scale-to-zero with HTTP scaling rule
+#   - WebSocket transport support
+#
+# Portable: when migrating to AWS/GCP, this file is replaced by their
+# equivalent (ECS task definition, Cloud Run YAML) — the Dockerfile stays the same.
+
+properties:
+  configuration:
+    ingress:
+      external: true
+      targetPort: 3001
+      transport: http
+      # WebSocket connections require session affinity
+      stickySessions:
+        affinity: sticky
+    secrets:
+      - name: kora-auth-secret
+        value: "" # Set via: az containerapp secret set --name koraforms --resource-group koraforms-rg --secrets kora-auth-secret=<value>
+  template:
+    containers:
+      - name: koraforms
+        image: "" # Set by CI/CD pipeline
+        resources:
+          cpu: 0.25
+          memory: 0.5Gi
+        env:
+          - name: KORA_AUTH_SECRET
+            secretRef: kora-auth-secret
+          - name: DB_PATH
+            value: /data/koraforms-server.db
+          - name: NODE_ENV
+            value: production
+          - name: PORT
+            value: "3001"
+        volumeMounts:
+          - volumeName: data
+            mountPath: /data
+    volumes:
+      - name: data
+        storageType: AzureFile
+        storageName: koraformsstorage
+    scale:
+      minReplicas: 0
+      maxReplicas: 3
+      rules:
+        - name: http-rule
+          http:
+            metadata:
+              concurrentRequests: "50"
