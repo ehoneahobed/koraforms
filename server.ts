@@ -103,6 +103,19 @@ async function main(): Promise<void> {
 	const port = Number(process.env.PORT) || 3001
 	const distDir = resolve('./dist')
 
+	// CORS headers for dev mode (client on different port)
+	const corsHeaders: Record<string, string> = process.env.NODE_ENV !== 'production'
+		? {
+			'Access-Control-Allow-Origin': '*',
+			'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+			'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+		}
+		: {}
+
+	function withCors(response: ProductionHttpRouteResponse): ProductionHttpRouteResponse {
+		return { ...response, headers: { ...response.headers, ...corsHeaders } }
+	}
+
 	// -----------------------------------------------------------------------
 	// Production server — handles static files, WebSocket sync, CORS, health
 	// check, metrics, admin dashboard, and backup endpoints automatically.
@@ -119,12 +132,23 @@ async function main(): Promise<void> {
 				primary: auth.auth,
 				anonymousScopes: { responses: {} },
 			}),
+			schemaVersion: 4,
 		},
 		httpRoutes: [
 			// Auth routes — signup, signin, refresh, signout, me, devices
 			{
 				path: '/auth',
-				handle: (req) => auth.handleRequest(req) as Promise<ProductionHttpRouteResponse>,
+				async handle(req) {
+					if (req.method === 'OPTIONS') {
+						return withCors({ status: 204 })
+					}
+					try {
+						return withCors(await auth.handleRequest(req) as ProductionHttpRouteResponse)
+					} catch (err) {
+						console.error('Auth route error:', err)
+						return withCors({ status: 500, body: { error: 'Internal auth error' } })
+					}
+				},
 			},
 			// Public API: get published form by slug
 			{
@@ -132,7 +156,7 @@ async function main(): Promise<void> {
 				async handle(req: ProductionHttpRouteRequest): Promise<ProductionHttpRouteResponse> {
 					const slug = req.path.replace('/api/public/forms/', '').replace(/\/$/, '')
 					if (!slug || req.method !== 'GET') {
-						return { status: 404, body: { error: 'Not found' } }
+						return withCors({ status: 404, body: { error: 'Not found' } })
 					}
 					try {
 						const [form] = await store.queryCollection('forms', {
@@ -140,11 +164,11 @@ async function main(): Promise<void> {
 							limit: 1,
 						})
 						if (form) {
-							return { status: 200, body: form }
+							return withCors({ status: 200, body: form })
 						}
-						return { status: 404, body: { error: 'Form not found' } }
+						return withCors({ status: 404, body: { error: 'Form not found' } })
 					} catch {
-						return { status: 500, body: { error: 'Internal server error' } }
+						return withCors({ status: 500, body: { error: 'Internal server error' } })
 					}
 				},
 			},

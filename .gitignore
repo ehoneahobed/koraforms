@@ -6,3 +6,4 @@ kora/
 .env
 *.db-shm
 *.db-wal
+.DS_Store

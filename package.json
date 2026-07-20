@@ -4,12 +4,19 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "kora dev",
-    "dev:server": "tsx server.ts",
+    "dev": "concurrently -k -n vite,server -c cyan,green \"vite\" \"node --import tsx --watch server.ts\"",
+    "dev:vite": "vite",
+    "dev:server": "node --import tsx --watch server.ts",
     "build": "vite build",
     "typecheck": "tsc --noEmit",
     "start": "node --import tsx server.ts",
-    "preview": "vite preview"
+    "preview": "vite build && node --import tsx server.ts",
+    "doctor": "kora doctor",
+    "studio": "kora studio --db ./koraforms-server.db",
+    "studio:live": "kora studio --connect ws://localhost:3001/kora-sync",
+    "studio:lab": "kora studio --lab --schema ./src/schema.ts",
+    "logs": "kora logs --url http://localhost:3001",
+    "postinstall": "node --import tsx scripts/patch-server.js"
   },
   "dependencies": {
     "@korajs/auth": "1.0.0-beta.0",
@@ -21,10 +28,10 @@
     "better-sqlite3": "^12.9.0",
     "korajs": "1.0.0-beta.0",
     "lucide-react": "^0.468.0",
+    "postgres": "^3.4.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-router-dom": "^7.15.0",
-    "postgres": "^3.4.0",
     "tsx": "^4.19.0",
     "ws": "^8.18.0",
     "yjs": "^13.6.30"
@@ -44,6 +51,7 @@
     "@types/react-dom": "^19.0.0",
     "@types/ws": "^8.5.0",
     "@vitejs/plugin-react": "^4.3.0",
+    "concurrently": "^10.0.3",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.7.0",
     "vite": "^6.0.0"
