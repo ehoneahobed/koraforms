@@ -38,8 +38,9 @@ if (email && password) {
 			body: JSON.stringify({ email, password }),
 		})
 		const data = await res.json()
-		if (data.accessToken) {
-			tokenArg = ` --token ${data.accessToken}`
+		const token = data.accessToken || data.data?.tokens?.accessToken
+		if (token) {
+			tokenArg = ` --token ${token}`
 			console.log(`Authenticated as ${email}`)
 		} else {
 			console.warn(`Auth failed: ${data.error || 'unknown error'} — connecting anonymously`)
