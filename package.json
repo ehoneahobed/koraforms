@@ -13,8 +13,8 @@
     "preview": "vite build && node --import tsx server.ts",
     "doctor": "kora doctor",
     "studio": "kora studio --db ./koraforms-server.db",
-    "studio:live": "kora studio --connect ws://localhost:3001/kora-sync",
-    "studio:prod": "kora studio --connect wss://forms.korajs.dev/kora-sync",
+    "studio:live": "kora studio --connect ws://localhost:3001/kora-sync --schema ./src/schema.ts",
+    "studio:prod": "kora studio --connect wss://forms.korajs.dev/kora-sync --schema ./src/schema.ts",
     "studio:lab": "kora studio --lab --schema ./src/schema.ts",
     "logs": "kora logs --url http://localhost:3001",
     "postinstall": "node scripts/patch-server.js"

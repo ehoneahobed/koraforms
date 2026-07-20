@@ -1,5 +1,4 @@
-import { readFileSync, existsSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { resolve } from 'node:path'
 import {
 	createSqliteServerStore,
 	createPostgresServerStore,
@@ -79,10 +78,6 @@ async function createStores(): Promise<{ store: ServerStore; userStore: UserStor
 	const store = createSqliteServerStore({ filename: dbPath })
 	const userStore = await createSqliteUserStore({ filename: dbPath })
 	return { store, userStore }
-}
-
-function escapeHtml(str: string): string {
-	return str.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
 // ---------------------------------------------------------------------------
@@ -172,47 +167,10 @@ async function main(): Promise<void> {
 					}
 				},
 			},
-			// OG meta injection for social sharing on /f/:slug
-			{
-				path: '/f',
-				async handle(req: ProductionHttpRouteRequest): Promise<ProductionHttpRouteResponse> {
-					const slug = req.path.replace('/f/', '').replace(/\/$/, '')
-					if (!slug) {
-						return { status: 404, body: { error: 'Not found' } }
-					}
-					const indexPath = join(distDir, 'index.html')
-					if (!existsSync(indexPath)) {
-						return { status: 404, body: { error: 'Not found' } }
-					}
-					let html = readFileSync(indexPath, 'utf-8')
-					try {
-						const [formData] = await store.queryCollection('forms', {
-							where: { slug, status: 'published' },
-							limit: 1,
-						})
-						if (formData) {
-							const publicUrl = process.env.PUBLIC_URL || `http://localhost:${port}`
-							const ogTags = [
-								`<meta property="og:title" content="${escapeHtml(String(formData.title))}" />`,
-								`<meta property="og:description" content="${escapeHtml(String(formData.description || 'Fill out this form on KoraForms'))}" />`,
-								`<meta property="og:url" content="${publicUrl}/f/${slug}" />`,
-								`<meta property="og:type" content="website" />`,
-								`<meta name="twitter:card" content="summary" />`,
-								`<meta name="twitter:title" content="${escapeHtml(String(formData.title))}" />`,
-								`<meta name="twitter:description" content="${escapeHtml(String(formData.description || 'Fill out this form on KoraForms'))}" />`,
-							].join('\n    ')
-							html = html.replace('</head>', `    ${ogTags}\n  </head>`)
-						}
-					} catch {
-						// If materialization fails, serve vanilla index.html
-					}
-					return {
-						status: 200,
-						body: html,
-						headers: { 'Content-Type': 'text/html' },
-					}
-				},
-			},
+			// Note: /f/:slug is handled by the SPA (React Router).
+			// The framework's writeJsonResponse always JSON-stringifies the body,
+			// so we can't serve raw HTML from httpRoutes. OG meta tags for social
+			// sharing can be added later via a middleware or framework update.
 		],
 		operationalAuth: {
 			adminToken: process.env.KORA_ADMIN_TOKEN,
