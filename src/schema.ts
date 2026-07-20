@@ -16,8 +16,8 @@ export default defineSchema({
 					published: ['draft', 'closed'],
 					closed: [],
 				}),
-				// Color theme preset id (e.g. 'indigo', 'rose', 'emerald')
-				theme: t.string().default('indigo'),
+				// Color theme preset id (e.g. 'blue', 'rose', 'emerald')
+				theme: t.string().default('blue'),
 				// Counter merge: concurrent submissions add rather than overwrite
 				responseCount: t.number().default(0).merge('counter'),
 				// User who created this form

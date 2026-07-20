@@ -213,7 +213,7 @@ function FormBuilderPage({ navigate, userId }: { navigate: (path: string) => voi
 			fields: JSON.stringify(template?.fields || []),
 			status: 'draft',
 			ownerId: userId,
-			theme: 'indigo',
+			theme: 'blue',
 		}
 
 		createForm(data).then((record) => {

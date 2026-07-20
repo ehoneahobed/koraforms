@@ -19,7 +19,7 @@ export const app = createApp({
 	store: {
 		workerUrl: koraWorkerUrl,
 	},
-	devtools: true,
+	devtools: import.meta.env.DEV,
 })
 
 export type App = typeof app

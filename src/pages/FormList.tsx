@@ -80,7 +80,7 @@ export function FormList({ navigate, userId }: Props) {
 			fields: String(form.fields || '[]'),
 			status: 'draft',
 			ownerId: userId,
-			theme: String(form.theme || 'indigo'),
+			theme: String(form.theme || 'blue'),
 		})
 	}
 
@@ -335,7 +335,7 @@ function FormCard({
 	const [menuOpen, setMenuOpen] = useState(false)
 	const menuRef = useRef<HTMLDivElement>(null)
 	const isPublished = String(form.status) === 'published'
-	const themeColor = getThemeById(String(form.theme || 'indigo')).preview
+	const themeColor = getThemeById(String(form.theme || 'blue')).preview
 
 	let fieldCount = 0
 	try {

@@ -33,7 +33,7 @@ const koraFormsSchema = defineSchema({
 					published: ['draft', 'closed'],
 					closed: [],
 				}),
-				theme: t.string().default('indigo'),
+				theme: t.string().default('blue'),
 				responseCount: t.number().default(0).merge('counter'),
 				ownerId: t.string().default(''),
 				slug: t.string().default(''),

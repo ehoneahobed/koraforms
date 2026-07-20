@@ -74,7 +74,7 @@ export function FormBuilder({ formId, navigate, userId }: Props) {
 	const [title, setTitle] = useState('')
 	const [description, setDescription] = useState('')
 	const [fields, setFields] = useState<FormField[]>([])
-	const [theme, setTheme] = useState('indigo')
+	const [theme, setTheme] = useState('blue')
 	const [loaded, setLoaded] = useState(false)
 	const [saved, setSaved] = useState(false)
 	const [activeField, setActiveField] = useState<string | null>(null)
@@ -144,7 +144,7 @@ export function FormBuilder({ formId, navigate, userId }: Props) {
 		if (form && !loaded) {
 			setTitle(String(form.title || ''))
 			setDescription(String(form.description || ''))
-			setTheme(String(form.theme || 'indigo'))
+			setTheme(String(form.theme || 'blue'))
 			try {
 				setFields(JSON.parse(String(form.fields || '[]')))
 			} catch {

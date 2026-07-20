@@ -70,7 +70,7 @@ export function FormFill({ formId, navigate }: Props) {
 		// ignore
 	}
 
-	const themeVars = getThemeCSSVars(String(form?.theme || 'indigo'))
+	const themeVars = getThemeCSSVars(String(form?.theme || 'blue'))
 
 	// Section breaks and statements are display-only — not counted as questions
 	const isDisplayOnly = (type: string) => type === 'section' || type === 'statement'
