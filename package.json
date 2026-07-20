@@ -14,7 +14,7 @@
     "doctor": "kora doctor",
     "studio": "kora studio --db ./koraforms-server.db",
     "studio:live": "kora studio --connect ws://localhost:3001/kora-sync",
-    "studio:prod": "kora studio --connect wss://koraforms.happycliff-bb349dbf.eastus.azurecontainerapps.io/kora-sync",
+    "studio:prod": "kora studio --connect wss://forms.korajs.dev/kora-sync",
     "studio:lab": "kora studio --lab --schema ./src/schema.ts",
     "logs": "kora logs --url http://localhost:3001",
     "postinstall": "node scripts/patch-server.js"
