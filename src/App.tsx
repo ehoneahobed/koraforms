@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { BrowserRouter, Routes, Route, Navigate, useNavigate, useParams, useLocation, useSearchParams } from 'react-router-dom'
+import { Routes, Route, Navigate, useNavigate, useParams, useLocation, useSearchParams } from 'react-router-dom'
 import { useSyncStatus, useMutation } from '@korajs/react'
 import { app } from './kora'
 import { AuthProvider, useAuthStatus } from '@korajs/auth/react'
@@ -21,7 +21,6 @@ import {
 import { Landing } from './pages/Landing'
 import { FormList } from './pages/FormList'
 import { FormBuilder } from './pages/FormBuilder'
-import { FormFill } from './pages/FormFill'
 import { FormResponses } from './pages/FormResponses'
 import { SignIn } from './pages/SignIn'
 import { SignUp } from './pages/SignUp'
@@ -249,12 +248,6 @@ function FormResponsesPage({ navigate }: { navigate: (path: string) => void }) {
 // Public pages (no auth required)
 // ---------------------------------------------------------------------------
 
-function PublicFormPage() {
-	const { formId } = useParams()
-	const navigate = useAppNavigate()
-	return <FormFill formId={formId!} navigate={navigate} />
-}
-
 function LandingPage() {
 	const navigate = useAppNavigate()
 	const { dark } = useDarkMode()
@@ -317,13 +310,11 @@ export function App() {
 				Loading KoraForms...
 			</div>
 		}>
-			<BrowserRouter>
 				<Routes>
 					{/* Public routes */}
 					<Route path="/" element={<LandingPage />} />
 					<Route path="/signin" element={<SignInPage />} />
 					<Route path="/signup" element={<SignUpPage />} />
-					<Route path="/f/:formId" element={<PublicFormPage />} />
 
 					{/* Authenticated routes */}
 					<Route path="/*" element={
@@ -332,7 +323,6 @@ export function App() {
 						</RequireAuth>
 					} />
 				</Routes>
-			</BrowserRouter>
 		</AuthProvider>
 		</ErrorBoundary>
 	)

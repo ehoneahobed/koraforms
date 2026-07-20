@@ -1,4 +1,5 @@
 import { resolve } from 'node:path'
+import { randomUUID } from 'node:crypto'
 import {
 	createSqliteServerStore,
 	createPostgresServerStore,
@@ -10,7 +11,7 @@ import {
 	createSqliteUserStore,
 	createPostgresUserStore,
 } from '@korajs/auth/server'
-import { defineSchema, t } from '@korajs/core'
+import { defineSchema, t, createOperation, HybridLogicalClock } from '@korajs/core'
 import type { ServerStore } from '@korajs/server'
 import type { UserStore } from '@korajs/auth/server'
 import type { ProductionHttpRouteRequest, ProductionHttpRouteResponse } from '@korajs/server'
@@ -167,10 +168,62 @@ async function main(): Promise<void> {
 					}
 				},
 			},
-			// Note: /f/:slug is handled by the SPA (React Router).
-			// The framework's writeJsonResponse always JSON-stringifies the body,
-			// so we can't serve raw HTML from httpRoutes. OG meta tags for social
-			// sharing can be added later via a middleware or framework update.
+			// Public API: submit a response via REST (no Kora sync needed)
+			{
+				path: '/api/public/responses',
+				async handle(req: ProductionHttpRouteRequest): Promise<ProductionHttpRouteResponse> {
+					if (req.method === 'OPTIONS') return withCors({ status: 204 })
+					if (req.method !== 'POST') {
+						return withCors({ status: 405, body: { error: 'Method not allowed' } })
+					}
+					try {
+						const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body
+						const { formId, data } = body as { formId: string; data: string }
+						if (!formId || !data) {
+							return withCors({ status: 400, body: { error: 'formId and data are required' } })
+						}
+						// Look up form by ID or slug
+						let [form] = await store.queryCollection('forms', {
+							where: { id: formId, status: 'published' },
+							limit: 1,
+						})
+						if (!form) {
+							;[form] = await store.queryCollection('forms', {
+								where: { slug: formId, status: 'published' },
+								limit: 1,
+							})
+						}
+						if (!form) {
+							return withCors({ status: 404, body: { error: 'Form not found' } })
+						}
+						// Create and apply an insert operation for the response
+						const nodeId = store.getNodeId()
+						const clock = new HybridLogicalClock(nodeId)
+						const vv = store.getVersionVector()
+						const seqNum = (vv.get(nodeId) ?? 0) + 1
+						const op = createOperation({
+							nodeId,
+							type: 'insert',
+							collection: 'responses',
+							recordId: randomUUID(),
+							data: {
+								formId: String(form.id),
+								data,
+								submittedBy: '',
+							},
+							previousData: null,
+							sequenceNumber: seqNum,
+							causalDeps: [],
+							schemaVersion: 4,
+						}, clock)
+						await store.applyRemoteOperation(op)
+						return withCors({ status: 201, body: { success: true } })
+					} catch (err) {
+						console.error('Public response submission error:', err)
+						return withCors({ status: 500, body: { error: 'Internal server error' } })
+					}
+				},
+			},
 		],
 		operationalAuth: {
 			adminToken: process.env.KORA_ADMIN_TOKEN,

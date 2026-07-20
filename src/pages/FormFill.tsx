@@ -1,8 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { useQuery } from '@korajs/react'
-import { op } from '@korajs/core'
 import { ArrowLeft, ArrowRight, Check, Send, Star, X } from 'lucide-react'
-import { app } from '../kora'
 import type { FormField } from '../types'
 import { getThemeCSSVars } from '../themes'
 import { PoweredByBadge } from '../components/shared/PoweredByBadge'
@@ -13,17 +10,11 @@ interface Props {
 }
 
 export function FormFill({ formId, navigate }: Props) {
-	const allForms = useQuery(app.forms.where({}).orderBy('createdAt', 'desc'))
-	// Support lookup by ID or slug
-	const localForm = allForms.find((f) => f.id === formId) ||
-		allForms.find((f) => String(f.slug) === formId && String(f.status) === 'published')
-
-	// If form not found locally, fetch from the public API (for unauthenticated visitors)
-	const [remoteForm, setRemoteForm] = useState<Record<string, unknown> | null>(null)
+	// Fetch form from the public API (no Kora sync required)
+	const [form, setForm] = useState<Record<string, unknown> | null>(null)
 	const [remoteFetched, setRemoteFetched] = useState(false)
 
 	useEffect(() => {
-		if (localForm || remoteFetched) return
 		const controller = new AbortController()
 		fetch(`/api/public/forms/${encodeURIComponent(formId)}`, { signal: controller.signal })
 			.then((res) => {
@@ -31,35 +22,25 @@ export function FormFill({ formId, navigate }: Props) {
 				return null
 			})
 			.then((data) => {
-				if (data && !data.error) setRemoteForm(data)
+				if (data && !data.error) setForm(data)
 			})
 			.catch(() => {
-				// Fetch failed (offline, network error) — stay with local data
+				// Fetch failed (offline, network error)
 			})
 			.finally(() => setRemoteFetched(true))
 		return () => controller.abort()
-	}, [formId, localForm, remoteFetched])
-
-	const form = localForm || remoteForm
+	}, [formId])
 
 	const submitResponse = useCallback(async (realFormId: string, responseData: string) => {
-		// Insert response first (works for both authenticated and anonymous users)
-		await app.mutation('submit-response', async (tx) => {
-			await tx.responses!.insert({
-				formId: realFormId,
-				data: responseData,
-				submittedBy: '',
-			})
+		// Submit via REST API — no Kora worker needed
+		const res = await fetch('/api/public/responses', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ formId: realFormId, data: responseData }),
 		})
-		// Try to increment the counter separately — fails silently for anonymous
-		// users who lack write access to `forms`. The dashboard derives counts
-		// from the responses collection anyway.
-		try {
-			await app.mutation('increment-response-count', async (tx) => {
-				await tx.forms!.update(realFormId, { responseCount: op.increment(1) })
-			})
-		} catch {
-			// Expected for anonymous respondents
+		if (!res.ok) {
+			const err = await res.json().catch(() => ({ error: 'Unknown error' }))
+			throw new Error(err.error || 'Failed to submit response')
 		}
 	}, [])
 
@@ -147,6 +128,8 @@ export function FormFill({ formId, navigate }: Props) {
 		return true
 	}, [currentIndex, fields, values, errors])
 
+	const [submitError, setSubmitError] = useState('')
+
 	const goNext = useCallback(() => {
 		if (currentIndex === -1) {
 			setDirection('forward')
@@ -159,11 +142,11 @@ export function FormFill({ formId, navigate }: Props) {
 			setDirection('forward')
 			setCurrentIndex(currentIndex + 1)
 		} else {
-			// Atomic submit: insert response + increment count in a single transaction.
-			// merge('counter') ensures concurrent submissions add deltas.
 			const realFormId = String(form?.id || formId)
+			setSubmitError('')
 			submitResponse(realFormId, JSON.stringify(values))
-			setSubmitted(true)
+				.then(() => setSubmitted(true))
+				.catch((err) => setSubmitError(err.message || 'Failed to submit. Please try again.'))
 		}
 	}, [currentIndex, fields.length, formId, values, form, validateCurrent, submitResponse])
 
@@ -237,10 +220,7 @@ export function FormFill({ formId, navigate }: Props) {
 						Thank you!
 					</h2>
 					<p className="text-gray-500 dark:text-gray-400 mb-8 leading-relaxed">
-						Your response has been saved
-						{navigator.onLine
-							? ' and synced.'
-							: ' offline. It will sync automatically when you reconnect.'}
+						Your response has been submitted successfully.
 					</p>
 					<div className="flex flex-col sm:flex-row items-center justify-center gap-3">
 						<button
@@ -549,6 +529,11 @@ export function FormFill({ formId, navigate }: Props) {
 							press <kbd className="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-500 font-mono text-[10px]">Enter</kbd>
 						</span>
 					</div>
+
+					{/* Submission error */}
+					{submitError && (
+						<p className="mt-3 text-sm text-red-500 animate-fade-in">{submitError}</p>
+					)}
 				</div>
 			</div>
 
