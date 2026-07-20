@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
-import { useQuery, useMutation, useCollection } from '@korajs/react'
+import { useQuery, useMutation } from '@korajs/react'
+import { app } from '../kora'
 import {
 	ArrowLeft,
 	GripVertical,
@@ -63,12 +64,11 @@ interface Props {
 }
 
 export function FormBuilder({ formId, navigate, userId }: Props) {
-	const forms = useCollection('forms')
-	const allForms = useQuery(forms.where({}).orderBy('createdAt', 'desc'))
+	const allForms = useQuery(app.forms.where({}).orderBy('createdAt', 'desc'))
 	const form = allForms.find((f) => f.id === formId)
 
 	const { mutate: updateForm } = useMutation(
-		(id: string, data: Record<string, unknown>) => forms.update(id, data),
+		(id: string, data: Record<string, unknown>) => app.forms.update(id, data),
 	)
 
 	const [title, setTitle] = useState('')

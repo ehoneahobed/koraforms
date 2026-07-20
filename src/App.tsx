@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useParams, useLocation, useSearchParams } from 'react-router-dom'
-import { useSyncStatus, useCollection, useMutation } from '@korajs/react'
+import { useSyncStatus, useMutation } from '@korajs/react'
+import { app } from './kora'
 import { AuthProvider, useAuthStatus } from '@korajs/auth/react'
 import { useAuth } from '@korajs/auth/react'
 import { authClient } from './auth'
@@ -200,9 +201,8 @@ function FormBuilderPage({ navigate, userId }: { navigate: (path: string) => voi
 	const { formId } = useParams()
 	const routerNav = useNavigate()
 	const [searchParams] = useSearchParams()
-	const forms = useCollection('forms')
 	const { mutateAsync: createForm } = useMutation(
-		(data: Record<string, unknown>) => forms.insert(data),
+		(data: Record<string, unknown>) => app.forms.insert(data),
 	)
 	const creating = useRef(false)
 

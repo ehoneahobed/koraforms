@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { useQuery, useMutation, useCollection } from '@korajs/react'
+import { useQuery } from '@korajs/react'
 import { op } from '@korajs/core'
 import { ArrowLeft, ArrowRight, Check, Send, Star, X } from 'lucide-react'
+import { app } from '../kora'
 import type { FormField } from '../types'
 import { getThemeCSSVars } from '../themes'
 import { PoweredByBadge } from '../components/shared/PoweredByBadge'
@@ -12,9 +13,7 @@ interface Props {
 }
 
 export function FormFill({ formId, navigate }: Props) {
-	const forms = useCollection('forms')
-	const responses = useCollection('responses')
-	const allForms = useQuery(forms.where({}).orderBy('createdAt', 'desc'))
+	const allForms = useQuery(app.forms.where({}).orderBy('createdAt', 'desc'))
 	// Support lookup by ID or slug
 	const localForm = allForms.find((f) => f.id === formId) ||
 		allForms.find((f) => String(f.slug) === formId && String(f.status) === 'published')
@@ -43,13 +42,16 @@ export function FormFill({ formId, navigate }: Props) {
 
 	const form = localForm || remoteForm
 
-	const { mutate: createResponse } = useMutation(
-		(data: { formId: string; data: string; submittedBy: string }) =>
-			responses.insert(data),
-	)
-	const { mutate: incrementResponseCount } = useMutation(
-		(formId: string) => forms.update(formId, { responseCount: op.increment(1) }),
-	)
+	const submitResponse = useCallback(async (realFormId: string, responseData: string) => {
+		await app.mutation('submit-response', async (tx) => {
+			await tx.responses!.insert({
+				formId: realFormId,
+				data: responseData,
+				submittedBy: '',
+			})
+			await tx.forms!.update(realFormId, { responseCount: op.increment(1) })
+		})
+	}, [])
 
 	const [currentIndex, setCurrentIndex] = useState(-1) // -1 = welcome screen
 	const [values, setValues] = useState<Record<string, string>>({})
@@ -147,19 +149,13 @@ export function FormFill({ formId, navigate }: Props) {
 			setDirection('forward')
 			setCurrentIndex(currentIndex + 1)
 		} else {
-			// Submit — use form.id (not the slug from the URL) as the real record ID
+			// Atomic submit: insert response + increment count in a single transaction.
+			// merge('counter') ensures concurrent submissions add deltas.
 			const realFormId = String(form?.id || formId)
-			createResponse({
-				formId: realFormId,
-				data: JSON.stringify(values),
-				submittedBy: '',
-			})
-			// Atomic counter increment — merge('counter') ensures concurrent
-			// submissions add deltas rather than overwriting each other
-			incrementResponseCount(realFormId)
+			submitResponse(realFormId, JSON.stringify(values))
 			setSubmitted(true)
 		}
-	}, [currentIndex, fields.length, formId, values, form, validateCurrent, createResponse])
+	}, [currentIndex, fields.length, formId, values, form, validateCurrent, submitResponse])
 
 	const goBack = () => {
 		if (currentIndex > 0) {

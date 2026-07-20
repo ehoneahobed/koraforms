@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react'
-import { useQuery, useCollection } from '@korajs/react'
+import { useQuery } from '@korajs/react'
+import { app } from '../kora'
 import { ArrowLeft, Download, FileSpreadsheet, ChevronDown, ChevronRight, BarChart3, Share2, ExternalLink, Clock, TrendingUp } from 'lucide-react'
 import type { FormField } from '../types'
 
@@ -9,11 +10,9 @@ interface Props {
 }
 
 export function FormResponses({ formId, navigate }: Props) {
-	const forms = useCollection('forms')
-	const responsesCollection = useCollection('responses')
-	const allForms = useQuery(forms.where({}).orderBy('createdAt', 'desc'))
+	const allForms = useQuery(app.forms.where({}).orderBy('createdAt', 'desc'))
 	const allResponses = useQuery(
-		responsesCollection.where({}).orderBy('submittedAt', 'desc'),
+		app.responses.where({}).orderBy('submittedAt', 'desc'),
 	)
 
 	const form = allForms.find((f) => f.id === formId)

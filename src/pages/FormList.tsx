@@ -1,4 +1,5 @@
-import { useQuery, useMutation, useCollection } from '@korajs/react'
+import { useQuery, useMutation } from '@korajs/react'
+import { app } from '../kora'
 import {
 	Plus,
 	FileText,
@@ -33,22 +34,20 @@ interface Props {
 }
 
 export function FormList({ navigate, userId }: Props) {
-	const forms = useCollection('forms')
-	const responsesCol = useCollection('responses')
 	const allForms = useQuery(
 		userId
-			? forms.where({ ownerId: userId }).orderBy('createdAt', 'desc')
-			: forms.where({}).orderBy('createdAt', 'desc'),
+			? app.forms.where({ ownerId: userId }).orderBy('createdAt', 'desc')
+			: app.forms.where({}).orderBy('createdAt', 'desc'),
 	)
-	const allResponses = useQuery(responsesCol.where({}).orderBy('submittedAt', 'desc'))
-	const { mutate: deleteForm } = useMutation((id: string) => forms.delete(id))
+	const allResponses = useQuery(app.responses.where({}).orderBy('submittedAt', 'desc'))
+	const { mutate: deleteForm } = useMutation((id: string) => app.forms.delete(id))
 	const { mutate: createForm } = useMutation(
 		(data: { title: string; description: string; fields: string; status: string; ownerId: string }) =>
-			forms.insert(data),
+			app.forms.insert(data),
 	)
 	const { mutate: duplicateForm } = useMutation(
 		(data: { title: string; description: string; fields: string; status: string; ownerId: string; theme: string }) =>
-			forms.insert(data),
+			app.forms.insert(data),
 	)
 
 	const [showTemplates, setShowTemplates] = useState(false)

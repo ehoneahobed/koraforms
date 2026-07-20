@@ -6,8 +6,6 @@ import { authClient } from './auth'
 import { App } from './App'
 import './index.css'
 
-app.ready.then(() => app.sync?.connect())
-
 // Auto sign-out when the server rejects our auth token (e.g. after a database reset)
 app.events.on('sync:auth-failed', () => {
 	console.warn('Sync auth failed — signing out stale session')

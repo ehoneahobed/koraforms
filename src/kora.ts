@@ -13,6 +13,8 @@ export const app = createApp({
 	sync: {
 		url: syncUrl,
 		authClient: createKoraAuthSync({ authClient, schema }),
+		schemaVersion: 4,
+		autoConnect: true,
 	},
 	store: {
 		workerUrl: koraWorkerUrl,
