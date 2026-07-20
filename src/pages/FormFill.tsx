@@ -3,6 +3,7 @@ import { ArrowLeft, ArrowRight, Check, Send, Star, X } from 'lucide-react'
 import type { FormField } from '../types'
 import { getThemeCSSVars } from '../themes'
 import { PoweredByBadge } from '../components/shared/PoweredByBadge'
+import { setPageMeta } from '../utils/meta'
 
 interface Props {
 	formId: string
@@ -30,6 +31,17 @@ export function FormFill({ formId, navigate }: Props) {
 			.finally(() => setRemoteFetched(true))
 		return () => controller.abort()
 	}, [formId])
+
+	// Set page meta when form loads (for client-side navigation and tab title)
+	useEffect(() => {
+		if (form) {
+			setPageMeta({
+				title: String(form.title || 'Form'),
+				description: String(form.description || 'Fill out this form on KoraForms.'),
+				url: `https://forms.korajs.dev/f/${formId}`,
+			})
+		}
+	}, [form, formId])
 
 	const submitResponse = useCallback(async (realFormId: string, responseData: string) => {
 		// Submit via REST API — no Kora worker needed

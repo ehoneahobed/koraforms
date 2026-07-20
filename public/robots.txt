@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+Disallow: /dashboard
+Disallow: /forms/
+Disallow: /signin
+Disallow: /signup
+
+Sitemap: https://forms.korajs.dev/sitemap.xml

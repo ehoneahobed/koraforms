@@ -1,3 +1,7 @@
+const BASE_URL = 'https://forms.korajs.dev'
+const DEFAULT_DESCRIPTION = 'Build forms that work anywhere — even offline. Free and open source.'
+const DEFAULT_OG_IMAGE = `${BASE_URL}/og-image.png`
+
 /**
  * Update document head meta tags for SEO and social sharing.
  */
@@ -7,25 +11,42 @@ export function setPageMeta(meta: {
 	ogImage?: string
 	url?: string
 }): void {
-	document.title = meta.title.includes('KoraForms')
+	const fullTitle = meta.title.includes('KoraForms')
 		? meta.title
 		: `${meta.title} | KoraForms`
+	const description = meta.description || DEFAULT_DESCRIPTION
+	const ogImage = meta.ogImage || DEFAULT_OG_IMAGE
+	const url = meta.url || BASE_URL
 
-	setMetaTag('description', meta.description || 'Build forms that work anywhere — even offline. Free.')
-	setMetaTag('og:title', meta.title, 'property')
-	setMetaTag('og:description', meta.description || 'Build forms that work anywhere — even offline. Free.', 'property')
+	document.title = fullTitle
+
+	// Standard meta
+	setMetaTag('description', description)
+	setMetaTag('author', 'KoraForms')
+
+	// Open Graph
+	setMetaTag('og:title', fullTitle, 'property')
+	setMetaTag('og:description', description, 'property')
 	setMetaTag('og:type', 'website', 'property')
+	setMetaTag('og:site_name', 'KoraForms', 'property')
+	setMetaTag('og:image', ogImage, 'property')
+	setMetaTag('og:url', url, 'property')
+	setMetaTag('og:locale', 'en_US', 'property')
 
-	if (meta.ogImage) {
-		setMetaTag('og:image', meta.ogImage, 'property')
-	}
-	if (meta.url) {
-		setMetaTag('og:url', meta.url, 'property')
-	}
+	// Twitter Card
+	setMetaTag('twitter:card', 'summary_large_image')
+	setMetaTag('twitter:title', fullTitle)
+	setMetaTag('twitter:description', description)
+	setMetaTag('twitter:image', ogImage)
 
-	setMetaTag('twitter:card', 'summary')
-	setMetaTag('twitter:title', meta.title)
-	setMetaTag('twitter:description', meta.description || 'Build forms that work anywhere — even offline. Free.')
+	// Canonical URL
+	let link = document.querySelector('link[rel="canonical"]') as HTMLLinkElement | null
+	if (!link) {
+		link = document.createElement('link')
+		link.rel = 'canonical'
+		document.head.appendChild(link)
+	}
+	link.href = url
 }
 
 function setMetaTag(name: string, content: string, attr: 'name' | 'property' = 'name'): void {

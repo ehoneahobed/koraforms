@@ -1,5 +1,4 @@
 import {
-	FileText,
 	Wifi,
 	WifiOff,
 	Zap,
@@ -29,9 +28,7 @@ export function Landing({ navigate }: Props) {
 			<nav className="sticky top-0 z-40 border-b border-gray-100/50 dark:border-gray-800/50 bg-white/80 dark:bg-surface-dark/80 backdrop-blur-xl">
 				<div className="mx-auto max-w-6xl px-4 sm:px-6 flex items-center justify-between h-14">
 					<div className="flex items-center gap-2.5">
-						<div className="w-8 h-8 rounded-lg bg-brand-600 flex items-center justify-center">
-							<FileText className="h-4 w-4 text-white" />
-						</div>
+						<img src="/logo-icon.png" alt="KoraForms" className="w-8 h-8 rounded-lg" />
 						<span className="text-lg font-bold tracking-tight">KoraForms</span>
 					</div>
 					<div className="flex items-center gap-2">
@@ -293,9 +290,7 @@ export function Landing({ navigate }: Props) {
 			<footer className="border-t border-gray-100 dark:border-gray-800 py-10">
 				<div className="mx-auto max-w-6xl px-4 sm:px-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-gray-400">
 					<div className="flex items-center gap-2">
-						<div className="w-6 h-6 rounded-md bg-brand-600 flex items-center justify-center">
-							<FileText className="h-3 w-3 text-white" />
-						</div>
+						<img src="/logo-icon.png" alt="KoraForms" className="w-6 h-6 rounded-md" />
 						<span className="font-semibold text-gray-600 dark:text-gray-300">KoraForms</span>
 						<span className="text-gray-300 dark:text-gray-700">|</span>
 						<span className="text-xs">Forms that work anywhere</span>

@@ -7,7 +7,6 @@ import { useAuth } from '@korajs/auth/react'
 import { authClient } from './auth'
 import { setPageMeta } from './utils/meta'
 import {
-	FileText,
 	Wifi,
 	WifiOff,
 	AlertCircle,
@@ -82,9 +81,7 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
 		return (
 			<div className="flex items-center justify-center h-screen bg-surface dark:bg-surface-dark">
 				<div className="text-center animate-fade-in">
-					<div className="w-10 h-10 rounded-xl bg-brand-600 flex items-center justify-center mx-auto mb-3">
-						<FileText className="h-5 w-5 text-white" />
-					</div>
+					<img src="/logo-icon.png" alt="KoraForms" className="w-10 h-10 rounded-xl mx-auto mb-3" />
 					<p className="text-sm text-gray-400">Loading...</p>
 				</div>
 			</div>
@@ -118,9 +115,7 @@ function AuthenticatedLayout() {
 						onClick={() => navigate('dashboard')}
 						className="flex items-center gap-2.5 hover:opacity-80 transition-smooth"
 					>
-						<div className="w-8 h-8 rounded-lg bg-brand-600 flex items-center justify-center">
-							<FileText className="h-4 w-4 text-white" />
-						</div>
+						<img src="/logo-icon.png" alt="KoraForms" className="w-8 h-8 rounded-lg" />
 						<span className="text-lg font-semibold tracking-tight">KoraForms</span>
 					</button>
 					<div className="flex items-center gap-2">

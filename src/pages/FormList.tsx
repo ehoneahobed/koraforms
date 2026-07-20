@@ -1,5 +1,6 @@
 import { useQuery, useMutation } from '@korajs/react'
 import { app } from '../kora'
+import { setPageMeta } from '../utils/meta'
 import {
 	Plus,
 	FileText,
@@ -34,6 +35,10 @@ interface Props {
 }
 
 export function FormList({ navigate, userId }: Props) {
+	useEffect(() => {
+		setPageMeta({ title: 'Dashboard', description: 'Manage your forms and view responses.' })
+	}, [])
+
 	const allForms = useQuery(
 		userId
 			? app.forms.where({ ownerId: userId }).orderBy('createdAt', 'desc')
