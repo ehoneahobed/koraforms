@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useParams, useLocation, useSearchParams } from 'react-router-dom'
 import { useSyncStatus, useCollection, useMutation } from '@korajs/react'
-import { AuthProvider } from '@korajs/auth/react'
+import { AuthProvider, useAuthStatus } from '@korajs/auth/react'
 import { useAuth } from '@korajs/auth/react'
 import { authClient } from './auth'
 import { setPageMeta } from './utils/meta'
@@ -75,7 +75,7 @@ function useAppNavigate() {
 // ---------------------------------------------------------------------------
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
-	const { isAuthenticated, isLoading } = useAuth()
+	const { isAuthenticated, isLoading } = useAuthStatus()
 	const location = useLocation()
 
 	if (isLoading) {
@@ -342,9 +342,9 @@ export function App() {
 // Sync indicator
 // ---------------------------------------------------------------------------
 
-function SyncIndicator({ status }: { status: { status: string; pendingOperations?: number } }) {
+function SyncIndicator({ status }: { status: ReturnType<typeof useSyncStatus> }) {
 	const s = status.status
-	const pending = status.pendingOperations ?? 0
+	const pending = status.pendingOperations
 
 	if (s === 'offline') {
 		return (
@@ -369,11 +369,11 @@ function SyncIndicator({ status }: { status: { status: string; pendingOperations
 		)
 	}
 
-	if (s === 'error') {
+	if (s === 'error' || s === 'schema-mismatch') {
 		return (
 			<div className="flex items-center gap-1.5 text-xs text-red-500 bg-red-50 dark:bg-red-900/20 rounded-full px-2.5 py-1">
 				<AlertCircle className="h-3 w-3" />
-				<span>Error</span>
+				<span>{s === 'schema-mismatch' ? 'Update needed' : 'Error'}</span>
 			</div>
 		)
 	}

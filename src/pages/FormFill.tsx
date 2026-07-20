@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useQuery, useMutation, useCollection } from '@korajs/react'
+import { op } from '@korajs/core'
 import { ArrowLeft, ArrowRight, Check, Send, Star, X } from 'lucide-react'
 import type { FormField } from '../types'
 import { getThemeCSSVars } from '../themes'
@@ -45,6 +46,9 @@ export function FormFill({ formId, navigate }: Props) {
 	const { mutate: createResponse } = useMutation(
 		(data: { formId: string; data: string; submittedBy: string }) =>
 			responses.insert(data),
+	)
+	const { mutate: incrementResponseCount } = useMutation(
+		(formId: string) => forms.update(formId, { responseCount: op.increment(1) }),
 	)
 
 	const [currentIndex, setCurrentIndex] = useState(-1) // -1 = welcome screen
@@ -150,6 +154,9 @@ export function FormFill({ formId, navigate }: Props) {
 				data: JSON.stringify(values),
 				submittedBy: '',
 			})
+			// Atomic counter increment — merge('counter') ensures concurrent
+			// submissions add deltas rather than overwriting each other
+			incrementResponseCount(realFormId)
 			setSubmitted(true)
 		}
 	}, [currentIndex, fields.length, formId, values, form, validateCurrent, createResponse])
