@@ -201,7 +201,7 @@ async function main(): Promise<void> {
 						const clock = new HybridLogicalClock(nodeId)
 						const vv = store.getVersionVector()
 						const seqNum = (vv.get(nodeId) ?? 0) + 1
-						const op = createOperation({
+						const op = await createOperation({
 							nodeId,
 							type: 'insert',
 							collection: 'responses',
