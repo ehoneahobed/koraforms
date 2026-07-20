@@ -43,14 +43,24 @@ export function FormFill({ formId, navigate }: Props) {
 	const form = localForm || remoteForm
 
 	const submitResponse = useCallback(async (realFormId: string, responseData: string) => {
+		// Insert response first (works for both authenticated and anonymous users)
 		await app.mutation('submit-response', async (tx) => {
 			await tx.responses!.insert({
 				formId: realFormId,
 				data: responseData,
 				submittedBy: '',
 			})
-			await tx.forms!.update(realFormId, { responseCount: op.increment(1) })
 		})
+		// Try to increment the counter separately — fails silently for anonymous
+		// users who lack write access to `forms`. The dashboard derives counts
+		// from the responses collection anyway.
+		try {
+			await app.mutation('increment-response-count', async (tx) => {
+				await tx.forms!.update(realFormId, { responseCount: op.increment(1) })
+			})
+		} catch {
+			// Expected for anonymous respondents
+		}
 	}, [])
 
 	const [currentIndex, setCurrentIndex] = useState(-1) // -1 = welcome screen
