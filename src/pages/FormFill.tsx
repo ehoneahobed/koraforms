@@ -4,6 +4,7 @@ import type { FormField } from '../types'
 import { getThemeCSSVars } from '../themes'
 import { PoweredByBadge } from '../components/shared/PoweredByBadge'
 import { setPageMeta } from '../utils/meta'
+import { InlineLoader } from '../components/shared/BrandLoader'
 
 interface Props {
 	formId: string
@@ -194,16 +195,8 @@ export function FormFill({ formId, navigate }: Props) {
 	}, [goNext])
 
 	if (!form) {
-		// Still loading from API — show a brief loading state
 		if (!remoteFetched) {
-			return (
-				<div className="flex items-center justify-center min-h-screen">
-					<div className="text-center animate-fade-in">
-						<div className="w-8 h-8 border-2 border-gray-200 dark:border-gray-700 border-t-brand-500 rounded-full animate-spin mx-auto mb-4" />
-						<p className="text-gray-400 text-sm">Loading form...</p>
-					</div>
-				</div>
-			)
+			return <InlineLoader message="Loading form..." />
 		}
 		return (
 			<div className="flex items-center justify-center min-h-screen">

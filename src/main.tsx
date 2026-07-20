@@ -6,6 +6,7 @@ import { app } from './kora'
 import { authClient } from './auth'
 import { App } from './App'
 import { PublicFormPage } from './pages/PublicFormPage'
+import { BrandLoader } from './components/shared/BrandLoader'
 import './index.css'
 
 // Auto sign-out when the server rejects our auth token (e.g. after a database reset)
@@ -26,11 +27,7 @@ createRoot(document.getElementById('root')!).render(
 				<Route path="/*" element={
 					<KoraProvider
 						app={app}
-						fallback={
-							<div className="flex items-center justify-center h-screen bg-gray-950 text-gray-400">
-								Loading KoraForms...
-							</div>
-						}
+						fallback={<BrandLoader />}
 					>
 						<App />
 					</KoraProvider>

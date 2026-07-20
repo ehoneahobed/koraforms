@@ -6,6 +6,7 @@ import { AuthProvider, useAuthStatus } from '@korajs/auth/react'
 import { useAuth } from '@korajs/auth/react'
 import { authClient } from './auth'
 import { setPageMeta } from './utils/meta'
+import { BrandLoader } from './components/shared/BrandLoader'
 import {
 	Wifi,
 	WifiOff,
@@ -78,14 +79,7 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
 	const location = useLocation()
 
 	if (isLoading) {
-		return (
-			<div className="flex items-center justify-center h-screen bg-surface dark:bg-surface-dark">
-				<div className="text-center animate-fade-in">
-					<img src="/logo-icon.png" alt="KoraForms" className="w-10 h-10 rounded-xl mx-auto mb-3" />
-					<p className="text-sm text-gray-400">Loading...</p>
-				</div>
-			</div>
-		)
+		return <BrandLoader />
 	}
 
 	if (!isAuthenticated) {
@@ -300,11 +294,7 @@ function SignUpPage() {
 export function App() {
 	return (
 		<ErrorBoundary>
-		<AuthProvider client={authClient} fallback={
-			<div className="flex items-center justify-center h-screen bg-gray-950 text-gray-400">
-				Loading KoraForms...
-			</div>
-		}>
+		<AuthProvider client={authClient} fallback={<BrandLoader />}>
 				<Routes>
 					{/* Public routes */}
 					<Route path="/" element={<LandingPage />} />
