@@ -1,3 +1,18 @@
+/**
+ * Temporary patch for @korajs/server body parsing bug.
+ *
+ * Issue: readBodyBuffer() attaches data/end listeners but never calls
+ * req.resume(), so the Node.js IncomingMessage stream stays paused and
+ * POST bodies are silently lost (returns empty buffer → undefined body).
+ *
+ * Fix: add req.resume() after attaching listeners + error handler.
+ *
+ * This patch is safe to keep after the fix ships — it exits cleanly
+ * when the vulnerable pattern is no longer present.
+ *
+ * Tracking: https://github.com/aspect-build/kora/issues/TBD
+ */
+
 import { readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
@@ -27,10 +42,10 @@ const fix = [
 ].join('\n')
 
 if (!code.includes(old)) {
-	console.log('Pattern not found — module may already be patched')
+	console.log('Patch not needed — readBodyBuffer already fixed or changed')
 	process.exit(0)
 }
 
 code = code.replace(old, fix)
 writeFileSync(file, code)
-console.log('Patched readBodyBuffer with resume() fix')
+console.log('Applied readBodyBuffer resume() patch (see scripts/patch-server.js)')
