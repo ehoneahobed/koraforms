@@ -16,7 +16,7 @@
     "studio:live": "kora studio --connect ws://localhost:3001/kora-sync",
     "studio:lab": "kora studio --lab --schema ./src/schema.ts",
     "logs": "kora logs --url http://localhost:3001",
-    "postinstall": "node --import tsx scripts/patch-server.js"
+    "postinstall": "node scripts/patch-server.js"
   },
   "dependencies": {
     "@korajs/auth": "1.0.0-beta.0",

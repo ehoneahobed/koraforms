@@ -1,12 +1,13 @@
 # Stage 1: Build
-FROM node:20-slim AS builder
+FROM node:22-slim AS builder
 WORKDIR /app
 
-# Enable corepack for pnpm
-RUN corepack enable
+# Install pnpm (pin to 10.x to match lockfile version)
+RUN corepack enable && corepack prepare pnpm@10.11.0 --activate
 
 # Install dependencies
-COPY package.json pnpm-lock.yaml ./
+COPY package.json pnpm-lock.yaml .npmrc ./
+COPY scripts/patch-server.js ./scripts/
 RUN pnpm install --frozen-lockfile
 
 # Copy source and build frontend
@@ -14,18 +15,20 @@ COPY . .
 RUN pnpm build
 
 # Stage 2: Production
-FROM node:20-slim
+FROM node:22-slim
 WORKDIR /app
 
-RUN corepack enable
+RUN corepack enable && corepack prepare pnpm@10.11.0 --activate
 
 # Copy built assets and server files
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/server.ts ./
 COPY --from=builder /app/package.json ./
 COPY --from=builder /app/pnpm-lock.yaml ./
+COPY --from=builder /app/.npmrc ./
+COPY --from=builder /app/scripts/patch-server.js ./scripts/
 
-# Install production dependencies only
+# Install production dependencies only (postinstall applies the patch)
 RUN pnpm install --frozen-lockfile --prod
 
 # Create data directory for SQLite
