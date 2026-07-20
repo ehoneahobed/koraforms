@@ -95,8 +95,6 @@ export function FormList({ navigate, userId }: Props) {
 	const published = allForms.filter((f) => String(f.status) === 'published')
 	const drafts = allForms.filter((f) => String(f.status) !== 'published')
 
-	// Derive response counts from actual responses data (not the stored responseCount field,
-	// which can't be updated by anonymous respondents due to sync scoping)
 	const responseCountMap = new Map<string, number>()
 	for (const r of allResponses) {
 		const fid = String(r.formId)
@@ -111,91 +109,62 @@ export function FormList({ navigate, userId }: Props) {
 
 	return (
 		<div className="max-w-5xl mx-auto">
-			{/* Welcome hero with gradient accent */}
-			<div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-brand-600 via-brand-600 to-brand-700 p-6 sm:p-8 mb-8 shadow-lg shadow-brand-600/10">
-				{/* Decorative elements */}
-				<div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/3" />
-				<div className="absolute bottom-0 left-0 w-40 h-40 bg-white/5 rounded-full translate-y-1/2 -translate-x-1/4" />
-				<div className="absolute top-8 right-24 w-2 h-2 bg-white/20 rounded-full" />
-				<div className="absolute top-16 right-16 w-1.5 h-1.5 bg-white/15 rounded-full" />
-
-				<div className="relative flex flex-col sm:flex-row sm:items-end justify-between gap-5">
-					<div>
-						<div className="flex items-center gap-2 mb-2">
-							<Sparkles className="h-4 w-4 text-brand-200" />
-							<span className="text-xs font-medium text-brand-200 tracking-wide uppercase">Dashboard</span>
-						</div>
-						<h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight mb-1.5">
-							Your Forms
-						</h1>
-						<p className="text-brand-200 text-sm sm:text-base max-w-md">
-							Build, publish, and collect responses — everything works offline.
+			{/* Header */}
+			<div className="flex items-center justify-between mb-8">
+				<div>
+					<h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-gray-100 tracking-tight">
+						Forms
+					</h1>
+					{allForms.length > 0 && (
+						<p className="text-sm text-gray-400 dark:text-gray-500 mt-1">
+							{allForms.length} form{allForms.length !== 1 ? 's' : ''} &middot; {totalResponses} response{totalResponses !== 1 ? 's' : ''}
 						</p>
-					</div>
-					<button
-						onClick={() => setShowTemplates(true)}
-						className="inline-flex items-center gap-2 rounded-xl bg-white px-5 py-2.5 text-sm font-semibold text-brand-700 shadow-sm transition-smooth hover:bg-brand-50 active:scale-[0.98] shrink-0"
-					>
-						<Plus className="h-4 w-4" />
-						New Form
-					</button>
+					)}
 				</div>
+				<button
+					onClick={() => setShowTemplates(true)}
+					className="inline-flex items-center gap-2 rounded-full bg-brand-600 pl-4 pr-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-all duration-200 hover:bg-brand-500 hover:shadow-md active:scale-[0.97]"
+				>
+					<Plus className="h-4 w-4" />
+					New Form
+				</button>
 			</div>
 
-			{/* Stats row */}
+			{/* Stats */}
 			{allForms.length > 0 && (
-				<div className="grid grid-cols-3 gap-3 sm:gap-4 mb-8">
-					<StatCard
-						label="Total Forms"
-						value={allForms.length}
-						icon={<FileText className="h-4 w-4" />}
-						color="brand"
-					/>
-					<StatCard
-						label="Published"
-						value={published.length}
-						icon={<Globe className="h-4 w-4" />}
-						color="emerald"
-						detail={allForms.length > 0 ? `${Math.round((published.length / allForms.length) * 100)}%` : undefined}
-					/>
-					<StatCard
-						label="Responses"
-						value={totalResponses}
-						icon={<TrendingUp className="h-4 w-4" />}
-						color="violet"
-						detail={published.length > 0 ? `~${Math.round(totalResponses / published.length)}/form` : undefined}
-					/>
+				<div className="rounded-2xl bg-white dark:bg-surface-elevated-dark border border-gray-100 dark:border-gray-800/60 shadow-sm mb-8">
+					<div className="grid grid-cols-3 divide-x divide-gray-100 dark:divide-gray-800/60">
+						<StatCell label="Total" value={allForms.length} />
+						<StatCell label="Published" value={published.length} accent />
+						<StatCell label="Responses" value={totalResponses} />
+					</div>
 				</div>
 			)}
 
-			{/* Quick actions strip */}
+			{/* Filters */}
 			{allForms.length > 0 && (
-				<div className="flex flex-wrap items-center gap-2 mb-6">
-					{/* Filters */}
-					<div className="flex items-center bg-gray-100 dark:bg-gray-800/80 rounded-lg p-0.5">
+				<div className="flex items-center justify-between mb-6">
+					<div className="flex items-center bg-gray-100/80 dark:bg-gray-800/60 rounded-full p-0.5">
 						{(['all', 'published', 'draft'] as const).map((f) => (
 							<button
 								key={f}
 								onClick={() => setFilter(f)}
-								className={`px-3 py-1.5 rounded-md text-xs font-medium transition-smooth ${
+								className={`px-4 py-1.5 rounded-full text-xs font-medium transition-all duration-200 ${
 									filter === f
 										? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm'
 										: 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
 								}`}
 							>
-								{f === 'all' ? `All (${allForms.length})` : f === 'published' ? `Live (${published.length})` : `Drafts (${drafts.length})`}
+								{f === 'all' ? 'All' : f === 'published' ? 'Live' : 'Drafts'}
 							</button>
 						))}
 					</div>
-
-					<div className="flex-1" />
-
 					<button
 						onClick={() => navigate('templates')}
-						className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-500 dark:text-gray-400 hover:text-brand-600 dark:hover:text-brand-400 transition-smooth"
+						className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-400 dark:text-gray-500 hover:text-brand-600 dark:hover:text-brand-400 transition-all duration-200"
 					>
 						<LayoutTemplate className="h-3.5 w-3.5" />
-						Browse templates
+						Templates
 					</button>
 				</div>
 			)}
@@ -212,17 +181,17 @@ export function FormList({ navigate, userId }: Props) {
 			{/* Form grid */}
 			{filteredForms.length > 0 ? (
 				<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-					{/* New form card */}
+					{/* Create card */}
 					<button
 						onClick={() => setShowTemplates(true)}
-						className="group rounded-2xl border-2 border-dashed border-gray-200 dark:border-gray-800 p-6 flex flex-col items-center justify-center gap-3 min-h-[200px] transition-smooth hover:border-brand-300 dark:hover:border-brand-700 hover:bg-brand-50/30 dark:hover:bg-brand-900/5"
+						className="group rounded-2xl bg-gray-50/80 dark:bg-gray-800/30 border border-gray-100 dark:border-gray-800/40 p-6 flex flex-col items-center justify-center gap-3 min-h-[220px] transition-all duration-200 hover:bg-brand-50/50 dark:hover:bg-brand-900/10 hover:border-brand-200 dark:hover:border-brand-800/40"
 					>
-						<div className="w-12 h-12 rounded-xl bg-gray-100 dark:bg-gray-800 flex items-center justify-center transition-smooth group-hover:bg-brand-100 dark:group-hover:bg-brand-900/30 group-hover:scale-110">
-							<Plus className="h-5 w-5 text-gray-400 transition-smooth group-hover:text-brand-600 dark:group-hover:text-brand-400" />
+						<div className="w-11 h-11 rounded-full bg-white dark:bg-gray-800 flex items-center justify-center shadow-sm transition-all duration-200 group-hover:scale-110 group-hover:shadow-md group-hover:bg-brand-50 dark:group-hover:bg-brand-900/30">
+							<Plus className="h-5 w-5 text-gray-400 transition-colors duration-200 group-hover:text-brand-600 dark:group-hover:text-brand-400" />
 						</div>
 						<div className="text-center">
-							<p className="text-sm font-medium text-gray-600 dark:text-gray-300 group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-smooth">Create new form</p>
-							<p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">From template or blank</p>
+							<p className="text-sm font-medium text-gray-500 dark:text-gray-400 group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors duration-200">Create new form</p>
+							<p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">From template or scratch</p>
 						</div>
 					</button>
 
@@ -241,14 +210,14 @@ export function FormList({ navigate, userId }: Props) {
 					))}
 				</div>
 			) : allForms.length > 0 ? (
-				<div className="text-center py-16 animate-fade-in">
-					<p className="text-sm text-gray-500 dark:text-gray-400">
-						No {filter === 'published' ? 'published' : 'draft'} forms yet.
+				<div className="text-center py-20 animate-fade-in">
+					<p className="text-sm text-gray-400 dark:text-gray-500">
+						No {filter === 'published' ? 'published' : 'draft'} forms.
 					</p>
 				</div>
 			) : null}
 
-			{/* Premium empty state */}
+			{/* Empty state */}
 			{allForms.length === 0 && <EmptyState onCreateClick={() => setShowTemplates(true)} onBrowseTemplates={() => navigate('templates')} />}
 
 			{/* Share modal */}
@@ -263,52 +232,13 @@ export function FormList({ navigate, userId }: Props) {
 	)
 }
 
-function StatCard({
-	label,
-	value,
-	icon,
-	color,
-	detail,
-}: {
-	label: string
-	value: number
-	icon: React.ReactNode
-	color: 'brand' | 'emerald' | 'violet'
-	detail?: string
-}) {
-	const colorClasses = {
-		brand: {
-			icon: 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400',
-			value: 'text-gray-900 dark:text-gray-100',
-		},
-		emerald: {
-			icon: 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400',
-			value: 'text-gray-900 dark:text-gray-100',
-		},
-		violet: {
-			icon: 'bg-violet-50 dark:bg-violet-900/20 text-violet-600 dark:text-violet-400',
-			value: 'text-gray-900 dark:text-gray-100',
-		},
-	}
-
-	const c = colorClasses[color]
-
+function StatCell({ label, value, accent }: { label: string; value: number; accent?: boolean }) {
 	return (
-		<div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-surface-elevated-dark p-4 sm:p-5 transition-smooth hover:shadow-sm">
-			<div className="flex items-center justify-between mb-3">
-				<div className={`w-9 h-9 rounded-xl flex items-center justify-center ${c.icon}`}>
-					{icon}
-				</div>
-				{detail && (
-					<span className="text-[11px] font-medium text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-800 rounded-full px-2 py-0.5">
-						{detail}
-					</span>
-				)}
-			</div>
-			<p className={`text-2xl sm:text-3xl font-bold ${c.value} tracking-tight`}>
+		<div className="px-5 py-4 sm:px-6 sm:py-5 text-center">
+			<p className={`text-2xl sm:text-3xl font-bold tracking-tight ${accent ? 'text-brand-600 dark:text-brand-400' : 'text-gray-900 dark:text-gray-100'}`}>
 				{value}
 			</p>
-			<p className="text-xs font-medium text-gray-400 dark:text-gray-500 mt-0.5">{label}</p>
+			<p className="text-xs font-medium text-gray-400 dark:text-gray-500 mt-0.5 uppercase tracking-wider">{label}</p>
 		</div>
 	)
 }
@@ -358,55 +288,39 @@ function FormCard({
 	}, [menuOpen])
 
 	return (
-		<div
-			className="group relative rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-surface-elevated-dark transition-all duration-200 hover:shadow-md hover:shadow-gray-200/50 dark:hover:shadow-none hover:border-gray-300 dark:hover:border-gray-700 hover:-translate-y-0.5 overflow-hidden"
-		>
-			{/* Theme color accent bar */}
-			<div className="h-1 w-full" style={{ backgroundColor: themeColor }} />
+		<div className="group relative rounded-2xl bg-white dark:bg-surface-elevated-dark border border-gray-100 dark:border-gray-800/60 shadow-sm transition-all duration-200 hover:shadow-md hover:border-gray-200 dark:hover:border-gray-700 overflow-hidden">
+			{/* Theme accent — subtle left edge */}
+			<div className="absolute left-0 top-4 bottom-4 w-[3px] rounded-full opacity-60 group-hover:opacity-100 transition-opacity duration-200" style={{ backgroundColor: themeColor }} />
 
-			<div className="p-5">
-				{/* Header: status + menu */}
-				<div className="flex items-center justify-between mb-3.5">
-					<div className="flex items-center gap-2">
-						{isPublished ? (
-							<span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 rounded-full px-2.5 py-0.5 uppercase tracking-wide">
-								<span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-								Live
-							</span>
-						) : (
-							<span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-800 rounded-full px-2.5 py-0.5 uppercase tracking-wide">
-								<span className="w-1.5 h-1.5 rounded-full bg-gray-300 dark:bg-gray-600" />
-								Draft
-							</span>
-						)}
-					</div>
+			<div className="p-5 pl-5">
+				{/* Status + menu row */}
+				<div className="flex items-center justify-between mb-3">
+					{isPublished ? (
+						<span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
+							<span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+							Live
+						</span>
+					) : (
+						<span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-gray-400 dark:text-gray-500">
+							<span className="w-1.5 h-1.5 rounded-full bg-gray-300 dark:bg-gray-600" />
+							Draft
+						</span>
+					)}
 					<div className="relative" ref={menuRef}>
 						<button
 							onClick={(e) => { e.stopPropagation(); setMenuOpen(!menuOpen) }}
-							className="p-1.5 rounded-lg text-gray-300 dark:text-gray-600 hover:text-gray-500 dark:hover:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-smooth opacity-0 group-hover:opacity-100"
+							className="p-1.5 -mr-1.5 rounded-lg text-gray-300 dark:text-gray-600 hover:text-gray-500 dark:hover:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 transition-all duration-200 opacity-0 group-hover:opacity-100"
 						>
 							<MoreHorizontal className="h-4 w-4" />
 						</button>
 						{menuOpen && (
-							<div className="absolute right-0 top-9 w-48 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-xl shadow-gray-200/30 dark:shadow-none py-1.5 z-10 animate-scale-in">
-								<MenuButton
-									icon={<Pencil className="h-3.5 w-3.5" />}
-									label="Edit form"
-									onClick={() => { navigate(`build/${form.id}`); setMenuOpen(false) }}
-								/>
+							<div className="absolute right-0 top-9 w-48 rounded-xl border border-gray-200/80 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-xl py-1 z-10 animate-scale-in">
+								<MenuButton icon={<Pencil className="h-3.5 w-3.5" />} label="Edit" onClick={() => { navigate(`build/${form.id}`); setMenuOpen(false) }} />
 								{isPublished && (
-									<MenuButton
-										icon={<BarChart3 className="h-3.5 w-3.5" />}
-										label="View responses"
-										onClick={() => { navigate(`responses/${form.id}`); setMenuOpen(false) }}
-									/>
+									<MenuButton icon={<BarChart3 className="h-3.5 w-3.5" />} label="Responses" onClick={() => { navigate(`responses/${form.id}`); setMenuOpen(false) }} />
 								)}
 								{isPublished && (
-									<MenuButton
-										icon={<ExternalLink className="h-3.5 w-3.5" />}
-										label="Open form"
-										onClick={() => { navigate(`fill/${form.id}`); setMenuOpen(false) }}
-									/>
+									<MenuButton icon={<ExternalLink className="h-3.5 w-3.5" />} label="Open form" onClick={() => { navigate(`fill/${form.id}`); setMenuOpen(false) }} />
 								)}
 								{isPublished && (
 									<MenuButton
@@ -416,71 +330,49 @@ function FormCard({
 									/>
 								)}
 								{isPublished && (
-									<MenuButton
-										icon={<Share2 className="h-3.5 w-3.5" />}
-										label="Share & embed"
-										onClick={() => { onShare(); setMenuOpen(false) }}
-									/>
+									<MenuButton icon={<Share2 className="h-3.5 w-3.5" />} label="Share" onClick={() => { onShare(); setMenuOpen(false) }} />
 								)}
-								<MenuButton
-									icon={<CopyPlus className="h-3.5 w-3.5" />}
-									label="Duplicate"
-									onClick={() => { onDuplicate(); setMenuOpen(false) }}
-								/>
-								<div className="my-1 mx-3 border-t border-gray-100 dark:border-gray-700" />
-								<MenuButton
-									icon={<Trash2 className="h-3.5 w-3.5" />}
-									label="Delete"
-									danger
-									onClick={() => { onDelete(); setMenuOpen(false) }}
-								/>
+								<MenuButton icon={<CopyPlus className="h-3.5 w-3.5" />} label="Duplicate" onClick={() => { onDuplicate(); setMenuOpen(false) }} />
+								<div className="my-1 mx-3 border-t border-gray-100 dark:border-gray-700/50" />
+								<MenuButton icon={<Trash2 className="h-3.5 w-3.5" />} label="Delete" danger onClick={() => { onDelete(); setMenuOpen(false) }} />
 							</div>
 						)}
 					</div>
 				</div>
 
-				{/* Title + description */}
+				{/* Title */}
 				<button
 					onClick={() => navigate(`build/${form.id}`)}
-					className="block w-full text-left"
+					className="block w-full text-left group/title"
 				>
-					<h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-1 truncate group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-smooth">
+					<h3 className="font-semibold text-[15px] text-gray-900 dark:text-gray-100 mb-1 truncate transition-colors duration-200 group-hover/title:text-brand-600 dark:group-hover/title:text-brand-400">
 						{String(form.title) || 'Untitled Form'}
 					</h3>
 					{String(form.description) && (
-						<p className="text-sm text-gray-500 dark:text-gray-400 truncate mb-3 leading-relaxed">
+						<p className="text-sm text-gray-400 dark:text-gray-500 truncate leading-relaxed">
 							{String(form.description)}
 						</p>
 					)}
 				</button>
 
-				{/* Meta info */}
-				<div className="flex items-center gap-3 text-[11px] text-gray-400 dark:text-gray-500 mb-4">
-					<span className="flex items-center gap-1">
-						<FileText className="h-3 w-3" />
-						{fieldCount} field{fieldCount !== 1 ? 's' : ''}
-					</span>
+				{/* Meta */}
+				<div className="flex items-center gap-3 text-[11px] text-gray-400 dark:text-gray-500 mt-3 mb-4">
+					<span>{fieldCount} field{fieldCount !== 1 ? 's' : ''}</span>
 					<span className="w-0.5 h-0.5 rounded-full bg-gray-300 dark:bg-gray-600" />
-					<span className="flex items-center gap-1">
-						<Clock className="h-3 w-3" />
-						{timeAgo}
-					</span>
+					<span>{timeAgo}</span>
 					{isPublished && responseCount > 0 && (
 						<>
 							<span className="w-0.5 h-0.5 rounded-full bg-gray-300 dark:bg-gray-600" />
-							<span className="flex items-center gap-1 text-brand-500 dark:text-brand-400 font-medium">
-								<BarChart3 className="h-3 w-3" />
-								{responseCount} response{responseCount !== 1 ? 's' : ''}
-							</span>
+							<span className="text-brand-500 dark:text-brand-400 font-medium">{responseCount} response{responseCount !== 1 ? 's' : ''}</span>
 						</>
 					)}
 				</div>
 
-				{/* Action buttons */}
+				{/* Actions */}
 				<div className="flex items-center gap-2">
 					<button
 						onClick={() => navigate(`build/${form.id}`)}
-						className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg bg-gray-50 dark:bg-gray-800/80 px-3 py-2 text-xs font-medium text-gray-600 dark:text-gray-300 transition-smooth hover:bg-gray-100 dark:hover:bg-gray-700"
+						className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg bg-gray-50 dark:bg-gray-800/50 px-3 py-2 text-xs font-medium text-gray-600 dark:text-gray-300 transition-all duration-200 hover:bg-gray-100 dark:hover:bg-gray-700"
 					>
 						<Pencil className="h-3 w-3" />
 						Edit
@@ -489,14 +381,14 @@ function FormCard({
 						<>
 							<button
 								onClick={() => navigate(`responses/${form.id}`)}
-								className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg bg-gray-50 dark:bg-gray-800/80 px-3 py-2 text-xs font-medium text-gray-600 dark:text-gray-300 transition-smooth hover:bg-gray-100 dark:hover:bg-gray-700"
+								className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg bg-gray-50 dark:bg-gray-800/50 px-3 py-2 text-xs font-medium text-gray-600 dark:text-gray-300 transition-all duration-200 hover:bg-gray-100 dark:hover:bg-gray-700"
 							>
 								<Eye className="h-3 w-3" />
 								Responses
 							</button>
 							<button
 								onClick={() => onShare()}
-								className="inline-flex items-center justify-center rounded-lg bg-brand-50 dark:bg-brand-900/20 p-2 text-brand-600 dark:text-brand-400 transition-smooth hover:bg-brand-100 dark:hover:bg-brand-900/30"
+								className="inline-flex items-center justify-center rounded-lg bg-brand-50 dark:bg-brand-900/20 p-2 text-brand-600 dark:text-brand-400 transition-all duration-200 hover:bg-brand-100 dark:hover:bg-brand-900/30"
 								title="Share"
 							>
 								<Share2 className="h-3.5 w-3.5" />
@@ -505,10 +397,10 @@ function FormCard({
 					) : (
 						<button
 							onClick={() => navigate(`build/${form.id}`)}
-							className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg bg-brand-50 dark:bg-brand-900/20 px-3 py-2 text-xs font-medium text-brand-600 dark:text-brand-400 transition-smooth hover:bg-brand-100 dark:hover:bg-brand-900/30"
+							className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg bg-brand-50 dark:bg-brand-900/20 px-3 py-2 text-xs font-medium text-brand-600 dark:text-brand-400 transition-all duration-200 hover:bg-brand-100 dark:hover:bg-brand-900/30"
 						>
 							<Send className="h-3 w-3" />
-							Publish
+							Continue editing
 						</button>
 					)}
 				</div>
@@ -531,7 +423,7 @@ function MenuButton({
 	return (
 		<button
 			onClick={onClick}
-			className={`w-full flex items-center gap-2.5 px-3 py-2 text-sm transition-smooth ${
+			className={`w-full flex items-center gap-2.5 px-3.5 py-2 text-[13px] transition-all duration-150 ${
 				danger
 					? 'text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20'
 					: 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50'
@@ -545,55 +437,48 @@ function MenuButton({
 
 function EmptyState({ onCreateClick, onBrowseTemplates }: { onCreateClick: () => void; onBrowseTemplates: () => void }) {
 	return (
-		<div className="flex flex-col items-center justify-center py-16 sm:py-24 animate-fade-in">
-			{/* Illustration */}
+		<div className="flex flex-col items-center justify-center py-20 sm:py-28 animate-fade-in">
 			<div className="relative mb-8">
-				<div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-brand-100 to-brand-50 dark:from-brand-900/30 dark:to-brand-900/10 flex items-center justify-center shadow-lg shadow-brand-100/50 dark:shadow-none">
-					<FileText className="h-10 w-10 text-brand-500" />
-				</div>
-				<div className="absolute -top-1 -right-1 w-7 h-7 rounded-lg bg-brand-500 flex items-center justify-center shadow-md">
-					<Zap className="h-3.5 w-3.5 text-white" />
+				<div className="w-20 h-20 rounded-[22px] bg-gradient-to-b from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-800/60 flex items-center justify-center shadow-sm border border-gray-100 dark:border-gray-700/50">
+					<img src="/logo-icon.png" alt="" className="w-10 h-10 rounded-xl opacity-40" />
 				</div>
 			</div>
 
 			<h2 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2 tracking-tight">
 				Create your first form
 			</h2>
-			<p className="text-gray-500 dark:text-gray-400 text-center max-w-md mb-8 text-sm leading-relaxed">
-				Build beautiful forms that work anywhere — even without internet.
-				Responses save locally and sync automatically when you're back online.
+			<p className="text-gray-400 dark:text-gray-500 text-center max-w-sm mb-8 text-sm leading-relaxed">
+				Build beautiful forms that work anywhere, even offline.
+				Start from a template or create one from scratch.
 			</p>
 
-			<div className="flex flex-col sm:flex-row items-center gap-3">
+			<div className="flex items-center gap-3">
 				<button
 					onClick={onCreateClick}
-					className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-6 py-3 text-sm font-semibold text-white shadow-md shadow-brand-600/25 transition-smooth hover:bg-brand-500 hover:shadow-lg hover:shadow-brand-600/30 active:scale-[0.98]"
+					className="inline-flex items-center gap-2 rounded-full bg-brand-600 pl-5 pr-6 py-3 text-sm font-semibold text-white shadow-sm transition-all duration-200 hover:bg-brand-500 hover:shadow-md active:scale-[0.97]"
 				>
 					<Plus className="h-4 w-4" />
 					New Form
 				</button>
 				<button
 					onClick={onBrowseTemplates}
-					className="inline-flex items-center gap-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-6 py-3 text-sm font-medium text-gray-700 dark:text-gray-300 transition-smooth hover:bg-gray-50 dark:hover:bg-gray-700 active:scale-[0.98]"
+					className="inline-flex items-center gap-2 rounded-full border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 pl-5 pr-6 py-3 text-sm font-medium text-gray-600 dark:text-gray-300 transition-all duration-200 hover:bg-gray-50 dark:hover:bg-gray-700 active:scale-[0.97]"
 				>
 					<LayoutTemplate className="h-4 w-4" />
-					Browse Templates
+					Templates
 				</button>
 			</div>
 
 			{/* Feature hints */}
-			<div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-14 max-w-xl w-full">
+			<div className="flex items-center gap-8 mt-14 text-center">
 				{[
-					{ icon: <Zap className="h-4 w-4" />, label: 'Works offline', desc: 'No internet needed' },
-					{ icon: <Sparkles className="h-4 w-4" />, label: '17+ templates', desc: 'Ready to customize' },
-					{ icon: <TrendingUp className="h-4 w-4" />, label: 'Analytics built-in', desc: 'Charts & insights' },
+					{ icon: <Zap className="h-4 w-4" />, label: 'Works offline' },
+					{ icon: <Sparkles className="h-4 w-4" />, label: '17+ templates' },
+					{ icon: <TrendingUp className="h-4 w-4" />, label: 'Built-in analytics' },
 				].map((feat) => (
-					<div key={feat.label} className="text-center p-3">
-						<div className="w-9 h-9 rounded-xl bg-gray-100 dark:bg-gray-800 flex items-center justify-center mx-auto mb-2 text-gray-500 dark:text-gray-400">
-							{feat.icon}
-						</div>
-						<p className="text-xs font-semibold text-gray-700 dark:text-gray-300">{feat.label}</p>
-						<p className="text-[11px] text-gray-400 dark:text-gray-500 mt-0.5">{feat.desc}</p>
+					<div key={feat.label} className="flex items-center gap-2 text-xs text-gray-400 dark:text-gray-500">
+						<span className="text-gray-300 dark:text-gray-600">{feat.icon}</span>
+						{feat.label}
 					</div>
 				))}
 			</div>
@@ -642,65 +527,61 @@ function TemplatePicker({
 		.filter((cat) => cat.keys.length > 0)
 
 	return (
-		<div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm animate-fade-in">
-			<div className="w-full max-w-3xl rounded-t-2xl sm:rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 animate-slide-up max-h-[85vh] flex flex-col shadow-2xl">
-				{/* Sticky header */}
-				<div className="shrink-0 px-6 pt-5 pb-4 border-b border-gray-100 dark:border-gray-800">
+		<div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/30 backdrop-blur-sm animate-fade-in" onClick={onClose}>
+			<div
+				className="w-full max-w-2xl rounded-t-2xl sm:rounded-2xl bg-white dark:bg-gray-900 animate-slide-up max-h-[80vh] flex flex-col shadow-2xl border border-gray-200/50 dark:border-gray-700/50"
+				onClick={(e) => e.stopPropagation()}
+			>
+				{/* Header */}
+				<div className="shrink-0 px-6 pt-5 pb-4 border-b border-gray-100 dark:border-gray-800/60">
 					<div className="flex items-center justify-between mb-4">
-						<div className="flex items-center gap-2.5">
-							<div className="w-8 h-8 rounded-lg bg-brand-50 dark:bg-brand-900/20 flex items-center justify-center">
-								<LayoutTemplate className="h-4 w-4 text-brand-500" />
-							</div>
-							<h3 className="text-lg font-semibold">Create a form</h3>
-						</div>
+						<h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">New Form</h3>
 						<button
 							onClick={onClose}
-							className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 transition-smooth"
+							className="w-7 h-7 rounded-full flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 transition-all duration-150 text-lg"
 						>
 							&times;
 						</button>
 					</div>
 
-					{/* Blank form CTA + Search row */}
 					<div className="flex gap-3">
 						<button
 							onClick={() => onSelect('blank')}
-							className="shrink-0 flex items-center gap-2 rounded-xl border-2 border-dashed border-gray-200 dark:border-gray-700 px-4 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-300 hover:border-brand-400 hover:text-brand-600 dark:hover:text-brand-400 transition-smooth"
+							className="shrink-0 flex items-center gap-2 rounded-xl bg-gray-50 dark:bg-gray-800 px-4 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-300 transition-all duration-200 hover:bg-brand-50 hover:text-brand-600 dark:hover:bg-brand-900/20 dark:hover:text-brand-400"
 						>
 							<Plus className="h-4 w-4" />
-							Blank form
+							Blank
 						</button>
 						<div className="relative flex-1">
-							<Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+							<Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-300 dark:text-gray-600" />
 							<input
 								type="text"
 								placeholder="Search templates..."
 								value={search}
 								onChange={(e) => setSearch(e.target.value)}
 								autoFocus
-								className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 transition-smooth"
+								className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-gray-50 dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 transition-all duration-200 border-0"
 							/>
 						</div>
 					</div>
 				</div>
 
-				{/* Scrollable body */}
+				{/* Body */}
 				<div className="flex-1 overflow-y-auto px-6 py-4">
 					{filteredCategories.length === 0 ? (
 						<div className="text-center py-12">
-							<Search className="h-8 w-8 text-gray-300 dark:text-gray-600 mx-auto mb-2" />
-							<p className="text-sm text-gray-500 dark:text-gray-400">
+							<p className="text-sm text-gray-400 dark:text-gray-500">
 								No templates match &ldquo;{search}&rdquo;
 							</p>
 						</div>
 					) : (
 						filteredCategories.map((cat) => (
 							<div key={cat.label} className="mb-5 last:mb-0">
-								<h4 className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+								<h4 className="text-[11px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
 									<span>{CATEGORY_ICONS[cat.label] || '📄'}</span>
 									{cat.label}
 								</h4>
-								<div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+								<div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
 									{cat.keys.map((key) => {
 										const tmpl = FORM_TEMPLATES[key]
 										if (!tmpl) return null
@@ -708,7 +589,7 @@ function TemplatePicker({
 											<button
 												key={key}
 												onClick={() => onSelect(key)}
-												className="text-left rounded-xl border border-gray-100 dark:border-gray-800 px-4 py-3 transition-smooth hover:border-brand-300 dark:hover:border-brand-700 hover:bg-brand-50/50 dark:hover:bg-brand-900/10 group"
+												className="text-left rounded-xl px-4 py-3 transition-all duration-150 hover:bg-gray-50 dark:hover:bg-gray-800/60 group"
 											>
 												<div className="flex items-center justify-between gap-2">
 													<div className="min-w-0">
@@ -719,7 +600,7 @@ function TemplatePicker({
 															{tmpl.fields.length} fields
 														</p>
 													</div>
-													<ArrowRight className="h-3.5 w-3.5 shrink-0 text-gray-300 dark:text-gray-600 group-hover:text-brand-500 transition-smooth" />
+													<ArrowRight className="h-3.5 w-3.5 shrink-0 text-gray-200 dark:text-gray-700 group-hover:text-brand-500 transition-colors duration-150" />
 												</div>
 											</button>
 										)
@@ -730,11 +611,11 @@ function TemplatePicker({
 					)}
 				</div>
 
-				{/* Sticky footer */}
-				<div className="shrink-0 px-6 py-3 border-t border-gray-100 dark:border-gray-800">
+				{/* Footer */}
+				<div className="shrink-0 px-6 py-3 border-t border-gray-100 dark:border-gray-800/60">
 					<button
 						onClick={onBrowseAll}
-						className="w-full text-center text-sm text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 font-medium py-1 transition-smooth"
+						className="w-full text-center text-sm text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 font-medium py-1 transition-colors duration-150"
 					>
 						Browse all templates &rarr;
 					</button>

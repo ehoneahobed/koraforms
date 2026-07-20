@@ -101,22 +101,22 @@ function AuthenticatedLayout() {
 	const [showUserMenu, setShowUserMenu] = useState(false)
 
 	return (
-		<div className="min-h-screen bg-surface dark:bg-surface-dark transition-colors duration-200">
+		<div className="min-h-screen bg-gray-50/50 dark:bg-surface-dark transition-colors duration-200">
 			{/* Header */}
-			<header className="sticky top-0 z-40 border-b border-gray-200 dark:border-gray-800 bg-white/80 dark:bg-surface-dark/80 backdrop-blur-xl">
-				<div className="mx-auto max-w-5xl flex items-center justify-between px-4 sm:px-6 h-14">
+			<header className="sticky top-0 z-40 bg-white/80 dark:bg-surface-dark/80 backdrop-blur-xl border-b border-gray-100 dark:border-gray-800/60">
+				<div className="mx-auto max-w-5xl flex items-center justify-between px-4 sm:px-6 h-12">
 					<button
 						onClick={() => navigate('dashboard')}
-						className="flex items-center gap-2.5 hover:opacity-80 transition-smooth"
+						className="flex items-center gap-2 hover:opacity-80 transition-all duration-200"
 					>
-						<img src="/logo-icon.png" alt="KoraForms" className="w-8 h-8 rounded-lg" />
-						<span className="text-lg font-semibold tracking-tight">KoraForms</span>
+						<img src="/logo-icon.png" alt="KoraForms" className="w-7 h-7 rounded-lg" />
+						<span className="text-[15px] font-semibold tracking-tight text-gray-900 dark:text-gray-100">KoraForms</span>
 					</button>
-					<div className="flex items-center gap-2">
+					<div className="flex items-center gap-1">
 						<SyncIndicator status={status} />
 						<button
 							onClick={() => setDark(!dark)}
-							className="p-2 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-smooth"
+							className="p-2 rounded-full text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-all duration-200"
 							aria-label="Toggle theme"
 						>
 							{dark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
@@ -125,21 +125,21 @@ function AuthenticatedLayout() {
 						<div className="relative">
 							<button
 								onClick={() => setShowUserMenu(!showUserMenu)}
-								className="flex items-center gap-2 p-1.5 rounded-lg text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-smooth"
+								className="p-1.5 rounded-full text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-all duration-200"
 							>
 								<div className="w-6 h-6 rounded-full bg-brand-100 dark:bg-brand-900/30 flex items-center justify-center">
-									<User className="h-3.5 w-3.5 text-brand-600 dark:text-brand-400" />
+									<User className="h-3 w-3 text-brand-600 dark:text-brand-400" />
 								</div>
 							</button>
 							{showUserMenu && (
 								<>
 									<div className="fixed inset-0 z-40" onClick={() => setShowUserMenu(false)} />
-									<div className="absolute right-0 top-10 w-56 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg py-1 z-50 animate-scale-in">
-										<div className="px-3 py-2 border-b border-gray-100 dark:border-gray-700">
+									<div className="absolute right-0 top-10 w-52 rounded-xl bg-white dark:bg-gray-800 shadow-lg shadow-gray-200/50 dark:shadow-none border border-gray-100 dark:border-gray-700/50 py-1 z-50 animate-scale-in">
+										<div className="px-3.5 py-2.5 border-b border-gray-100 dark:border-gray-700/50">
 											<p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
 												{user?.name || 'User'}
 											</p>
-											<p className="text-xs text-gray-400 truncate">
+											<p className="text-xs text-gray-400 truncate mt-0.5">
 												{user?.email}
 											</p>
 										</div>
@@ -148,7 +148,7 @@ function AuthenticatedLayout() {
 												setShowUserMenu(false)
 												await signOut()
 											}}
-											className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-smooth"
+											className="w-full flex items-center gap-2.5 px-3.5 py-2 text-[13px] text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-all duration-150"
 										>
 											<LogOut className="h-3.5 w-3.5" />
 											Sign out
@@ -161,8 +161,8 @@ function AuthenticatedLayout() {
 				</div>
 			</header>
 
-			{/* Content — rendered by child routes */}
-			<main className="mx-auto max-w-5xl px-4 sm:px-6 py-6 sm:py-8">
+			{/* Content */}
+			<main className="mx-auto max-w-5xl px-4 sm:px-6 py-8 sm:py-10">
 				<div className="animate-fade-in">
 					<AuthenticatedRoutes />
 				</div>
