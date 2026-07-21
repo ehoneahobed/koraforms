@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useQuery, useMutation } from '@korajs/react'
 import { app } from '../kora'
 import { setPageMeta } from '../utils/meta'
@@ -33,6 +33,9 @@ import {
 	ArrowUpDown,
 	Grid3x3,
 	Download,
+	Monitor,
+	Smartphone,
+	Search,
 } from 'lucide-react'
 import { FIELD_TYPES, CONDITION_OPERATORS, LANGUAGES, type FormField, type FormSettings as FormSettingsType, type FieldType, type ConditionalRule } from '../types'
 import { THEME_PRESETS, getThemeById } from '../themes'
@@ -90,6 +93,8 @@ export function FormBuilder({ formId, navigate, userId }: Props) {
 	const [activeField, setActiveField] = useState<string | null>(null)
 	const [showThemePicker, setShowThemePicker] = useState(false)
 	const [showSettings, setShowSettings] = useState(false)
+	const [previewMode, setPreviewMode] = useState<'desktop' | 'mobile'>('desktop')
+	const [fieldSearch, setFieldSearch] = useState('')
 	// Share modal is now handled by FormPageShell
 
 	useEffect(() => {
@@ -252,22 +257,22 @@ export function FormBuilder({ formId, navigate, userId }: Props) {
 		if (!loaded) return
 		const handler = (e: KeyboardEvent) => {
 			const meta = e.metaKey || e.ctrlKey
-			// Ctrl+S / Cmd+S → save immediately
+			// Ctrl+S / Cmd+S -> save immediately
 			if (meta && e.key === 's') {
 				e.preventDefault()
 				save()
 			}
-			// Ctrl+D / Cmd+D → duplicate active field
+			// Ctrl+D / Cmd+D -> duplicate active field
 			if (meta && e.key === 'd' && activeField) {
 				e.preventDefault()
 				const idx = fields.findIndex(f => f.id === activeField)
 				if (idx >= 0) duplicateField(idx)
 			}
-			// Escape → deselect field
+			// Escape -> deselect field
 			if (e.key === 'Escape') {
 				setActiveField(null)
 			}
-			// Delete/Backspace with Ctrl → remove active field
+			// Delete/Backspace with Ctrl -> remove active field
 			if (meta && (e.key === 'Backspace' || e.key === 'Delete') && activeField) {
 				const tag = (e.target as HTMLElement)?.tagName?.toLowerCase()
 				if (tag === 'input' || tag === 'textarea' || tag === 'select') return
@@ -351,78 +356,126 @@ export function FormBuilder({ formId, navigate, userId }: Props) {
 		input.click()
 	}
 
+	// Filter field types for the left panel search
+	const filteredFieldTypes = fieldSearch
+		? FIELD_TYPES.filter(ft =>
+			ft.label.toLowerCase().includes(fieldSearch.toLowerCase()) ||
+			ft.value.toLowerCase().includes(fieldSearch.toLowerCase())
+		)
+		: FIELD_TYPES
+
+	// Get the active field data and index
+	const activeFieldIndex = activeField ? fields.findIndex(f => f.id === activeField) : -1
+	const activeFieldData = activeFieldIndex >= 0 ? fields[activeFieldIndex] : null
+
 	return (
-		<div className="max-w-2xl mx-auto">
-			{/* Builder utility row */}
-			<div className="flex items-center justify-end gap-2 mb-4">
-				{saved && (
-					<span className="flex items-center gap-1 text-xs text-emerald-500 animate-fade-in mr-auto">
-						<Check className="h-3 w-3" />
-						Saved
-					</span>
-				)}
-				<button
-					onClick={exportFormJson}
-					className="inline-flex items-center justify-center rounded-lg bg-gray-100 dark:bg-gray-800 p-2 text-gray-500 dark:text-gray-400 transition-smooth hover:bg-gray-200 dark:hover:bg-gray-700 hover:text-gray-700 dark:hover:text-gray-200"
-					title="Export form as JSON"
-				>
-					<Download className="h-3.5 w-3.5" />
-				</button>
-				<button
-					onClick={importFormJson}
-					className="inline-flex items-center justify-center rounded-lg bg-gray-100 dark:bg-gray-800 p-2 text-gray-500 dark:text-gray-400 transition-smooth hover:bg-gray-200 dark:hover:bg-gray-700 hover:text-gray-700 dark:hover:text-gray-200"
-					title="Import form from JSON"
-				>
-					<Upload className="h-3.5 w-3.5" />
-				</button>
-				<button
-					onClick={() => setShowThemePicker(!showThemePicker)}
-					className="inline-flex items-center justify-center rounded-lg bg-gray-100 dark:bg-gray-800 p-2 text-gray-500 dark:text-gray-400 transition-smooth hover:bg-gray-200 dark:hover:bg-gray-700 hover:text-gray-700 dark:hover:text-gray-200"
-					title="Toggle theme picker"
-				>
-					<div
-						className="w-3.5 h-3.5 rounded-full ring-1 ring-black/10"
-						style={{ backgroundColor: getThemeById(theme).preview }}
+		<div className="flex -mx-4 sm:-mx-6 lg:-mx-8 -mb-8 sm:-mb-10" style={{ minHeight: 'calc(100vh - 200px)' }}>
+			{/* Left Panel: Add fields */}
+			<div className="hidden lg:flex flex-col w-[200px] shrink-0 border-r border-gray-100 dark:border-gray-800/50 p-4">
+				<h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3">Add fields</h3>
+				<div className="relative mb-3">
+					<Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+					<input
+						type="text"
+						value={fieldSearch}
+						onChange={(e) => setFieldSearch(e.target.value)}
+						placeholder="Search field types..."
+						className="w-full rounded-lg bg-gray-100 dark:bg-gray-800 pl-8 pr-3 py-2 text-sm outline-none placeholder-gray-400 dark:placeholder-gray-500 text-gray-700 dark:text-gray-300 focus:ring-1 focus:ring-brand-300 dark:focus:ring-brand-700 transition-smooth"
 					/>
-				</button>
+				</div>
+				<div className="flex-1 overflow-y-auto space-y-0.5">
+					{filteredFieldTypes.map((ft) => (
+						<button
+							key={ft.value}
+							onClick={() => addFieldOfType(ft.value, fields.length > 0 ? fields.length - 1 : null)}
+							className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-smooth"
+						>
+							<span className="text-gray-400 dark:text-gray-500">{FIELD_ICONS[ft.value]}</span>
+							{ft.label}
+						</button>
+					))}
+					{filteredFieldTypes.length === 0 && (
+						<p className="text-xs text-gray-400 dark:text-gray-500 text-center py-4">No matching fields</p>
+					)}
+				</div>
 			</div>
 
-			{/* Form header */}
-			<div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-surface-elevated-dark p-6 sm:p-8 mb-4">
-				<input
-					type="text"
-					value={title}
-					onChange={(e) => setTitle(e.target.value)}
-					placeholder="Untitled Form"
-					className="w-full bg-transparent text-2xl sm:text-3xl font-bold outline-none placeholder-gray-300 dark:placeholder-gray-600 text-gray-900 dark:text-gray-100 mb-2"
-				/>
-				<input
-					type="text"
-					value={description}
-					onChange={(e) => setDescription(e.target.value)}
-					placeholder="Add a description..."
-					className="w-full bg-transparent text-gray-500 dark:text-gray-400 outline-none placeholder-gray-300 dark:placeholder-gray-700 text-sm sm:text-base"
-				/>
-			</div>
+			{/* Center Panel: Form preview */}
+			<div className="flex-1 overflow-y-auto p-6">
+				{/* Toolbar */}
+				<div className="flex items-center justify-between mb-4">
+					<div className="flex items-center gap-1">
+						{/* Desktop/Mobile toggle */}
+						<button
+							onClick={() => setPreviewMode('desktop')}
+							className={`p-2 rounded-lg transition-smooth ${
+								previewMode === 'desktop'
+									? 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100'
+									: 'text-gray-400 dark:text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-600 dark:hover:text-gray-300'
+							}`}
+							title="Desktop preview"
+						>
+							<Monitor className="h-4 w-4" />
+						</button>
+						<button
+							onClick={() => setPreviewMode('mobile')}
+							className={`p-2 rounded-lg transition-smooth ${
+								previewMode === 'mobile'
+									? 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100'
+									: 'text-gray-400 dark:text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-600 dark:hover:text-gray-300'
+							}`}
+							title="Mobile preview"
+						>
+							<Smartphone className="h-4 w-4" />
+						</button>
 
-			{/* Theme picker */}
-			<div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-surface-elevated-dark mb-4 overflow-hidden">
-				<button
-					onClick={() => setShowThemePicker(!showThemePicker)}
-					className="w-full flex items-center justify-between px-6 py-3.5 text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-smooth"
-				>
-					<div className="flex items-center gap-3">
-						<div
-							className="w-5 h-5 rounded-full shadow-inner ring-1 ring-black/10"
-							style={{ backgroundColor: getThemeById(theme).preview }}
-						/>
-						<span className="font-medium">Theme</span>
-						<span className="text-gray-400 dark:text-gray-500">{getThemeById(theme).name}</span>
+						<div className="w-px h-5 bg-gray-200 dark:bg-gray-700 mx-1" />
+
+						{/* Theme button */}
+						<button
+							onClick={() => setShowThemePicker(!showThemePicker)}
+							className="inline-flex items-center gap-2 rounded-lg p-2 text-gray-500 dark:text-gray-400 transition-smooth hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-700 dark:hover:text-gray-200"
+							title="Toggle theme picker"
+						>
+							<div
+								className="w-4 h-4 rounded-full ring-1 ring-black/10"
+								style={{ backgroundColor: getThemeById(theme).preview }}
+							/>
+						</button>
+
+						<div className="w-px h-5 bg-gray-200 dark:bg-gray-700 mx-1" />
+
+						{/* Export/Import */}
+						<button
+							onClick={exportFormJson}
+							className="p-2 rounded-lg text-gray-400 dark:text-gray-500 transition-smooth hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-600 dark:hover:text-gray-300"
+							title="Export form as JSON"
+						>
+							<Download className="h-4 w-4" />
+						</button>
+						<button
+							onClick={importFormJson}
+							className="p-2 rounded-lg text-gray-400 dark:text-gray-500 transition-smooth hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-600 dark:hover:text-gray-300"
+							title="Import form from JSON"
+						>
+							<Upload className="h-4 w-4" />
+						</button>
 					</div>
-					<ChevronDown className={`h-4 w-4 text-gray-400 transition-transform duration-200 ${showThemePicker ? 'rotate-180' : ''}`} />
-				</button>
+
+					{/* Save status */}
+					<div className="flex items-center">
+						{saved && (
+							<span className="flex items-center gap-1 text-xs text-emerald-500 animate-fade-in">
+								<Check className="h-3 w-3" />
+								Saved
+							</span>
+						)}
+					</div>
+				</div>
+
+				{/* Theme picker (below toolbar when toggled) */}
 				{showThemePicker && (
-					<div className="px-6 pb-4 pt-1 animate-fade-in">
+					<div className="mb-4 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-surface-elevated-dark p-4 animate-fade-in">
 						<div className="grid grid-cols-6 sm:grid-cols-12 gap-2">
 							{THEME_PRESETS.map((preset) => (
 								<button
@@ -452,123 +505,181 @@ export function FormBuilder({ formId, navigate, userId }: Props) {
 						</div>
 					</div>
 				)}
+
+				{/* Form preview card */}
+				<div className={`mx-auto ${previewMode === 'desktop' ? 'max-w-xl' : 'max-w-sm'} transition-all duration-300`}>
+					{/* Form header */}
+					<div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-surface-elevated-dark p-6 sm:p-8 mb-4 shadow-sm">
+						<input
+							type="text"
+							value={title}
+							onChange={(e) => setTitle(e.target.value)}
+							placeholder="Untitled Form"
+							className="w-full bg-transparent text-xl font-bold outline-none placeholder-gray-300 dark:placeholder-gray-600 text-gray-900 dark:text-gray-100 mb-2"
+						/>
+						<input
+							type="text"
+							value={description}
+							onChange={(e) => setDescription(e.target.value)}
+							placeholder="Add a description..."
+							className="w-full bg-transparent text-gray-500 dark:text-gray-400 outline-none placeholder-gray-300 dark:placeholder-gray-700 text-sm"
+						/>
+					</div>
+
+					{/* Form settings (slug, status, thank-you, limits) */}
+					{isPublished && (
+						<FormSettings
+							slug={String(form?.slug || '')}
+							status={String(form?.status || 'draft')}
+							settings={settings}
+							onSlugChange={(newSlug) => {
+								if (formId) updateForm(formId, { slug: newSlug })
+							}}
+							onStatusChange={(newStatus) => {
+								if (formId) updateForm(formId, { status: newStatus })
+							}}
+							onSettingsChange={setSettings}
+							isOpen={showSettings}
+							onToggle={() => setShowSettings(!showSettings)}
+						/>
+					)}
+
+					{/* Field preview cards */}
+					<div className="space-y-2">
+						{fields.map((field, index) => (
+							<FieldPreviewCard
+								key={field.id}
+								field={field}
+								index={index}
+								isActive={activeField === field.id}
+								isDragging={dragIndex === index}
+								isDragOver={dragOverIndex === index && dragIndex !== index}
+								onFocus={() => setActiveField(field.id)}
+								onDragStart={() => handleDragStart(index)}
+								onDragOver={(e) => handleDragOver(e, index)}
+								onDrop={() => handleDrop(index)}
+								onDragEnd={handleDragEnd}
+							/>
+						))}
+					</div>
+
+					{/* Add field -- click or type / for slash command */}
+					<div className="relative mt-3">
+						<div className="flex gap-2">
+							<button
+								onClick={() => addField()}
+								className="flex-1 rounded-2xl border-2 border-dashed border-gray-200 dark:border-gray-800 py-4 text-gray-400 dark:text-gray-500 transition-smooth hover:border-brand-300 dark:hover:border-brand-700 hover:text-brand-500 flex items-center justify-center gap-2 text-sm font-medium active:scale-[0.99]"
+							>
+								<Plus className="h-4 w-4" />
+								Add field
+							</button>
+							<button
+								onClick={() => slashCommand.open(fields.length - 1)}
+								className="rounded-2xl border-2 border-dashed border-gray-200 dark:border-gray-800 px-4 py-4 text-gray-400 dark:text-gray-500 transition-smooth hover:border-brand-300 dark:hover:border-brand-700 hover:text-brand-500 flex items-center justify-center text-sm font-medium active:scale-[0.99]"
+								title="Choose field type (or press /)"
+							>
+								/
+							</button>
+						</div>
+						<SlashCommandMenu
+							isOpen={slashCommand.isOpen}
+							query={slashCommand.query}
+							filteredTypes={slashCommand.filteredTypes}
+							selectedIndex={slashCommand.selectedIndex}
+							onQueryChange={slashCommand.updateQuery}
+							onSelect={slashCommand.selectCurrent}
+							onClose={slashCommand.close}
+						/>
+					</div>
+
+					{/* Mobile-only: add field type list inline (since left panel is hidden) */}
+					<div className="lg:hidden mt-3">
+						<details className="group">
+							<summary className="flex items-center gap-2 text-xs text-gray-400 dark:text-gray-500 cursor-pointer select-none hover:text-gray-600 dark:hover:text-gray-300 transition-smooth">
+								<Plus className="h-3 w-3" />
+								Browse field types
+							</summary>
+							<div className="mt-2 grid grid-cols-2 gap-1.5">
+								{FIELD_TYPES.map((ft) => (
+									<button
+										key={ft.value}
+										onClick={() => addFieldOfType(ft.value, fields.length > 0 ? fields.length - 1 : null)}
+										className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-smooth"
+									>
+										<span className="text-gray-400 dark:text-gray-500">{FIELD_ICONS[ft.value]}</span>
+										{ft.label}
+									</button>
+								))}
+							</div>
+						</details>
+					</div>
+
+					{fields.length === 0 && (
+						<p className="text-center text-gray-400 dark:text-gray-500 text-sm mt-6">
+							Click "Add field" or press <kbd className="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-xs font-mono">/</kbd> to choose a field type.
+							<br />
+							<span className="text-xs text-gray-300 dark:text-gray-600">
+								Fields auto-save as you edit.
+							</span>
+						</p>
+					)}
+
+					{/* Keyboard shortcuts hint */}
+					{fields.length > 0 && (
+						<div className="mt-6 flex items-center justify-center gap-4 text-[10px] text-gray-300 dark:text-gray-700">
+							<span><kbd className="px-1 py-0.5 rounded bg-gray-100 dark:bg-gray-800 font-mono">Ctrl+S</kbd> save</span>
+							<span><kbd className="px-1 py-0.5 rounded bg-gray-100 dark:bg-gray-800 font-mono">Ctrl+D</kbd> duplicate</span>
+							<span><kbd className="px-1 py-0.5 rounded bg-gray-100 dark:bg-gray-800 font-mono">/</kbd> insert</span>
+							<span><kbd className="px-1 py-0.5 rounded bg-gray-100 dark:bg-gray-800 font-mono">Esc</kbd> deselect</span>
+						</div>
+					)}
+
+					{/* Bottom spacer */}
+					<div className="h-20" />
+				</div>
 			</div>
 
-			{/* Form settings (slug, status, thank-you, limits) */}
-			{isPublished && (
-				<FormSettings
-					slug={String(form?.slug || '')}
-					status={String(form?.status || 'draft')}
-					settings={settings}
-					onSlugChange={(newSlug) => {
-						if (formId) updateForm(formId, { slug: newSlug })
-					}}
-					onStatusChange={(newStatus) => {
-						if (formId) updateForm(formId, { status: newStatus })
-					}}
-					onSettingsChange={setSettings}
-					isOpen={showSettings}
-					onToggle={() => setShowSettings(!showSettings)}
-				/>
-			)}
-
-			{/* Fields */}
-			<div className="space-y-2">
-				{fields.map((field, index) => (
-					<FieldEditor
-						key={field.id}
-						field={field}
-						index={index}
+			{/* Right Panel: Field settings */}
+			<div className="hidden lg:flex flex-col w-[280px] shrink-0 border-l border-gray-100 dark:border-gray-800/50 overflow-y-auto">
+				<div className="p-4">
+					<h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3">Field settings</h3>
+				</div>
+				{activeFieldData && activeFieldIndex >= 0 ? (
+					<FieldSettingsPanel
+						field={activeFieldData}
+						index={activeFieldIndex}
 						total={fields.length}
 						allFields={fields}
 						languages={settings.languages}
-						isActive={activeField === field.id}
-						isDragging={dragIndex === index}
-						isDragOver={dragOverIndex === index && dragIndex !== index}
-						onFocus={() => setActiveField(field.id)}
-						onUpdate={(updates) => updateField(index, updates)}
-						onRemove={() => removeField(index)}
-						onDuplicate={() => duplicateField(index)}
-						onMove={(dir) => moveField(index, index + dir)}
-						onAddAfter={() => addField(index)}
-						onDragStart={() => handleDragStart(index)}
-						onDragOver={(e) => handleDragOver(e, index)}
-						onDrop={() => handleDrop(index)}
-						onDragEnd={handleDragEnd}
+						onUpdate={(updates) => updateField(activeFieldIndex, updates)}
+						onRemove={() => removeField(activeFieldIndex)}
+						onDuplicate={() => duplicateField(activeFieldIndex)}
+						onMove={(dir) => moveField(activeFieldIndex, activeFieldIndex + dir)}
+						onAddAfter={() => addField(activeFieldIndex)}
 					/>
-				))}
+				) : (
+					<div className="flex-1 flex items-center justify-center px-6">
+						<p className="text-sm text-gray-400 dark:text-gray-500 text-center">
+							Select a field to edit its settings
+						</p>
+					</div>
+				)}
 			</div>
-
-			{/* Add field — click or type / for slash command */}
-			<div className="relative mt-3">
-				<div className="flex gap-2">
-					<button
-						onClick={() => addField()}
-						className="flex-1 rounded-2xl border-2 border-dashed border-gray-200 dark:border-gray-800 py-4 text-gray-400 dark:text-gray-500 transition-smooth hover:border-brand-300 dark:hover:border-brand-700 hover:text-brand-500 flex items-center justify-center gap-2 text-sm font-medium active:scale-[0.99]"
-					>
-						<Plus className="h-4 w-4" />
-						Add field
-					</button>
-					<button
-						onClick={() => slashCommand.open(fields.length - 1)}
-						className="rounded-2xl border-2 border-dashed border-gray-200 dark:border-gray-800 px-4 py-4 text-gray-400 dark:text-gray-500 transition-smooth hover:border-brand-300 dark:hover:border-brand-700 hover:text-brand-500 flex items-center justify-center text-sm font-medium active:scale-[0.99]"
-						title="Choose field type (or press /)"
-					>
-						/
-					</button>
-				</div>
-				<SlashCommandMenu
-					isOpen={slashCommand.isOpen}
-					query={slashCommand.query}
-					filteredTypes={slashCommand.filteredTypes}
-					selectedIndex={slashCommand.selectedIndex}
-					onQueryChange={slashCommand.updateQuery}
-					onSelect={slashCommand.selectCurrent}
-					onClose={slashCommand.close}
-				/>
-			</div>
-
-			{fields.length === 0 && (
-				<p className="text-center text-gray-400 dark:text-gray-500 text-sm mt-6">
-					Click "Add field" or press <kbd className="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-xs font-mono">/</kbd> to choose a field type.
-					<br />
-					<span className="text-xs text-gray-300 dark:text-gray-600">
-						Fields auto-save as you edit.
-					</span>
-				</p>
-			)}
-
-			{/* Keyboard shortcuts hint */}
-			{fields.length > 0 && (
-				<div className="mt-6 flex items-center justify-center gap-4 text-[10px] text-gray-300 dark:text-gray-700">
-					<span><kbd className="px-1 py-0.5 rounded bg-gray-100 dark:bg-gray-800 font-mono">Ctrl+S</kbd> save</span>
-					<span><kbd className="px-1 py-0.5 rounded bg-gray-100 dark:bg-gray-800 font-mono">Ctrl+D</kbd> duplicate</span>
-					<span><kbd className="px-1 py-0.5 rounded bg-gray-100 dark:bg-gray-800 font-mono">/</kbd> insert</span>
-					<span><kbd className="px-1 py-0.5 rounded bg-gray-100 dark:bg-gray-800 font-mono">Esc</kbd> deselect</span>
-				</div>
-			)}
-
-			{/* Bottom spacer */}
-			<div className="h-20" />
 		</div>
 	)
 }
 
-function FieldEditor({
+/* ============================================================
+   FieldPreviewCard -- simplified field card for center panel
+   ============================================================ */
+
+function FieldPreviewCard({
 	field,
 	index,
-	total,
-	allFields,
-	languages,
 	isActive,
 	isDragging,
 	isDragOver,
 	onFocus,
-	onUpdate,
-	onRemove,
-	onDuplicate,
-	onMove,
-	onAddAfter,
 	onDragStart,
 	onDragOver,
 	onDrop,
@@ -576,22 +687,213 @@ function FieldEditor({
 }: {
 	field: FormField
 	index: number
-	total: number
-	allFields: FormField[]
-	languages?: string[]
 	isActive: boolean
 	isDragging?: boolean
 	isDragOver?: boolean
 	onFocus: () => void
+	onDragStart?: () => void
+	onDragOver?: (e: React.DragEvent) => void
+	onDrop?: () => void
+	onDragEnd?: () => void
+}) {
+	const needsOptions = ['select', 'radio', 'checkbox', 'ranking'].includes(field.type)
+	const isMatrix = field.type === 'matrix'
+	const needsScaleLabels = field.type === 'scale'
+	const isRating = field.type === 'rating'
+	const hasConditions = field.conditions && field.conditions.length > 0
+
+	return (
+		<div
+			onClick={onFocus}
+			draggable
+			onDragStart={(e) => {
+				e.dataTransfer.effectAllowed = 'move'
+				onDragStart?.()
+			}}
+			onDragOver={(e) => onDragOver?.(e)}
+			onDrop={() => onDrop?.()}
+			onDragEnd={() => onDragEnd?.()}
+			className={`group rounded-xl p-4 transition-smooth cursor-pointer ${
+				isDragging
+					? 'opacity-40 border-2 border-brand-300 dark:border-brand-700 bg-white dark:bg-surface-elevated-dark'
+					: isDragOver
+						? 'border-2 border-brand-400 dark:border-brand-600 shadow-md shadow-brand-100 dark:shadow-none bg-white dark:bg-surface-elevated-dark'
+						: isActive
+							? 'border-l-[3px] border-brand-500 border-t border-r border-b border-t-gray-200 dark:border-t-gray-800 border-r-gray-200 dark:border-r-gray-800 border-b-gray-200 dark:border-b-gray-800 bg-white dark:bg-surface-elevated-dark shadow-sm'
+							: 'border border-gray-200 dark:border-gray-800 bg-white dark:bg-surface-elevated-dark hover:bg-gray-50 dark:hover:bg-gray-800/30'
+			}`}
+		>
+			<div className="flex items-start gap-3">
+				{/* Drag handle */}
+				<div className="opacity-0 group-hover:opacity-40 hover:!opacity-100 transition-smooth cursor-grab active:cursor-grabbing pt-0.5">
+					<GripVertical className="h-4 w-4 text-gray-400" />
+				</div>
+
+				<div className="flex-1 min-w-0">
+					{/* Type icon + field number + label */}
+					<div className="flex items-center gap-2 mb-1">
+						<span className="text-gray-400 dark:text-gray-500">{FIELD_ICONS[field.type]}</span>
+						<span className="text-xs text-gray-400 dark:text-gray-500 font-medium">{index + 1}.</span>
+						<span className={`text-sm font-medium ${field.label ? 'text-gray-900 dark:text-gray-100' : 'text-gray-300 dark:text-gray-600'}`}>
+							{field.label || 'Untitled'}
+						</span>
+						{field.required && (
+							<span className="text-xs text-amber-500 font-medium">*</span>
+						)}
+						{hasConditions && (
+							<GitBranch className="h-3 w-3 text-amber-500" />
+						)}
+					</div>
+
+					{/* Simplified preview of field content */}
+					<div className="ml-6">
+						{/* Text/email/phone/url/number/date/time -- show a gray line */}
+						{['text', 'email', 'phone', 'url', 'number', 'date', 'time'].includes(field.type) && (
+							<div className="h-8 rounded-lg bg-gray-100 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700/50 flex items-center px-3">
+								<span className="text-xs text-gray-300 dark:text-gray-600">
+									{field.placeholder || FIELD_TYPES.find(ft => ft.value === field.type)?.label || 'Type here...'}
+								</span>
+							</div>
+						)}
+
+						{/* Textarea -- taller gray box */}
+						{field.type === 'textarea' && (
+							<div className="h-14 rounded-lg bg-gray-100 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700/50 flex items-start px-3 pt-2">
+								<span className="text-xs text-gray-300 dark:text-gray-600">
+									{field.placeholder || 'Type your answer...'}
+								</span>
+							</div>
+						)}
+
+						{/* Options preview for select/radio/checkbox/ranking */}
+						{needsOptions && field.options && (
+							<div className="flex flex-wrap gap-1.5">
+								{field.options.split(',').map((o) => o.trim()).filter(Boolean).slice(0, 5).map((opt) => (
+									<span
+										key={opt}
+										className="inline-block rounded-md bg-gray-100 dark:bg-gray-800 px-2 py-0.5 text-xs text-gray-500 dark:text-gray-400"
+									>
+										{field.type === 'radio' && <span className="mr-1 text-gray-300">&bull;</span>}
+										{field.type === 'checkbox' && <span className="mr-1 text-gray-300">&#9744;</span>}
+										{opt}
+									</span>
+								))}
+								{field.options.split(',').filter(Boolean).length > 5 && (
+									<span className="text-xs text-gray-400">+{field.options.split(',').filter(Boolean).length - 5} more</span>
+								)}
+							</div>
+						)}
+
+						{/* Rating -- stars */}
+						{isRating && (
+							<div className="flex gap-1">
+								{[1, 2, 3, 4, 5].map(i => (
+									<Star key={i} className="h-4 w-4 text-gray-300 dark:text-gray-600" />
+								))}
+							</div>
+						)}
+
+						{/* Scale labels preview */}
+						{needsScaleLabels && (
+							<div className="flex items-center gap-2 text-xs text-gray-400 dark:text-gray-500">
+								<span>1-10</span>
+								{field.options && (
+									<>
+										<span className="text-gray-300 dark:text-gray-600">|</span>
+										<span className="truncate">{field.options}</span>
+									</>
+								)}
+							</div>
+						)}
+
+						{/* Yes/No */}
+						{field.type === 'yesno' && (
+							<div className="flex gap-2">
+								<span className="rounded-md bg-gray-100 dark:bg-gray-800 px-3 py-1 text-xs text-gray-500 dark:text-gray-400">Yes</span>
+								<span className="rounded-md bg-gray-100 dark:bg-gray-800 px-3 py-1 text-xs text-gray-500 dark:text-gray-400">No</span>
+							</div>
+						)}
+
+						{/* Matrix preview */}
+						{isMatrix && (field.matrixRows || field.matrixColumns) && (
+							<div className="text-xs text-gray-400 dark:text-gray-500">
+								{(field.matrixRows || '').split(',').filter(Boolean).length} rows &times; {(field.matrixColumns || '').split(',').filter(Boolean).length} columns
+							</div>
+						)}
+
+						{/* Signature */}
+						{field.type === 'signature' && (
+							<div className="h-10 rounded-lg border-2 border-dashed border-gray-200 dark:border-gray-700 flex items-center justify-center">
+								<span className="text-xs text-gray-300 dark:text-gray-600">Signature pad</span>
+							</div>
+						)}
+
+						{/* File upload */}
+						{field.type === 'file' && (
+							<div className="h-10 rounded-lg border-2 border-dashed border-gray-200 dark:border-gray-700 flex items-center justify-center gap-1.5">
+								<Upload className="h-3 w-3 text-gray-300 dark:text-gray-600" />
+								<span className="text-xs text-gray-300 dark:text-gray-600">Upload file</span>
+							</div>
+						)}
+
+						{/* Section break */}
+						{field.type === 'section' && (
+							<div className="border-t-2 border-gray-200 dark:border-gray-700 mt-1" />
+						)}
+
+						{/* Statement */}
+						{field.type === 'statement' && (
+							<p className="text-xs text-gray-400 dark:text-gray-500 italic">Display text</p>
+						)}
+
+						{/* Calculated */}
+						{field.type === 'calculated' && (
+							<div className="flex items-center gap-1.5 text-xs text-gray-400 dark:text-gray-500">
+								<Calculator className="h-3 w-3" />
+								{field.formula ? <span className="font-mono text-[11px] truncate">{field.formula}</span> : 'No formula set'}
+							</div>
+						)}
+
+						{/* Hidden */}
+						{field.type === 'hidden' && (
+							<div className="flex items-center gap-1.5 text-xs text-gray-400 dark:text-gray-500">
+								<EyeOff className="h-3 w-3" />
+								Hidden from respondents
+							</div>
+						)}
+					</div>
+				</div>
+			</div>
+		</div>
+	)
+}
+
+/* ============================================================
+   FieldSettingsPanel -- full settings in the right panel
+   ============================================================ */
+
+function FieldSettingsPanel({
+	field,
+	index,
+	total,
+	allFields,
+	languages,
+	onUpdate,
+	onRemove,
+	onDuplicate,
+	onMove,
+	onAddAfter,
+}: {
+	field: FormField
+	index: number
+	total: number
+	allFields: FormField[]
+	languages?: string[]
 	onUpdate: (updates: Partial<FormField>) => void
 	onRemove: () => void
 	onDuplicate: () => void
 	onMove: (direction: number) => void
 	onAddAfter: () => void
-	onDragStart?: () => void
-	onDragOver?: (e: React.DragEvent) => void
-	onDrop?: () => void
-	onDragEnd?: () => void
 }) {
 	const needsOptions = ['select', 'radio', 'checkbox', 'ranking'].includes(field.type)
 	const isMatrix = field.type === 'matrix'
@@ -602,6 +904,11 @@ function FieldEditor({
 	const isCalculated = field.type === 'calculated'
 	const isHidden = field.type === 'hidden'
 	const [showConditions, setShowConditions] = useState(false)
+
+	// Reset conditions panel when active field changes
+	useEffect(() => {
+		setShowConditions(false)
+	}, [field.id])
 
 	// Fields available as condition sources (only fields ABOVE the current one)
 	const availableFields = allFields.slice(0, index).filter(
@@ -632,317 +939,257 @@ function FieldEditor({
 	}
 
 	return (
-		<div
-			onClick={onFocus}
-			draggable
-			onDragStart={(e) => {
-				e.dataTransfer.effectAllowed = 'move'
-				onDragStart?.()
-			}}
-			onDragOver={(e) => onDragOver?.(e)}
-			onDrop={() => onDrop?.()}
-			onDragEnd={() => onDragEnd?.()}
-			className={`rounded-2xl border bg-white dark:bg-surface-elevated-dark p-4 sm:p-5 transition-smooth cursor-pointer ${
-				isDragging
-					? 'opacity-40 border-brand-300 dark:border-brand-700'
-					: isDragOver
-						? 'border-brand-400 dark:border-brand-600 shadow-md shadow-brand-100 dark:shadow-none'
-						: isActive
-							? 'border-brand-300 dark:border-brand-700 shadow-sm shadow-brand-100 dark:shadow-none'
-							: 'border-gray-200 dark:border-gray-800 hover:border-gray-300 dark:hover:border-gray-700'
-			}`}
-		>
-			<div className="flex items-start gap-3">
-				{/* Reorder / drag handle */}
-				<div className="flex flex-col items-center gap-0.5 pt-1.5 opacity-40 hover:opacity-100 transition-smooth cursor-grab active:cursor-grabbing">
-					<button
-						onClick={(e) => {
-							e.stopPropagation()
-							onMove(-1)
-						}}
-						disabled={index === 0}
-						className="p-0.5 rounded hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-20 disabled:cursor-not-allowed"
-					>
-						<ChevronUp className="h-3 w-3" />
-					</button>
-					<GripVertical className="h-4 w-4 text-gray-400" />
-					<button
-						onClick={(e) => {
-							e.stopPropagation()
-							onMove(1)
-						}}
-						disabled={index === total - 1}
-						className="p-0.5 rounded hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-20 disabled:cursor-not-allowed"
-					>
-						<ChevronDown className="h-3 w-3" />
-					</button>
+		<div className="px-4 pb-4 space-y-4 text-sm">
+			{/* Field type selector */}
+			<div>
+				<label className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 block">
+					Type
+				</label>
+				<div className="flex flex-wrap gap-1.5">
+					{FIELD_TYPES.map((ft) => (
+						<button
+							key={ft.value}
+							onClick={() => onUpdate({ type: ft.value })}
+							className={`inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-medium transition-smooth ${
+								field.type === ft.value
+									? 'bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300'
+									: 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
+							}`}
+						>
+							{FIELD_ICONS[ft.value]}
+							{ft.label}
+						</button>
+					))}
 				</div>
+			</div>
 
-				{/* Field config */}
-				<div className="flex-1 min-w-0 space-y-3">
-					{/* Label + Type */}
-					<div className="flex gap-2">
-						<div className="flex-1 relative">
-							<input
-								type="text"
-								value={field.label}
-								onChange={(e) => onUpdate({ label: e.target.value })}
-								placeholder={`Question ${index + 1}`}
-								className="w-full bg-transparent text-base font-medium outline-none placeholder-gray-300 dark:placeholder-gray-600 text-gray-900 dark:text-gray-100"
-							/>
-							{!isActive && !field.label && (
-								<span className="absolute left-0 top-0 text-base text-gray-300 dark:text-gray-600 pointer-events-none">
-									Question {index + 1}
-								</span>
-							)}
-						</div>
+			{/* Label input */}
+			<div>
+				<label className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5 block">
+					Label
+				</label>
+				<input
+					type="text"
+					value={field.label}
+					onChange={(e) => onUpdate({ label: e.target.value })}
+					placeholder={`Question ${index + 1}`}
+					className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2 text-sm outline-none focus:border-brand-400 dark:focus:border-brand-600 transition-smooth text-gray-900 dark:text-gray-100 placeholder-gray-300 dark:placeholder-gray-600"
+				/>
+			</div>
+
+			{/* Options input */}
+			{needsOptions && (
+				<div>
+					<label className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5 block">
+						Options
+					</label>
+					<input
+						type="text"
+						value={field.options || ''}
+						onChange={(e) => onUpdate({ options: e.target.value })}
+						placeholder="Comma-separated: Yes, No, Maybe"
+						className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2 text-sm outline-none focus:border-brand-400 dark:focus:border-brand-600 transition-smooth"
+					/>
+				</div>
+			)}
+
+			{/* Scale labels input */}
+			{needsScaleLabels && (
+				<div>
+					<label className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5 block">
+						Scale labels
+					</label>
+					<input
+						type="text"
+						value={field.options || ''}
+						onChange={(e) => onUpdate({ options: e.target.value })}
+						placeholder="Labels: Not likely, Very likely"
+						className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2 text-sm outline-none focus:border-brand-400 dark:focus:border-brand-600 transition-smooth"
+					/>
+				</div>
+			)}
+
+			{/* Matrix configuration */}
+			{isMatrix && (
+				<div className="space-y-2">
+					<label className="text-xs font-medium text-gray-500 dark:text-gray-400 block">
+						Matrix rows
+					</label>
+					<input
+						type="text"
+						value={field.matrixRows || ''}
+						onChange={(e) => onUpdate({ matrixRows: e.target.value })}
+						placeholder="Rows: Quality, Service, Price"
+						className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2 text-sm outline-none focus:border-brand-400 dark:focus:border-brand-600 transition-smooth"
+					/>
+					<label className="text-xs font-medium text-gray-500 dark:text-gray-400 block">
+						Matrix columns
+					</label>
+					<input
+						type="text"
+						value={field.matrixColumns || ''}
+						onChange={(e) => onUpdate({ matrixColumns: e.target.value })}
+						placeholder="Columns: Poor, Fair, Good, Excellent"
+						className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2 text-sm outline-none focus:border-brand-400 dark:focus:border-brand-600 transition-smooth"
+					/>
+					<p className="text-[10px] text-gray-400 dark:text-gray-500">
+						Creates a grid where respondents select one column per row.
+					</p>
+				</div>
+			)}
+
+			{/* Signature note */}
+			{isSignature && (
+				<p className="text-xs text-gray-400 dark:text-gray-500">
+					Respondent will draw their signature
+				</p>
+			)}
+
+			{/* File upload config */}
+			{isFileUpload && (
+				<div className="space-y-2">
+					<label className="text-xs font-medium text-gray-500 dark:text-gray-400 block">
+						Accepted file types
+					</label>
+					<input
+						type="text"
+						value={field.accept || ''}
+						onChange={(e) => onUpdate({ accept: e.target.value })}
+						placeholder="e.g. image/*, .pdf, .doc"
+						className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2 text-sm outline-none focus:border-brand-400 dark:focus:border-brand-600 transition-smooth"
+					/>
+					<div className="flex items-center gap-3">
+						<label className="text-xs text-gray-500 dark:text-gray-400">
+							Max size: {field.maxSize || 10}MB
+						</label>
+						<input
+							type="range"
+							min={1}
+							max={25}
+							value={field.maxSize || 10}
+							onChange={(e) => onUpdate({ maxSize: parseInt(e.target.value) })}
+							className="flex-1 h-1.5 accent-brand-500"
+						/>
 					</div>
+					<div className="flex gap-2">
+						{([
+							{ value: undefined, label: 'Any camera' },
+							{ value: 'user', label: 'Front camera' },
+							{ value: 'environment', label: 'Back camera' },
+						] as const).map(opt => (
+							<button
+								key={opt.label}
+								onClick={() => onUpdate({ capture: opt.value as 'user' | 'environment' | undefined })}
+								className={`text-[11px] px-2 py-1 rounded-md transition-smooth ${
+									field.capture === opt.value
+										? 'bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300'
+										: 'bg-gray-100 dark:bg-gray-800 text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700'
+								}`}
+							>
+								{opt.label}
+							</button>
+						))}
+					</div>
+				</div>
+			)}
 
-					{/* Type selector - shown when active */}
-					{isActive && (
-						<div className="animate-fade-in">
-							<div className="flex flex-wrap gap-1.5">
-								{FIELD_TYPES.map((ft) => (
-									<button
-										key={ft.value}
-										onClick={(e) => {
-											e.stopPropagation()
-											onUpdate({ type: ft.value })
-										}}
-										className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-smooth ${
-											field.type === ft.value
-												? 'bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300'
-												: 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
-										}`}
-									>
-										{FIELD_ICONS[ft.value]}
-										{ft.label}
-									</button>
-								))}
-							</div>
-						</div>
-					)}
+			{/* Calculated field formula */}
+			{isCalculated && (
+				<div className="space-y-2">
+					<label className="text-xs font-medium text-gray-500 dark:text-gray-400 block">
+						Formula
+					</label>
+					<input
+						type="text"
+						value={field.formula || ''}
+						onChange={(e) => onUpdate({ formula: e.target.value })}
+						placeholder="{field_id} + {field_id} or SUM({a}, {b})"
+						className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2 text-sm font-mono outline-none focus:border-brand-400 dark:focus:border-brand-600 transition-smooth"
+					/>
+					<p className="text-[10px] text-gray-400 dark:text-gray-500">
+						Use {'{'}<em>field_id</em>{'}'} to reference fields. Supports +, -, *, /, SUM(), AVG(), IF(), CONCAT().
+					</p>
+				</div>
+			)}
 
-					{/* Options input */}
-					{needsOptions && isActive && (
-						<div className="animate-fade-in">
-							<input
-								type="text"
-								value={field.options || ''}
-								onChange={(e) => onUpdate({ options: e.target.value })}
-								placeholder="Options (comma-separated: Yes, No, Maybe)"
-								className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2 text-sm outline-none focus:border-brand-400 dark:focus:border-brand-600 transition-smooth"
-							/>
-						</div>
-					)}
+			{/* Hidden field default value */}
+			{isHidden && (
+				<div className="space-y-2">
+					<label className="text-xs font-medium text-gray-500 dark:text-gray-400 block">
+						Default value
+					</label>
+					<input
+						type="text"
+						value={field.defaultValue || ''}
+						onChange={(e) => onUpdate({ defaultValue: e.target.value })}
+						placeholder="Default value or formula"
+						className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2 text-sm outline-none focus:border-brand-400 dark:focus:border-brand-600 transition-smooth"
+					/>
+					<p className="text-[10px] text-gray-400 dark:text-gray-500">
+						Hidden from respondents. Value saved with each response.
+					</p>
+				</div>
+			)}
 
-					{/* Scale labels input */}
-					{needsScaleLabels && isActive && (
-						<div className="animate-fade-in">
-							<input
-								type="text"
-								value={field.options || ''}
-								onChange={(e) => onUpdate({ options: e.target.value })}
-								placeholder="Labels (comma-separated: Not likely, Very likely)"
-								className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2 text-sm outline-none focus:border-brand-400 dark:focus:border-brand-600 transition-smooth"
-							/>
-						</div>
-					)}
+			{/* Divider */}
+			<div className="border-t border-gray-100 dark:border-gray-800" />
 
-					{/* Signature note */}
-					{isSignature && isActive && (
-						<p className="text-xs text-gray-400 dark:text-gray-500 animate-fade-in">
-							Respondent will draw their signature
-						</p>
-					)}
+			{/* Required toggle */}
+			{!isDisplayOnly ? (
+				<label className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400 cursor-pointer select-none">
+					<input
+						type="checkbox"
+						checked={field.required}
+						onChange={(e) => onUpdate({ required: e.target.checked })}
+						className="rounded border-gray-300"
+					/>
+					Required
+				</label>
+			) : (
+				<span className="text-xs text-gray-400 dark:text-gray-500 italic">Display only</span>
+			)}
 
-					{/* File upload config */}
-					{isFileUpload && isActive && (
-						<div className="animate-fade-in space-y-2">
-							<input
-								type="text"
-								value={field.accept || ''}
-								onChange={(e) => onUpdate({ accept: e.target.value })}
-								placeholder="Accepted file types (e.g. image/*, .pdf, .doc)"
-								className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2 text-sm outline-none focus:border-brand-400 dark:focus:border-brand-600 transition-smooth"
-								onClick={(e) => e.stopPropagation()}
-							/>
-							<div className="flex items-center gap-3">
-								<label className="text-xs text-gray-500 dark:text-gray-400">
-									Max size: {field.maxSize || 10}MB
-								</label>
-								<input
-									type="range"
-									min={1}
-									max={25}
-									value={field.maxSize || 10}
-									onChange={(e) => onUpdate({ maxSize: parseInt(e.target.value) })}
-									className="flex-1 h-1.5 accent-brand-500"
-									onClick={(e) => e.stopPropagation()}
-								/>
-							</div>
-							<div className="flex gap-2">
-								{([
-									{ value: undefined, label: 'Any camera' },
-									{ value: 'user', label: 'Front camera' },
-									{ value: 'environment', label: 'Back camera' },
-								] as const).map(opt => (
-									<button
-										key={opt.label}
-										onClick={(e) => { e.stopPropagation(); onUpdate({ capture: opt.value as 'user' | 'environment' | undefined }) }}
-										className={`text-[11px] px-2 py-1 rounded-md transition-smooth ${
-											field.capture === opt.value
-												? 'bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300'
-												: 'bg-gray-100 dark:bg-gray-800 text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700'
-										}`}
-									>
-										{opt.label}
-									</button>
-								))}
-							</div>
-						</div>
-					)}
+			{/* Placeholder input */}
+			{!isDisplayOnly && field.type !== 'rating' && field.type !== 'yesno' && field.type !== 'signature' && field.type !== 'file' && (
+				<div>
+					<label className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5 block">
+						Placeholder
+					</label>
+					<input
+						type="text"
+						value={field.placeholder || ''}
+						onChange={(e) => onUpdate({ placeholder: e.target.value })}
+						placeholder="Placeholder text..."
+						className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2 text-sm outline-none focus:border-brand-400 dark:focus:border-brand-600 transition-smooth"
+					/>
+				</div>
+			)}
 
-					{/* Calculated field formula */}
-					{isCalculated && isActive && (
-						<div className="animate-fade-in space-y-2">
-							<input
-								type="text"
-								value={field.formula || ''}
-								onChange={(e) => onUpdate({ formula: e.target.value })}
-								placeholder="Formula: {field_id} + {field_id} or SUM({a}, {b})"
-								className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2 text-sm font-mono outline-none focus:border-brand-400 dark:focus:border-brand-600 transition-smooth"
-								onClick={(e) => e.stopPropagation()}
-							/>
-							<p className="text-[10px] text-gray-400 dark:text-gray-500">
-								Use {'{'}<em>field_id</em>{'}'} to reference fields. Supports +, -, *, /, SUM(), AVG(), IF(), CONCAT().
-							</p>
-						</div>
-					)}
+			{/* Divider */}
+			<div className="border-t border-gray-100 dark:border-gray-800" />
 
-					{/* Hidden field default value */}
-					{isHidden && isActive && (
-						<div className="animate-fade-in space-y-2">
-							<input
-								type="text"
-								value={field.defaultValue || ''}
-								onChange={(e) => onUpdate({ defaultValue: e.target.value })}
-								placeholder="Default value or formula"
-								className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2 text-sm outline-none focus:border-brand-400 dark:focus:border-brand-600 transition-smooth"
-								onClick={(e) => e.stopPropagation()}
-							/>
-							<p className="text-[10px] text-gray-400 dark:text-gray-500">
-								Hidden from respondents. Value saved with each response.
-							</p>
-						</div>
-					)}
+			{/* Conditional logic */}
+			{availableFields.length > 0 && (
+				<div>
+					<button
+						onClick={() => {
+							if (!showConditions && !hasConditions) {
+								addCondition()
+							}
+							setShowConditions(!showConditions)
+						}}
+						className={`flex items-center gap-1.5 text-xs font-medium transition-smooth ${
+							hasConditions
+								? 'text-amber-600 dark:text-amber-400'
+								: 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+						}`}
+					>
+						<GitBranch className="h-3.5 w-3.5" />
+						{hasConditions ? `Conditional (${field.conditions!.length} rule${field.conditions!.length > 1 ? 's' : ''})` : 'Add conditional logic'}
+					</button>
 
-					{/* Matrix configuration */}
-					{isMatrix && isActive && (
-						<div className="animate-fade-in space-y-2">
-							<input
-								type="text"
-								value={field.matrixRows || ''}
-								onChange={(e) => onUpdate({ matrixRows: e.target.value })}
-								placeholder="Rows (comma-separated: Quality, Service, Price)"
-								className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2 text-sm outline-none focus:border-brand-400 dark:focus:border-brand-600 transition-smooth"
-								onClick={(e) => e.stopPropagation()}
-							/>
-							<input
-								type="text"
-								value={field.matrixColumns || ''}
-								onChange={(e) => onUpdate({ matrixColumns: e.target.value })}
-								placeholder="Columns (comma-separated: Poor, Fair, Good, Excellent)"
-								className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2 text-sm outline-none focus:border-brand-400 dark:focus:border-brand-600 transition-smooth"
-								onClick={(e) => e.stopPropagation()}
-							/>
-							<p className="text-[10px] text-gray-400 dark:text-gray-500">
-								Creates a grid where respondents select one column per row.
-							</p>
-						</div>
-					)}
-
-					{/* Matrix preview (when not active) */}
-					{isMatrix && !isActive && (field.matrixRows || field.matrixColumns) && (
-						<div className="text-xs text-gray-400 dark:text-gray-500">
-							{(field.matrixRows || '').split(',').filter(Boolean).length} rows &times; {(field.matrixColumns || '').split(',').filter(Boolean).length} columns
-						</div>
-					)}
-
-					{/* Options preview (when not active) */}
-					{needsOptions && !isActive && field.options && (
-						<div className="flex flex-wrap gap-1.5">
-							{field.options
-								.split(',')
-								.map((o) => o.trim())
-								.filter(Boolean)
-								.map((opt) => (
-									<span
-										key={opt}
-										className="inline-block rounded-md bg-gray-100 dark:bg-gray-800 px-2 py-0.5 text-xs text-gray-500 dark:text-gray-400"
-									>
-										{opt}
-									</span>
-								))}
-						</div>
-					)}
-
-					{/* Scale labels preview (when not active) */}
-					{needsScaleLabels && !isActive && field.options && (
-						<div className="flex items-center gap-2 text-xs text-gray-400 dark:text-gray-500">
-							<span>1-10</span>
-							<span className="text-gray-300 dark:text-gray-600">|</span>
-							<span>{field.options}</span>
-						</div>
-					)}
-
-					{/* Translation inputs */}
-					{isActive && languages && languages.length > 1 && (
-						<div className="animate-fade-in space-y-2">
-							<span className="text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider">
-								Translations
-							</span>
-							{languages.filter(l => l !== (languages[0])).map(lang => {
-								const langInfo = LANGUAGES.find(l => l.code === lang)
-								const trans = field.translations?.[lang] || {}
-								return (
-									<div key={lang} className="rounded-lg bg-gray-50 dark:bg-gray-800/50 p-2 space-y-1.5">
-										<span className="text-[10px] font-medium text-gray-500 dark:text-gray-400">
-											{langInfo?.name || lang}
-										</span>
-										<input
-											type="text"
-											value={trans.label || ''}
-											onChange={(e) => {
-												const translations = { ...(field.translations || {}), [lang]: { ...trans, label: e.target.value } }
-												onUpdate({ translations })
-											}}
-											placeholder={`Label in ${langInfo?.name || lang}`}
-											className="w-full rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1.5 text-xs outline-none focus:border-brand-400 transition-smooth"
-											onClick={(e) => e.stopPropagation()}
-										/>
-										{needsOptions && (
-											<input
-												type="text"
-												value={trans.options || ''}
-												onChange={(e) => {
-													const translations = { ...(field.translations || {}), [lang]: { ...trans, options: e.target.value } }
-													onUpdate({ translations })
-												}}
-												placeholder="Options (comma-separated)"
-												className="w-full rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1.5 text-xs outline-none focus:border-brand-400 transition-smooth"
-												onClick={(e) => e.stopPropagation()}
-											/>
-										)}
-									</div>
-								)
-							})}
-						</div>
-					)}
-
-					{/* Conditional logic editor */}
-					{isActive && (showConditions || hasConditions) && availableFields.length > 0 && (
-						<div className="animate-fade-in rounded-lg border border-amber-200 dark:border-amber-800/50 bg-amber-50/50 dark:bg-amber-900/10 p-3 space-y-2">
+					{(showConditions || hasConditions) && (
+						<div className="mt-2 rounded-lg border border-amber-200 dark:border-amber-800/50 bg-amber-50/50 dark:bg-amber-900/10 p-3 space-y-2 animate-fade-in">
 							<div className="flex items-center justify-between">
 								<span className="text-xs font-medium text-amber-700 dark:text-amber-400 flex items-center gap-1.5">
 									<GitBranch className="h-3 w-3" />
@@ -950,10 +1197,7 @@ function FieldEditor({
 								</span>
 								{field.conditions && field.conditions.length > 1 && (
 									<button
-										onClick={(e) => {
-											e.stopPropagation()
-											onUpdate({ conditionLogic: field.conditionLogic === 'or' ? 'and' : 'or' })
-										}}
+										onClick={() => onUpdate({ conditionLogic: field.conditionLogic === 'or' ? 'and' : 'or' })}
 										className="text-[10px] font-semibold px-2 py-0.5 rounded bg-amber-200/60 dark:bg-amber-800/40 text-amber-700 dark:text-amber-300 hover:bg-amber-200 dark:hover:bg-amber-800/60 transition-smooth"
 									>
 										{field.conditionLogic === 'or' ? 'ANY' : 'ALL'}
@@ -961,11 +1205,11 @@ function FieldEditor({
 								)}
 							</div>
 							{(field.conditions || []).map((cond, ci) => (
-								<div key={ci} className="flex items-center gap-2 flex-wrap">
+								<div key={ci} className="flex items-center gap-1.5 flex-wrap">
 									<select
 										value={cond.fieldId}
 										onChange={(e) => updateCondition(ci, { fieldId: e.target.value })}
-										className="rounded border border-amber-200 dark:border-amber-800 bg-white dark:bg-gray-800 px-2 py-1 text-xs outline-none max-w-[140px] truncate"
+										className="rounded border border-amber-200 dark:border-amber-800 bg-white dark:bg-gray-800 px-2 py-1 text-xs outline-none max-w-[110px] truncate"
 									>
 										{availableFields.map(f => (
 											<option key={f.id} value={f.id}>{f.label || f.id}</option>
@@ -986,12 +1230,11 @@ function FieldEditor({
 											value={cond.value}
 											onChange={(e) => updateCondition(ci, { value: e.target.value })}
 											placeholder="value"
-											className="flex-1 min-w-[80px] rounded border border-amber-200 dark:border-amber-800 bg-white dark:bg-gray-800 px-2 py-1 text-xs outline-none"
-											onClick={(e) => e.stopPropagation()}
+											className="flex-1 min-w-[60px] rounded border border-amber-200 dark:border-amber-800 bg-white dark:bg-gray-800 px-2 py-1 text-xs outline-none"
 										/>
 									)}
 									<button
-										onClick={(e) => { e.stopPropagation(); removeCondition(ci) }}
+										onClick={() => removeCondition(ci)}
 										className="p-0.5 text-amber-400 hover:text-red-500 transition-smooth"
 									>
 										<X className="h-3 w-3" />
@@ -999,108 +1242,116 @@ function FieldEditor({
 								</div>
 							))}
 							<button
-								onClick={(e) => { e.stopPropagation(); addCondition() }}
+								onClick={addCondition}
 								className="text-xs text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 font-medium"
 							>
 								+ Add condition
 							</button>
 						</div>
 					)}
-
-					{/* Bottom controls */}
-					{isActive && (
-						<div className="flex items-center justify-between pt-1 animate-fade-in">
-							<div className="flex items-center gap-4">
-								{!isDisplayOnly && (
-									<label className="flex items-center gap-2 text-xs text-gray-500 cursor-pointer select-none">
-										<input
-											type="checkbox"
-											checked={field.required}
-											onChange={(e) => onUpdate({ required: e.target.checked })}
-											className="rounded border-gray-300"
-										/>
-										Required
-									</label>
-								)}
-								{isDisplayOnly && (
-									<span className="text-xs text-gray-400 dark:text-gray-500 italic">Display only</span>
-								)}
-								{/* Conditional logic toggle */}
-								{availableFields.length > 0 && (
-									<button
-										onClick={(e) => {
-											e.stopPropagation()
-											if (!showConditions && !hasConditions) {
-												addCondition()
-											}
-											setShowConditions(!showConditions)
-										}}
-										className={`flex items-center gap-1 text-xs transition-smooth ${
-											hasConditions
-												? 'text-amber-600 dark:text-amber-400 font-medium'
-												: 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'
-										}`}
-										title="Conditional logic"
-									>
-										<GitBranch className="h-3 w-3" />
-										{hasConditions ? `${field.conditions!.length} rule${field.conditions!.length > 1 ? 's' : ''}` : 'Logic'}
-									</button>
-								)}
-							</div>
-							<div className="flex items-center gap-1">
-								<button
-									onClick={(e) => {
-										e.stopPropagation()
-										onAddAfter()
-									}}
-									className="p-1.5 rounded-lg text-gray-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-900/20 transition-smooth"
-									title="Add field below"
-								>
-									<Plus className="h-3.5 w-3.5" />
-								</button>
-								<button
-									onClick={(e) => {
-										e.stopPropagation()
-										onDuplicate()
-									}}
-									className="p-1.5 rounded-lg text-gray-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-900/20 transition-smooth"
-									title="Duplicate field (Ctrl+D)"
-								>
-									<Copy className="h-3.5 w-3.5" />
-								</button>
-								<button
-									onClick={(e) => {
-										e.stopPropagation()
-										onRemove()
-									}}
-									className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-smooth"
-									title="Delete field (Ctrl+Backspace)"
-								>
-									<Trash2 className="h-3.5 w-3.5" />
-								</button>
-							</div>
-						</div>
-					)}
-
-					{/* Compact info when not active */}
-					{!isActive && (
-						<div className="flex items-center gap-3 text-xs text-gray-400">
-							<span className="inline-flex items-center gap-1">
-								{FIELD_ICONS[field.type]}
-								{FIELD_TYPES.find((ft) => ft.value === field.type)?.label}
-							</span>
-							{field.required && (
-								<span className="text-amber-500">Required</span>
-							)}
-							{hasConditions && (
-								<span className="inline-flex items-center gap-0.5 text-amber-500">
-									<GitBranch className="h-3 w-3" />
-									Conditional
-								</span>
-							)}
-						</div>
-					)}
 				</div>
+			)}
+
+			{/* Translation inputs */}
+			{languages && languages.length > 1 && (
+				<div className="space-y-2">
+					<span className="text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider">
+						Translations
+					</span>
+					{languages.filter(l => l !== (languages[0])).map(lang => {
+						const langInfo = LANGUAGES.find(l => l.code === lang)
+						const trans = field.translations?.[lang] || {}
+						return (
+							<div key={lang} className="rounded-lg bg-gray-50 dark:bg-gray-800/50 p-2 space-y-1.5">
+								<span className="text-[10px] font-medium text-gray-500 dark:text-gray-400">
+									{langInfo?.name || lang}
+								</span>
+								<input
+									type="text"
+									value={trans.label || ''}
+									onChange={(e) => {
+										const translations = { ...(field.translations || {}), [lang]: { ...trans, label: e.target.value } }
+										onUpdate({ translations })
+									}}
+									placeholder={`Label in ${langInfo?.name || lang}`}
+									className="w-full rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1.5 text-xs outline-none focus:border-brand-400 transition-smooth"
+								/>
+								{needsOptions && (
+									<input
+										type="text"
+										value={trans.options || ''}
+										onChange={(e) => {
+											const translations = { ...(field.translations || {}), [lang]: { ...trans, options: e.target.value } }
+											onUpdate({ translations })
+										}}
+										placeholder="Options (comma-separated)"
+										className="w-full rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1.5 text-xs outline-none focus:border-brand-400 transition-smooth"
+									/>
+								)}
+							</div>
+						)
+					})}
+				</div>
+			)}
+
+			{/* Answer piping hint */}
+			<div className="text-[10px] text-gray-400 dark:text-gray-500">
+				Use <code className="bg-gray-100 dark:bg-gray-800 px-1 rounded text-[10px]">{'{'}{'{'}<em>field_id</em>{'}'}{'}'}</code> in labels for answer piping.
+			</div>
+
+			{/* Divider */}
+			<div className="border-t border-gray-100 dark:border-gray-800" />
+
+			{/* Move / Add / Duplicate / Delete actions */}
+			<div className="space-y-2">
+				{/* Reorder buttons */}
+				<div className="flex items-center gap-2">
+					<button
+						onClick={() => onMove(-1)}
+						disabled={index === 0}
+						className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-30 disabled:cursor-not-allowed transition-smooth"
+					>
+						<ChevronUp className="h-3 w-3" />
+						Move up
+					</button>
+					<button
+						onClick={() => onMove(1)}
+						disabled={index === total - 1}
+						className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-30 disabled:cursor-not-allowed transition-smooth"
+					>
+						<ChevronDown className="h-3 w-3" />
+						Move down
+					</button>
+				</div>
+
+				{/* Add after, Duplicate */}
+				<div className="flex items-center gap-2">
+					<button
+						onClick={onAddAfter}
+						className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs text-gray-500 dark:text-gray-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-900/20 transition-smooth"
+					>
+						<Plus className="h-3 w-3" />
+						Add below
+					</button>
+					<button
+						onClick={onDuplicate}
+						className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs text-gray-500 dark:text-gray-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-900/20 transition-smooth"
+						title="Ctrl+D"
+					>
+						<Copy className="h-3 w-3" />
+						Duplicate
+					</button>
+				</div>
+
+				{/* Delete */}
+				<button
+					onClick={onRemove}
+					className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-smooth w-full"
+					title="Ctrl+Backspace"
+				>
+					<Trash2 className="h-3 w-3" />
+					Delete field
+				</button>
 			</div>
 		</div>
 	)
