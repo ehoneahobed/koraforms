@@ -28,8 +28,10 @@ import {
 	SeparatorHorizontal,
 	MessageSquare,
 	PenTool,
+	GitBranch,
+	X,
 } from 'lucide-react'
-import { FIELD_TYPES, type FormField, type FieldType } from '../types'
+import { FIELD_TYPES, CONDITION_OPERATORS, type FormField, type FormSettings as FormSettingsType, type FieldType, type ConditionalRule } from '../types'
 import { THEME_PRESETS, getThemeById } from '../themes'
 import { generateSlug } from '../utils/slug'
 import { useSlashCommand } from '../hooks/useSlashCommand'
@@ -76,6 +78,7 @@ export function FormBuilder({ formId, navigate, userId }: Props) {
 	const [description, setDescription] = useState('')
 	const [fields, setFields] = useState<FormField[]>([])
 	const [theme, setTheme] = useState('blue')
+	const [settings, setSettings] = useState<FormSettingsType>({})
 	const [loaded, setLoaded] = useState(false)
 	const [saved, setSaved] = useState(false)
 	const [activeField, setActiveField] = useState<string | null>(null)
@@ -158,6 +161,11 @@ export function FormBuilder({ formId, navigate, userId }: Props) {
 			} catch {
 				setFields([])
 			}
+			try {
+				setSettings(JSON.parse(String(form.settings || '{}')))
+			} catch {
+				setSettings({})
+			}
 			setLoaded(true)
 		}
 	}, [form, loaded])
@@ -170,18 +178,19 @@ export function FormBuilder({ formId, navigate, userId }: Props) {
 			description,
 			fields: JSON.stringify(fields),
 			theme,
+			settings: JSON.stringify(settings),
 			ownerId: userId,
 		})
 		setSaved(true)
 		setTimeout(() => setSaved(false), 2000)
-	}, [formId, title, description, fields, theme, userId, updateForm])
+	}, [formId, title, description, fields, theme, settings, userId, updateForm])
 
 	// Auto-save on changes (debounced)
 	useEffect(() => {
 		if (!loaded) return
 		const timer = setTimeout(save, 1500)
 		return () => clearTimeout(timer)
-	}, [title, description, fields, theme, loaded, save])
+	}, [title, description, fields, theme, settings, loaded, save])
 
 	if (!formId || (!form && loaded)) {
 		return (
@@ -213,6 +222,7 @@ export function FormBuilder({ formId, navigate, userId }: Props) {
 			description,
 			fields: JSON.stringify(fields),
 			theme,
+			settings: JSON.stringify(settings),
 			status: 'published',
 			ownerId: userId,
 			slug,
@@ -370,17 +380,19 @@ export function FormBuilder({ formId, navigate, userId }: Props) {
 				)}
 			</div>
 
-			{/* Form settings (slug, status) */}
+			{/* Form settings (slug, status, thank-you, limits) */}
 			{isPublished && (
 				<FormSettings
 					slug={String(form?.slug || '')}
 					status={String(form?.status || 'draft')}
+					settings={settings}
 					onSlugChange={(newSlug) => {
 						if (formId) updateForm(formId, { slug: newSlug })
 					}}
 					onStatusChange={(newStatus) => {
 						if (formId) updateForm(formId, { status: newStatus })
 					}}
+					onSettingsChange={setSettings}
 					isOpen={showSettings}
 					onToggle={() => setShowSettings(!showSettings)}
 				/>
@@ -394,6 +406,7 @@ export function FormBuilder({ formId, navigate, userId }: Props) {
 						field={field}
 						index={index}
 						total={fields.length}
+						allFields={fields}
 						isActive={activeField === field.id}
 						isDragging={dragIndex === index}
 						isDragOver={dragOverIndex === index && dragIndex !== index}
@@ -472,6 +485,7 @@ function FieldEditor({
 	field,
 	index,
 	total,
+	allFields,
 	isActive,
 	isDragging,
 	isDragOver,
@@ -488,6 +502,7 @@ function FieldEditor({
 	field: FormField
 	index: number
 	total: number
+	allFields: FormField[]
 	isActive: boolean
 	isDragging?: boolean
 	isDragOver?: boolean
@@ -505,6 +520,35 @@ function FieldEditor({
 	const needsScaleLabels = field.type === 'scale'
 	const isDisplayOnly = field.type === 'section' || field.type === 'statement'
 	const isSignature = field.type === 'signature'
+	const [showConditions, setShowConditions] = useState(false)
+
+	// Fields available as condition sources (only fields ABOVE the current one)
+	const availableFields = allFields.slice(0, index).filter(
+		f => f.type !== 'section' && f.type !== 'statement'
+	)
+	const hasConditions = field.conditions && field.conditions.length > 0
+
+	const addCondition = () => {
+		const firstField = availableFields[0]
+		if (!firstField) return
+		const newConditions: ConditionalRule[] = [
+			...(field.conditions || []),
+			{ fieldId: firstField.id, operator: 'equals', value: '' },
+		]
+		onUpdate({ conditions: newConditions })
+	}
+
+	const updateCondition = (ci: number, updates: Partial<ConditionalRule>) => {
+		const next = [...(field.conditions || [])]
+		next[ci] = { ...next[ci]!, ...updates }
+		onUpdate({ conditions: next })
+	}
+
+	const removeCondition = (ci: number) => {
+		const next = (field.conditions || []).filter((_, i) => i !== ci)
+		onUpdate({ conditions: next.length > 0 ? next : undefined })
+		if (next.length === 0) setShowConditions(false)
+	}
 
 	return (
 		<div
@@ -658,6 +702,73 @@ function FieldEditor({
 						</div>
 					)}
 
+					{/* Conditional logic editor */}
+					{isActive && (showConditions || hasConditions) && availableFields.length > 0 && (
+						<div className="animate-fade-in rounded-lg border border-amber-200 dark:border-amber-800/50 bg-amber-50/50 dark:bg-amber-900/10 p-3 space-y-2">
+							<div className="flex items-center justify-between">
+								<span className="text-xs font-medium text-amber-700 dark:text-amber-400 flex items-center gap-1.5">
+									<GitBranch className="h-3 w-3" />
+									Show this field when...
+								</span>
+								{field.conditions && field.conditions.length > 1 && (
+									<button
+										onClick={(e) => {
+											e.stopPropagation()
+											onUpdate({ conditionLogic: field.conditionLogic === 'or' ? 'and' : 'or' })
+										}}
+										className="text-[10px] font-semibold px-2 py-0.5 rounded bg-amber-200/60 dark:bg-amber-800/40 text-amber-700 dark:text-amber-300 hover:bg-amber-200 dark:hover:bg-amber-800/60 transition-smooth"
+									>
+										{field.conditionLogic === 'or' ? 'ANY' : 'ALL'}
+									</button>
+								)}
+							</div>
+							{(field.conditions || []).map((cond, ci) => (
+								<div key={ci} className="flex items-center gap-2 flex-wrap">
+									<select
+										value={cond.fieldId}
+										onChange={(e) => updateCondition(ci, { fieldId: e.target.value })}
+										className="rounded border border-amber-200 dark:border-amber-800 bg-white dark:bg-gray-800 px-2 py-1 text-xs outline-none max-w-[140px] truncate"
+									>
+										{availableFields.map(f => (
+											<option key={f.id} value={f.id}>{f.label || f.id}</option>
+										))}
+									</select>
+									<select
+										value={cond.operator}
+										onChange={(e) => updateCondition(ci, { operator: e.target.value as ConditionalRule['operator'] })}
+										className="rounded border border-amber-200 dark:border-amber-800 bg-white dark:bg-gray-800 px-2 py-1 text-xs outline-none"
+									>
+										{CONDITION_OPERATORS.map(op => (
+											<option key={op.value} value={op.value}>{op.label}</option>
+										))}
+									</select>
+									{!['is_empty', 'is_not_empty'].includes(cond.operator) && (
+										<input
+											type="text"
+											value={cond.value}
+											onChange={(e) => updateCondition(ci, { value: e.target.value })}
+											placeholder="value"
+											className="flex-1 min-w-[80px] rounded border border-amber-200 dark:border-amber-800 bg-white dark:bg-gray-800 px-2 py-1 text-xs outline-none"
+											onClick={(e) => e.stopPropagation()}
+										/>
+									)}
+									<button
+										onClick={(e) => { e.stopPropagation(); removeCondition(ci) }}
+										className="p-0.5 text-amber-400 hover:text-red-500 transition-smooth"
+									>
+										<X className="h-3 w-3" />
+									</button>
+								</div>
+							))}
+							<button
+								onClick={(e) => { e.stopPropagation(); addCondition() }}
+								className="text-xs text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 font-medium"
+							>
+								+ Add condition
+							</button>
+						</div>
+					)}
+
 					{/* Bottom controls */}
 					{isActive && (
 						<div className="flex items-center justify-between pt-1 animate-fade-in">
@@ -675,6 +786,27 @@ function FieldEditor({
 								)}
 								{isDisplayOnly && (
 									<span className="text-xs text-gray-400 dark:text-gray-500 italic">Display only</span>
+								)}
+								{/* Conditional logic toggle */}
+								{availableFields.length > 0 && (
+									<button
+										onClick={(e) => {
+											e.stopPropagation()
+											if (!showConditions && !hasConditions) {
+												addCondition()
+											}
+											setShowConditions(!showConditions)
+										}}
+										className={`flex items-center gap-1 text-xs transition-smooth ${
+											hasConditions
+												? 'text-amber-600 dark:text-amber-400 font-medium'
+												: 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'
+										}`}
+										title="Conditional logic"
+									>
+										<GitBranch className="h-3 w-3" />
+										{hasConditions ? `${field.conditions!.length} rule${field.conditions!.length > 1 ? 's' : ''}` : 'Logic'}
+									</button>
 								)}
 							</div>
 							<div className="flex items-center gap-1">
@@ -711,6 +843,12 @@ function FieldEditor({
 							</span>
 							{field.required && (
 								<span className="text-amber-500">Required</span>
+							)}
+							{hasConditions && (
+								<span className="inline-flex items-center gap-0.5 text-amber-500">
+									<GitBranch className="h-3 w-3" />
+									Conditional
+								</span>
 							)}
 						</div>
 					)}

@@ -50,7 +50,7 @@ export function FormList({ navigate, userId }: Props) {
 			app.forms.insert(data),
 	)
 	const { mutate: duplicateForm } = useMutation(
-		(data: { title: string; description: string; fields: string; status: string; ownerId: string; theme: string }) =>
+		(data: { title: string; description: string; fields: string; status: string; ownerId: string; theme: string; settings: string }) =>
 			app.forms.insert(data),
 	)
 
@@ -80,6 +80,7 @@ export function FormList({ navigate, userId }: Props) {
 			status: 'draft',
 			ownerId: userId,
 			theme: String(form.theme || 'blue'),
+			settings: String(form.settings || '{}'),
 		})
 	}
 

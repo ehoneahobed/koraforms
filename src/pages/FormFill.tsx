@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { ArrowLeft, ArrowRight, Check, Send, Star, X } from 'lucide-react'
-import type { FormField } from '../types'
+import { ArrowLeft, ArrowRight, Check, Send, Star, X, RotateCcw } from 'lucide-react'
+import type { FormField, FormSettings } from '../types'
+import { isFieldVisible, pipeValues } from '../types'
 import { getThemeCSSVars } from '../themes'
 import { PoweredByBadge } from '../components/shared/PoweredByBadge'
 import { setPageMeta } from '../utils/meta'
@@ -9,6 +10,11 @@ import { InlineLoader } from '../components/shared/BrandLoader'
 interface Props {
 	formId: string
 	navigate: (path: string) => void
+}
+
+// localStorage key for progress saving
+function progressKey(formId: string) {
+	return `koraforms-progress-${formId}`
 }
 
 export function FormFill({ formId, navigate }: Props) {
@@ -62,7 +68,10 @@ export function FormFill({ formId, navigate }: Props) {
 	const [errors, setErrors] = useState<Record<string, string>>({})
 	const [submitted, setSubmitted] = useState(false)
 	const [direction, setDirection] = useState<'forward' | 'back'>('forward')
+	const [showResumePrompt, setShowResumePrompt] = useState(false)
+	const [savedProgress, setSavedProgress] = useState<{ values: Record<string, string>; currentIndex: number; savedAt: number } | null>(null)
 	const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(null)
+	const [isSubmitting, setIsSubmitting] = useState(false)
 
 	let fields: FormField[] = []
 	try {
@@ -71,17 +80,83 @@ export function FormFill({ formId, navigate }: Props) {
 		// ignore
 	}
 
+	// Parse form settings
+	let settings: FormSettings = {}
+	try {
+		settings = JSON.parse(String(form?.settings || '{}'))
+	} catch {
+		// ignore
+	}
+
 	const themeVars = getThemeCSSVars(String(form?.theme || 'blue'))
+
+	// Compute visible fields based on conditional logic
+	const visibleFields = fields.filter(f => isFieldVisible(f, values))
 
 	// Section breaks and statements are display-only — not counted as questions
 	const isDisplayOnly = (type: string) => type === 'section' || type === 'statement'
-	const totalQuestions = fields.filter((f) => !isDisplayOnly(f.type)).length
+	const totalQuestions = visibleFields.filter((f) => !isDisplayOnly(f.type)).length
 	const questionNumber =
-		currentIndex >= 0
-			? fields.slice(0, currentIndex + 1).filter((f) => !isDisplayOnly(f.type)).length
+		currentIndex >= 0 && currentIndex < visibleFields.length
+			? visibleFields.slice(0, currentIndex + 1).filter((f) => !isDisplayOnly(f.type)).length
 			: 0
 
-	const progress = fields.length > 0 ? Math.max(0, (currentIndex / fields.length) * 100) : 0
+	const progress = visibleFields.length > 0 ? Math.max(0, (currentIndex / visibleFields.length) * 100) : 0
+
+	// URL pre-fill — seed initial values from query params
+	useEffect(() => {
+		if (!form || fields.length === 0) return
+		const searchParams = new URLSearchParams(window.location.search)
+		if (searchParams.size === 0) return
+		const prefill: Record<string, string> = {}
+		for (const [key, val] of searchParams) {
+			if (key === 'embed') continue
+			// Try matching by field ID
+			if (fields.find(f => f.id === key)) {
+				prefill[key] = val
+			} else {
+				// Try matching by label (case-insensitive, spaces → underscores)
+				const match = fields.find(f =>
+					f.label.toLowerCase().replace(/\s+/g, '_') === key.toLowerCase()
+				)
+				if (match) prefill[match.id] = val
+			}
+		}
+		if (Object.keys(prefill).length > 0) {
+			setValues(prev => ({ ...prefill, ...prev }))
+		}
+	}, [form?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+	// Progress saving — check for saved progress on mount
+	useEffect(() => {
+		if (!form) return
+		try {
+			const raw = localStorage.getItem(progressKey(formId))
+			if (raw) {
+				const parsed = JSON.parse(raw)
+				if (parsed.values && Object.keys(parsed.values).length > 0) {
+					setSavedProgress(parsed)
+					setShowResumePrompt(true)
+				}
+			}
+		} catch {
+			// ignore
+		}
+	}, [form?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+	// Progress saving — auto-save on every answer change (debounced)
+	useEffect(() => {
+		if (!form || submitted || currentIndex < 0) return
+		if (Object.keys(values).length === 0) return
+		const timer = setTimeout(() => {
+			localStorage.setItem(progressKey(formId), JSON.stringify({
+				values,
+				currentIndex,
+				savedAt: Date.now(),
+			}))
+		}, 500)
+		return () => clearTimeout(timer)
+	}, [values, currentIndex, form, submitted, formId])
 
 	// Focus input when question changes
 	useEffect(() => {
@@ -90,9 +165,16 @@ export function FormFill({ formId, navigate }: Props) {
 		}
 	}, [currentIndex])
 
+	// Check if form is closed (client-side)
+	const isFormClosed = () => {
+		if (settings.closesAt && Date.now() > settings.closesAt) return true
+		if (settings.opensAt && Date.now() < settings.opensAt) return true
+		return false
+	}
+
 	const validateCurrent = useCallback((): boolean => {
-		if (currentIndex < 0 || currentIndex >= fields.length) return true
-		const field = fields[currentIndex]!
+		if (currentIndex < 0 || currentIndex >= visibleFields.length) return true
+		const field = visibleFields[currentIndex]!
 		const value = values[field.id] || ''
 
 		// Section and statement are display-only, always valid
@@ -139,7 +221,7 @@ export function FormFill({ formId, navigate }: Props) {
 
 		setErrors({ ...errors, [field.id]: '' })
 		return true
-	}, [currentIndex, fields, values, errors])
+	}, [currentIndex, visibleFields, values, errors])
 
 	const [submitError, setSubmitError] = useState('')
 
@@ -151,17 +233,23 @@ export function FormFill({ formId, navigate }: Props) {
 		}
 		if (!validateCurrent()) return
 
-		if (currentIndex < fields.length - 1) {
+		if (currentIndex < visibleFields.length - 1) {
 			setDirection('forward')
 			setCurrentIndex(currentIndex + 1)
 		} else {
 			const realFormId = String(form?.id || formId)
 			setSubmitError('')
+			setIsSubmitting(true)
 			submitResponse(realFormId, JSON.stringify(values))
-				.then(() => setSubmitted(true))
+				.then(() => {
+					setSubmitted(true)
+					// Clear saved progress on successful submission
+					localStorage.removeItem(progressKey(formId))
+				})
 				.catch((err) => setSubmitError(err.message || 'Failed to submit. Please try again.'))
+				.finally(() => setIsSubmitting(false))
 		}
-	}, [currentIndex, fields.length, formId, values, form, validateCurrent, submitResponse])
+	}, [currentIndex, visibleFields.length, formId, values, form, validateCurrent, submitResponse])
 
 	const goBack = () => {
 		if (currentIndex > 0) {
@@ -180,19 +268,75 @@ export function FormFill({ formId, navigate }: Props) {
 		}
 	}
 
-	// Keyboard navigation
+	// Enhanced keyboard navigation
 	useEffect(() => {
 		const handler = (e: KeyboardEvent) => {
+			// Enter → next question
 			if (e.key === 'Enter' && !e.shiftKey) {
 				const tag = (e.target as HTMLElement)?.tagName
 				if (tag === 'TEXTAREA') return // Allow newlines in textarea
 				e.preventDefault()
 				goNext()
+				return
+			}
+			// Shift+Enter → previous question
+			if (e.key === 'Enter' && e.shiftKey) {
+				e.preventDefault()
+				goBack()
+				return
+			}
+			// Escape → exit
+			if (e.key === 'Escape') {
+				navigate('dashboard')
+				return
+			}
+			// Number keys 1-9 for radio/select/checkbox options
+			if (currentIndex >= 0 && currentIndex < visibleFields.length) {
+				const field = visibleFields[currentIndex]!
+				if (e.key >= '1' && e.key <= '9' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+					const tag = (e.target as HTMLElement)?.tagName
+					if (tag === 'INPUT' || tag === 'TEXTAREA') return
+					if (['select', 'radio'].includes(field.type)) {
+						const options = (field.options || '').split(',').map(o => o.trim()).filter(Boolean)
+						const idx = parseInt(e.key) - 1
+						if (idx < options.length) {
+							e.preventDefault()
+							setValue(field.id, options[idx]!)
+						}
+					} else if (field.type === 'checkbox') {
+						const options = (field.options || '').split(',').map(o => o.trim()).filter(Boolean)
+						const idx = parseInt(e.key) - 1
+						if (idx < options.length) {
+							e.preventDefault()
+							const opt = options[idx]!
+							const selected = values[field.id] ? values[field.id]!.split(',') : []
+							const next = selected.includes(opt)
+								? selected.filter(s => s !== opt)
+								: [...selected, opt]
+							setValue(field.id, next.join(','))
+						}
+					}
+				}
+				// Y/N for yes/no fields
+				if (field.type === 'yesno' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+					const tag = (e.target as HTMLElement)?.tagName
+					if (tag === 'INPUT' || tag === 'TEXTAREA') return
+					if (e.key.toLowerCase() === 'y') {
+						e.preventDefault()
+						setValue(field.id, 'yes')
+					} else if (e.key.toLowerCase() === 'n') {
+						e.preventDefault()
+						setValue(field.id, 'no')
+					}
+				}
 			}
 		}
 		window.addEventListener('keydown', handler)
 		return () => window.removeEventListener('keydown', handler)
-	}, [goNext])
+	}, [goNext, currentIndex, visibleFields, values]) // eslint-disable-line react-hooks/exhaustive-deps
+
+	// Embed mode — minimal chrome
+	const isEmbed = new URLSearchParams(window.location.search).get('embed') === '1'
 
 	if (!form) {
 		if (!remoteFetched) {
@@ -213,37 +357,86 @@ export function FormFill({ formId, navigate }: Props) {
 		)
 	}
 
-	// Submitted screen
-	if (submitted) {
+	// Form closed check (client-side)
+	if (isFormClosed()) {
 		return (
 			<div className="flex items-center justify-center min-h-screen px-4" style={themeVars as React.CSSProperties}>
-				<div className="text-center animate-scale-in max-w-md">
-					<div className="w-16 h-16 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center mx-auto mb-6">
-						<Check className="h-8 w-8 text-emerald-500" strokeWidth={2.5} />
+				<div className="text-center animate-fade-in max-w-md">
+					<div className="w-16 h-16 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center mx-auto mb-6">
+						<X className="h-8 w-8 text-gray-400" />
 					</div>
-					<h2 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-gray-100 mb-3">
-						Thank you!
+					<h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-3">
+						Form Closed
 					</h2>
-					<p className="text-gray-500 dark:text-gray-400 mb-8 leading-relaxed">
-						Your response has been submitted successfully.
+					<p className="text-gray-500 dark:text-gray-400 leading-relaxed">
+						{settings.closedMessage || 'This form is no longer accepting responses.'}
+					</p>
+				</div>
+			</div>
+		)
+	}
+
+	// Resume prompt overlay
+	if (showResumePrompt && savedProgress) {
+		const savedTime = new Date(savedProgress.savedAt).toLocaleString()
+		return (
+			<div className="flex items-center justify-center min-h-screen px-4" style={themeVars as React.CSSProperties}>
+				<div className="text-center max-w-md animate-scale-in">
+					<div className="w-14 h-14 rounded-full bg-brand-100 dark:bg-brand-900/30 flex items-center justify-center mx-auto mb-5">
+						<RotateCcw className="h-6 w-6 text-brand-600 dark:text-brand-400" />
+					</div>
+					<h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-2">
+						Resume your progress?
+					</h2>
+					<p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
+						You have saved progress from {savedTime}
 					</p>
 					<div className="flex flex-col sm:flex-row items-center justify-center gap-3">
 						<button
 							onClick={() => {
-								setValues({})
-								setSubmitted(false)
-								setCurrentIndex(-1)
+								setValues(savedProgress.values)
+								setCurrentIndex(savedProgress.currentIndex)
+								setShowResumePrompt(false)
 							}}
 							className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-6 py-3 text-sm font-medium text-white transition-smooth hover:bg-brand-500 active:scale-[0.98]"
 						>
-							Submit another response
+							Resume
 						</button>
-					</div>
-					<div className="mt-10">
-						<PoweredByBadge slug={String(form?.slug || formId)} variant="prominent" />
+						<button
+							onClick={() => {
+								localStorage.removeItem(progressKey(formId))
+								setShowResumePrompt(false)
+							}}
+							className="inline-flex items-center gap-2 rounded-xl border-2 border-gray-200 dark:border-gray-700 px-6 py-3 text-sm font-medium text-gray-500 dark:text-gray-400 transition-smooth hover:border-gray-300 active:scale-[0.98]"
+						>
+							Start fresh
+						</button>
 					</div>
 				</div>
 			</div>
+		)
+	}
+
+	// Submitted screen — custom thank-you page support
+	if (submitted) {
+		const customMessage = settings.thankYouMessage
+		const redirectUrl = settings.redirectUrl
+		const allowMultiple = settings.allowMultiple !== false // default true
+
+		return (
+			<SubmittedScreen
+				themeVars={themeVars}
+				customMessage={customMessage}
+				redirectUrl={redirectUrl}
+				redirectDelay={settings.redirectDelay || 3}
+				allowMultiple={allowMultiple}
+				formSlug={String(form?.slug || formId)}
+				onReset={() => {
+					setValues({})
+					setSubmitted(false)
+					setCurrentIndex(-1)
+				}}
+			/>
 		)
 	}
 
@@ -260,15 +453,17 @@ export function FormFill({ formId, navigate }: Props) {
 				</div>
 
 				{/* Back button */}
-				<div className="p-4">
-					<button
-						onClick={() => navigate('dashboard')}
-						className="flex items-center gap-2 text-sm text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-smooth"
-					>
-						<ArrowLeft className="h-4 w-4" />
-						Exit
-					</button>
-				</div>
+				{!isEmbed && (
+					<div className="p-4">
+						<button
+							onClick={() => navigate('dashboard')}
+							className="flex items-center gap-2 text-sm text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-smooth"
+						>
+							<ArrowLeft className="h-4 w-4" />
+							Exit
+						</button>
+					</div>
+				)}
 
 				{/* Welcome content */}
 				<div className="flex-1 flex items-center justify-center px-4">
@@ -298,9 +493,12 @@ export function FormFill({ formId, navigate }: Props) {
 	}
 
 	// Question screen
-	const field = fields[currentIndex]!
-	const isLast = currentIndex === fields.length - 1
+	const field = visibleFields[currentIndex]!
+	const isLast = currentIndex === visibleFields.length - 1
 	const error = errors[field.id]
+
+	// Apply answer piping to label
+	const pipedLabel = pipeValues(field.label, values, fields)
 
 	// Section break - full screen slide with title and description
 	if (field.type === 'section') {
@@ -315,23 +513,25 @@ export function FormFill({ formId, navigate }: Props) {
 				</div>
 
 				<div className="p-4 flex items-center justify-between">
-					<button
-						onClick={() => navigate('dashboard')}
-						className="flex items-center gap-2 text-sm text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-smooth"
-					>
-						<X className="h-4 w-4" />
-						Exit
-					</button>
+					{!isEmbed && (
+						<button
+							onClick={() => navigate('dashboard')}
+							className="flex items-center gap-2 text-sm text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-smooth"
+						>
+							<X className="h-4 w-4" />
+							Exit
+						</button>
+					)}
 				</div>
 
 				<div className="flex-1 flex items-center justify-center px-4">
 					<div className={`text-center max-w-lg ${direction === 'forward' ? 'animate-slide-up' : 'animate-fade-in'}`}>
 						<h2 className="text-3xl sm:text-4xl font-bold text-gray-900 dark:text-gray-100 mb-4 leading-tight">
-							{field.label || 'Section'}
+							{pipedLabel || 'Section'}
 						</h2>
 						{field.placeholder && (
 							<p className="text-lg text-gray-500 dark:text-gray-400 mb-10 leading-relaxed">
-								{field.placeholder}
+								{pipeValues(field.placeholder, values, fields)}
 							</p>
 						)}
 						<div className="flex items-center justify-center gap-3">
@@ -377,24 +577,26 @@ export function FormFill({ formId, navigate }: Props) {
 				</div>
 
 				<div className="p-4 flex items-center justify-between">
-					<button
-						onClick={() => navigate('dashboard')}
-						className="flex items-center gap-2 text-sm text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-smooth"
-					>
-						<X className="h-4 w-4" />
-						Exit
-					</button>
+					{!isEmbed && (
+						<button
+							onClick={() => navigate('dashboard')}
+							className="flex items-center gap-2 text-sm text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-smooth"
+						>
+							<X className="h-4 w-4" />
+							Exit
+						</button>
+					)}
 				</div>
 
 				<div className="flex-1 flex items-center justify-center px-4 sm:px-8">
 					<div className={`w-full max-w-lg ${direction === 'forward' ? 'animate-slide-up' : 'animate-fade-in'}`}>
 						<div className="rounded-2xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 p-6 sm:p-8">
 							<h2 className="text-xl sm:text-2xl font-semibold text-gray-900 dark:text-gray-100 mb-3 leading-snug">
-								{field.label || 'Information'}
+								{pipedLabel || 'Information'}
 							</h2>
 							{field.placeholder && (
 								<p className="text-base text-gray-500 dark:text-gray-400 leading-relaxed">
-									{field.placeholder}
+									{pipeValues(field.placeholder, values, fields)}
 								</p>
 							)}
 						</div>
@@ -453,13 +655,15 @@ export function FormFill({ formId, navigate }: Props) {
 
 			{/* Top bar — exit + counter */}
 			<div className="flex items-center justify-between p-4">
-				<button
-					onClick={() => navigate('dashboard')}
-					className="flex items-center gap-2 text-sm text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-smooth"
-				>
-					<X className="h-4 w-4" />
-					Exit
-				</button>
+				{!isEmbed ? (
+					<button
+						onClick={() => navigate('dashboard')}
+						className="flex items-center gap-2 text-sm text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-smooth"
+					>
+						<X className="h-4 w-4" />
+						Exit
+					</button>
+				) : <span />}
 				<span className="text-xs text-gray-400 dark:text-gray-500 tabular-nums">
 					{questionNumber} of {totalQuestions}
 				</span>
@@ -477,7 +681,7 @@ export function FormFill({ formId, navigate }: Props) {
 							{questionNumber} →
 						</span>
 						<h2 className="text-xl sm:text-2xl font-semibold text-gray-900 dark:text-gray-100 leading-snug">
-							{field.label || `Question ${questionNumber}`}
+							{pipedLabel || `Question ${questionNumber}`}
 							{field.required && (
 								<span className="text-red-400 ml-1">*</span>
 							)}
@@ -512,13 +716,16 @@ export function FormFill({ formId, navigate }: Props) {
 						)}
 						<button
 							onClick={goNext}
-							className={`inline-flex items-center gap-2 rounded-xl px-6 py-3 text-sm font-medium text-white shadow-sm transition-smooth active:scale-[0.98] ${
+							disabled={isSubmitting}
+							className={`inline-flex items-center gap-2 rounded-xl px-6 py-3 text-sm font-medium text-white shadow-sm transition-smooth active:scale-[0.98] disabled:opacity-60 ${
 								isLast
 									? 'bg-emerald-600 shadow-emerald-600/25 hover:bg-emerald-500'
 									: 'bg-brand-600 shadow-brand-600/25 hover:bg-brand-500'
 							}`}
 						>
-							{isLast ? (
+							{isSubmitting ? (
+								'Submitting...'
+							) : isLast ? (
 								<>
 									Submit
 									<Send className="h-3.5 w-3.5" />
@@ -545,6 +752,85 @@ export function FormFill({ formId, navigate }: Props) {
 			{/* Bottom bar */}
 			<div className="p-4 flex justify-center items-center">
 				<PoweredByBadge slug={String(form?.slug || formId)} />
+			</div>
+		</div>
+	)
+}
+
+// Custom thank-you screen with redirect support
+function SubmittedScreen({
+	themeVars,
+	customMessage,
+	redirectUrl,
+	redirectDelay,
+	allowMultiple,
+	formSlug,
+	onReset,
+}: {
+	themeVars: Record<string, string>
+	customMessage?: string
+	redirectUrl?: string
+	redirectDelay: number
+	allowMultiple: boolean
+	formSlug: string
+	onReset: () => void
+}) {
+	const [countdown, setCountdown] = useState(redirectDelay)
+
+	useEffect(() => {
+		if (!redirectUrl) return
+		if (countdown <= 0) {
+			window.location.href = redirectUrl
+			return
+		}
+		const timer = setTimeout(() => setCountdown(c => c - 1), 1000)
+		return () => clearTimeout(timer)
+	}, [countdown, redirectUrl])
+
+	return (
+		<div className="flex items-center justify-center min-h-screen px-4" style={themeVars as React.CSSProperties}>
+			<div className="text-center animate-scale-in max-w-md">
+				<div className="w-16 h-16 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center mx-auto mb-6">
+					<Check className="h-8 w-8 text-emerald-500" strokeWidth={2.5} />
+				</div>
+				<h2 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-gray-100 mb-3">
+					{customMessage ? '' : 'Thank you!'}
+				</h2>
+				{customMessage ? (
+					<p className="text-gray-600 dark:text-gray-300 mb-8 leading-relaxed whitespace-pre-line">
+						{customMessage}
+					</p>
+				) : (
+					<p className="text-gray-500 dark:text-gray-400 mb-8 leading-relaxed">
+						Your response has been submitted successfully.
+					</p>
+				)}
+				{redirectUrl && (
+					<p className="text-sm text-gray-400 dark:text-gray-500 mb-4">
+						Redirecting in {countdown}...
+					</p>
+				)}
+				<div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+					{allowMultiple && (
+						<button
+							onClick={onReset}
+							className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-6 py-3 text-sm font-medium text-white transition-smooth hover:bg-brand-500 active:scale-[0.98]"
+						>
+							Submit another response
+						</button>
+					)}
+					{redirectUrl && (
+						<a
+							href={redirectUrl}
+							className="inline-flex items-center gap-2 rounded-xl border-2 border-gray-200 dark:border-gray-700 px-6 py-3 text-sm font-medium text-gray-500 dark:text-gray-400 transition-smooth hover:border-gray-300 active:scale-[0.98]"
+						>
+							Continue now
+						</a>
+					)}
+				</div>
+				<div className="mt-10">
+					<PoweredByBadge slug={formSlug} variant="prominent" />
+				</div>
 			</div>
 		</div>
 	)

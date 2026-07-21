@@ -21,7 +21,7 @@ import type { ProductionHttpRouteRequest, ProductionHttpRouteResponse } from '@k
 // ---------------------------------------------------------------------------
 
 const koraFormsSchema = defineSchema({
-	version: 4,
+	version: 5,
 	collections: {
 		forms: {
 			fields: {
@@ -37,6 +37,7 @@ const koraFormsSchema = defineSchema({
 				responseCount: t.number().default(0).merge('counter'),
 				ownerId: t.string().default(''),
 				slug: t.string().default(''),
+				settings: t.string().default('{}'),
 				createdAt: t.timestamp().auto(),
 			},
 			indexes: ['status', 'createdAt', 'ownerId', 'slug'],
@@ -128,7 +129,7 @@ async function main(): Promise<void> {
 				primary: auth.auth,
 				anonymousScopes: { responses: {} },
 			}),
-			schemaVersion: 4,
+			schemaVersion: 5,
 		},
 		httpRoutes: [
 			// Auth routes — signup, signin, refresh, signout, me, devices
@@ -196,6 +197,26 @@ async function main(): Promise<void> {
 						if (!form) {
 							return withCors({ status: 404, body: { error: 'Form not found' } })
 						}
+						// Enforce response limits and scheduling
+						try {
+							const settings = JSON.parse(String(form.settings || '{}'))
+							if (settings.closesAt && Date.now() > settings.closesAt) {
+								return withCors({ status: 403, body: { error: settings.closedMessage || 'This form is no longer accepting responses.' } })
+							}
+							if (settings.opensAt && Date.now() < settings.opensAt) {
+								return withCors({ status: 403, body: { error: 'This form is not yet open for responses.' } })
+							}
+							if (settings.maxResponses && settings.maxResponses > 0) {
+								const existing = await store.queryCollection('responses', {
+									where: { formId: String(form.id) },
+								})
+								if (existing.length >= settings.maxResponses) {
+									return withCors({ status: 403, body: { error: settings.closedMessage || 'This form has reached its maximum number of responses.' } })
+								}
+							}
+						} catch {
+							// settings parse error - allow submission
+						}
 						// Create and apply an insert operation for the response
 						const nodeId = store.getNodeId()
 						const clock = new HybridLogicalClock(nodeId)
@@ -215,7 +236,7 @@ async function main(): Promise<void> {
 							previousData: null,
 							sequenceNumber: seqNum,
 							causalDeps: [],
-							schemaVersion: 4,
+							schemaVersion: 5,
 						}, clock)
 						await store.applyRemoteOperation(op)
 						return withCors({ status: 201, body: { success: true } })

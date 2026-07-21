@@ -1,7 +1,7 @@
 import { defineSchema, t } from 'korajs'
 
 export default defineSchema({
-	version: 4,
+	version: 5,
 	collections: {
 		// A form definition (e.g. "Customer Feedback", "Event Registration")
 		forms: {
@@ -9,7 +9,7 @@ export default defineSchema({
 				title: t.string(),
 				description: t.string().default(''),
 				// JSON-encoded array of field definitions
-				// Each field: { id, type, label, required, options? }
+				// Each field: { id, type, label, required, options?, conditions? }
 				fields: t.string().default('[]'),
 				status: t.enum(['draft', 'published', 'closed']).default('draft').transitions({
 					draft: ['published', 'closed'],
@@ -24,6 +24,8 @@ export default defineSchema({
 				ownerId: t.string().default(''),
 				// URL-friendly slug for shareable links
 				slug: t.string().default(''),
+				// JSON-encoded form settings (thank-you page, limits, scheduling, etc.)
+				settings: t.string().default('{}'),
 				createdAt: t.timestamp().auto(),
 			},
 			indexes: ['status', 'createdAt', 'ownerId', 'slug'],

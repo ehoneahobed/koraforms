@@ -1,12 +1,15 @@
 import { useState } from 'react'
-import { Settings, Link as LinkIcon, Check, Copy, Ban, Globe } from 'lucide-react'
+import { Settings, Link as LinkIcon, Check, Copy, Ban, Globe, ChevronDown } from 'lucide-react'
 import { copyToClipboard } from '../../utils/clipboard'
+import type { FormSettings as FormSettingsType } from '../../types'
 
 interface Props {
 	slug: string
 	status: string
+	settings: FormSettingsType
 	onSlugChange: (slug: string) => void
 	onStatusChange: (status: string) => void
+	onSettingsChange: (settings: FormSettingsType) => void
 	isOpen: boolean
 	onToggle: () => void
 }
@@ -14,8 +17,10 @@ interface Props {
 export function FormSettings({
 	slug,
 	status,
+	settings,
 	onSlugChange,
 	onStatusChange,
+	onSettingsChange,
 	isOpen,
 	onToggle,
 }: Props) {
@@ -44,6 +49,10 @@ export function FormSettings({
 		setTimeout(() => setCopied(false), 2000)
 	}
 
+	const updateSetting = <K extends keyof FormSettingsType>(key: K, value: FormSettingsType[K]) => {
+		onSettingsChange({ ...settings, [key]: value })
+	}
+
 	return (
 		<div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-surface-elevated-dark mb-4 overflow-hidden">
 			<button
@@ -54,19 +63,11 @@ export function FormSettings({
 					<Settings className="h-4 w-4 text-gray-400" />
 					<span className="font-medium">Settings</span>
 				</div>
-				<svg
-					className={`h-4 w-4 text-gray-400 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
-					fill="none"
-					viewBox="0 0 24 24"
-					stroke="currentColor"
-					strokeWidth={2}
-				>
-					<path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-				</svg>
+				<ChevronDown className={`h-4 w-4 text-gray-400 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
 			</button>
 
 			{isOpen && (
-				<div className="px-6 pb-5 pt-1 space-y-4 animate-fade-in">
+				<div className="px-6 pb-5 pt-1 space-y-5 animate-fade-in">
 					{/* Status */}
 					<div>
 						<label className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 block">
@@ -129,6 +130,120 @@ export function FormSettings({
 							)}
 						</div>
 					)}
+
+					{/* Divider */}
+					<div className="border-t border-gray-100 dark:border-gray-800" />
+
+					{/* Thank-you page */}
+					<div>
+						<label className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 block">
+							Thank-you message
+						</label>
+						<textarea
+							value={settings.thankYouMessage || ''}
+							onChange={(e) => updateSetting('thankYouMessage', e.target.value)}
+							placeholder="Custom message after submission (leave blank for default)"
+							rows={2}
+							className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2 text-sm outline-none focus:border-brand-400 dark:focus:border-brand-600 transition-smooth text-gray-700 dark:text-gray-300 placeholder-gray-400 resize-none"
+						/>
+					</div>
+
+					<div>
+						<label className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 block">
+							Redirect URL (optional)
+						</label>
+						<input
+							type="url"
+							value={settings.redirectUrl || ''}
+							onChange={(e) => updateSetting('redirectUrl', e.target.value)}
+							placeholder="https://example.com/thank-you"
+							className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2 text-sm outline-none focus:border-brand-400 dark:focus:border-brand-600 transition-smooth text-gray-700 dark:text-gray-300 placeholder-gray-400"
+						/>
+						{settings.redirectUrl && (
+							<div className="mt-2">
+								<label className="text-xs text-gray-400 dark:text-gray-500">
+									Redirect delay: {settings.redirectDelay || 3}s
+								</label>
+								<input
+									type="range"
+									min={0}
+									max={10}
+									value={settings.redirectDelay || 3}
+									onChange={(e) => updateSetting('redirectDelay', parseInt(e.target.value))}
+									className="w-full h-1.5 mt-1 accent-brand-500"
+								/>
+							</div>
+						)}
+					</div>
+
+					<label className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 cursor-pointer select-none">
+						<input
+							type="checkbox"
+							checked={settings.allowMultiple !== false}
+							onChange={(e) => updateSetting('allowMultiple', e.target.checked)}
+							className="rounded border-gray-300"
+						/>
+						Allow multiple submissions
+					</label>
+
+					{/* Divider */}
+					<div className="border-t border-gray-100 dark:border-gray-800" />
+
+					{/* Response limits */}
+					<div>
+						<label className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 block">
+							Max responses (0 = unlimited)
+						</label>
+						<input
+							type="number"
+							min={0}
+							value={settings.maxResponses || 0}
+							onChange={(e) => updateSetting('maxResponses', parseInt(e.target.value) || 0)}
+							className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2 text-sm outline-none focus:border-brand-400 dark:focus:border-brand-600 transition-smooth text-gray-700 dark:text-gray-300"
+						/>
+					</div>
+
+					{/* Scheduling */}
+					<div className="grid grid-cols-2 gap-3">
+						<div>
+							<label className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 block">
+								Opens at
+							</label>
+							<input
+								type="datetime-local"
+								value={settings.opensAt ? new Date(settings.opensAt).toISOString().slice(0, 16) : ''}
+								onChange={(e) => updateSetting('opensAt', e.target.value ? new Date(e.target.value).getTime() : undefined)}
+								className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2 text-sm outline-none focus:border-brand-400 dark:focus:border-brand-600 transition-smooth text-gray-700 dark:text-gray-300"
+							/>
+						</div>
+						<div>
+							<label className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 block">
+								Closes at
+							</label>
+							<input
+								type="datetime-local"
+								value={settings.closesAt ? new Date(settings.closesAt).toISOString().slice(0, 16) : ''}
+								onChange={(e) => updateSetting('closesAt', e.target.value ? new Date(e.target.value).getTime() : undefined)}
+								className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2 text-sm outline-none focus:border-brand-400 dark:focus:border-brand-600 transition-smooth text-gray-700 dark:text-gray-300"
+							/>
+						</div>
+					</div>
+
+					{/* Closed message */}
+					{(settings.maxResponses || settings.closesAt) ? (
+						<div>
+							<label className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 block">
+								Closed message
+							</label>
+							<input
+								type="text"
+								value={settings.closedMessage || ''}
+								onChange={(e) => updateSetting('closedMessage', e.target.value)}
+								placeholder="This form is no longer accepting responses."
+								className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2 text-sm outline-none focus:border-brand-400 dark:focus:border-brand-600 transition-smooth text-gray-700 dark:text-gray-300 placeholder-gray-400"
+							/>
+						</div>
+					) : null}
 				</div>
 			)}
 		</div>

@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { X, Copy, Check, Code, Link as LinkIcon } from 'lucide-react'
-import { getEmbedCode } from '../../utils/embed'
 import { copyToClipboard as copyText } from '../../utils/clipboard'
 
 interface Props {
@@ -9,10 +8,26 @@ interface Props {
 	onClose: () => void
 }
 
+type EmbedMode = 'inline' | 'popup' | 'slidein'
+
 export function ShareModal({ slug, title, onClose }: Props) {
 	const [copied, setCopied] = useState<'link' | 'embed' | null>(null)
+	const [embedMode, setEmbedMode] = useState<EmbedMode>('inline')
 	const formUrl = `${window.location.origin}/f/${slug}`
-	const embedCode = getEmbedCode(slug)
+	const baseUrl = window.location.origin
+
+	const getEmbedCode = (mode: EmbedMode): string => {
+		switch (mode) {
+			case 'inline':
+				return `<iframe src="${formUrl}?embed=1" width="100%" height="600" frameborder="0" style="border:none;border-radius:12px;"></iframe>`
+			case 'popup':
+				return `<script src="${baseUrl}/embed.js"></script>\n<button onclick="KoraForms.popup('${slug}')">Open Form</button>`
+			case 'slidein':
+				return `<script src="${baseUrl}/embed.js"></script>\n<script>KoraForms.slideIn('${slug}', { position: 'right' })</script>`
+		}
+	}
+
+	const embedCode = getEmbedCode(embedMode)
 
 	const copyToClipboard = (text: string, type: 'link' | 'embed') => {
 		copyText(text)
@@ -69,8 +84,28 @@ export function ShareModal({ slug, title, onClose }: Props) {
 					<div>
 						<label className="flex items-center gap-1.5 text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">
 							<Code className="h-3.5 w-3.5" />
-							Embed code
+							Embed on your website
 						</label>
+						{/* Embed mode tabs */}
+						<div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-0.5 mb-2">
+							{([
+								{ value: 'inline' as EmbedMode, label: 'Inline' },
+								{ value: 'popup' as EmbedMode, label: 'Popup' },
+								{ value: 'slidein' as EmbedMode, label: 'Slide-in' },
+							]).map(tab => (
+								<button
+									key={tab.value}
+									onClick={() => setEmbedMode(tab.value)}
+									className={`flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-200 ${
+										embedMode === tab.value
+											? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm'
+											: 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+									}`}
+								>
+									{tab.label}
+								</button>
+							))}
+						</div>
 						<div className="relative">
 							<pre className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2.5 text-xs text-gray-600 dark:text-gray-400 overflow-x-auto whitespace-pre-wrap break-all">
 								{embedCode}
