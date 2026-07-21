@@ -33,6 +33,8 @@ import {
 	Upload,
 	Calculator,
 	EyeOff,
+	ArrowUpDown,
+	Grid3x3,
 } from 'lucide-react'
 import { FIELD_TYPES, CONDITION_OPERATORS, LANGUAGES, type FormField, type FormSettings as FormSettingsType, type FieldType, type ConditionalRule } from '../types'
 import { THEME_PRESETS, getThemeById } from '../themes'
@@ -62,6 +64,8 @@ const FIELD_ICONS: Record<FieldType, React.ReactNode> = {
 	statement: <MessageSquare className="h-3.5 w-3.5" />,
 	signature: <PenTool className="h-3.5 w-3.5" />,
 	file: <Upload className="h-3.5 w-3.5" />,
+	ranking: <ArrowUpDown className="h-3.5 w-3.5" />,
+	matrix: <Grid3x3 className="h-3.5 w-3.5" />,
 	calculated: <Calculator className="h-3.5 w-3.5" />,
 	hidden: <EyeOff className="h-3.5 w-3.5" />,
 }
@@ -106,7 +110,8 @@ export function FormBuilder({ formId, navigate, userId }: Props) {
 			type,
 			label: '',
 			required: false,
-			...((['select', 'radio', 'checkbox'].includes(type)) ? { options: 'Option 1, Option 2, Option 3' } : {}),
+			...((['select', 'radio', 'checkbox', 'ranking'].includes(type)) ? { options: 'Option 1, Option 2, Option 3' } : {}),
+			...(type === 'matrix' ? { matrixRows: 'Quality, Service, Price', matrixColumns: 'Poor, Fair, Good, Excellent' } : {}),
 		}
 		if (afterIndex !== null && afterIndex >= 0) {
 			const next = [...fields]
@@ -525,7 +530,8 @@ function FieldEditor({
 	onDrop?: () => void
 	onDragEnd?: () => void
 }) {
-	const needsOptions = ['select', 'radio', 'checkbox'].includes(field.type)
+	const needsOptions = ['select', 'radio', 'checkbox', 'ranking'].includes(field.type)
+	const isMatrix = field.type === 'matrix'
 	const needsScaleLabels = field.type === 'scale'
 	const isDisplayOnly = field.type === 'section' || field.type === 'statement' || field.type === 'calculated' || field.type === 'hidden'
 	const isSignature = field.type === 'signature'
@@ -765,6 +771,38 @@ function FieldEditor({
 							<p className="text-[10px] text-gray-400 dark:text-gray-500">
 								Hidden from respondents. Value saved with each response.
 							</p>
+						</div>
+					)}
+
+					{/* Matrix configuration */}
+					{isMatrix && isActive && (
+						<div className="animate-fade-in space-y-2">
+							<input
+								type="text"
+								value={field.matrixRows || ''}
+								onChange={(e) => onUpdate({ matrixRows: e.target.value })}
+								placeholder="Rows (comma-separated: Quality, Service, Price)"
+								className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2 text-sm outline-none focus:border-brand-400 dark:focus:border-brand-600 transition-smooth"
+								onClick={(e) => e.stopPropagation()}
+							/>
+							<input
+								type="text"
+								value={field.matrixColumns || ''}
+								onChange={(e) => onUpdate({ matrixColumns: e.target.value })}
+								placeholder="Columns (comma-separated: Poor, Fair, Good, Excellent)"
+								className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2 text-sm outline-none focus:border-brand-400 dark:focus:border-brand-600 transition-smooth"
+								onClick={(e) => e.stopPropagation()}
+							/>
+							<p className="text-[10px] text-gray-400 dark:text-gray-500">
+								Creates a grid where respondents select one column per row.
+							</p>
+						</div>
+					)}
+
+					{/* Matrix preview (when not active) */}
+					{isMatrix && !isActive && (field.matrixRows || field.matrixColumns) && (
+						<div className="text-xs text-gray-400 dark:text-gray-500">
+							{(field.matrixRows || '').split(',').filter(Boolean).length} rows &times; {(field.matrixColumns || '').split(',').filter(Boolean).length} columns
 						</div>
 					)}
 

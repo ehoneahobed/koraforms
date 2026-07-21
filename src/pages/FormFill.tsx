@@ -1222,6 +1222,14 @@ function QuestionInput({
 		case 'file':
 			return <FileInput field={field} value={value} onChange={onChange} />
 
+		case 'ranking': {
+			const rankOptions = (field.options || '').split(',').map(o => o.trim()).filter(Boolean)
+			return <RankingInput options={rankOptions} value={value} onChange={onChange} />
+		}
+
+		case 'matrix':
+			return <MatrixInput field={field} value={value} onChange={onChange} />
+
 		case 'calculated':
 			return (
 				<div className="rounded-xl border-2 border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 px-4 py-3">
@@ -1468,6 +1476,146 @@ function SignatureInput({
 					</button>
 				)}
 			</div>
+		</div>
+	)
+}
+
+// Ranking — drag to reorder options
+function RankingInput({
+	options,
+	value,
+	onChange,
+}: {
+	options: string[]
+	value: string
+	onChange: (value: string) => void
+}) {
+	const [items, setItems] = useState<string[]>(() => {
+		if (value) {
+			try {
+				const parsed = JSON.parse(value) as string[]
+				if (Array.isArray(parsed) && parsed.length > 0) return parsed
+			} catch { /* ignore */ }
+		}
+		return [...options]
+	})
+	const [dragIndex, setDragIndex] = useState<number | null>(null)
+
+	const moveItem = (from: number, to: number) => {
+		const next = [...items]
+		const [moved] = next.splice(from, 1)
+		next.splice(to, 0, moved!)
+		setItems(next)
+		onChange(JSON.stringify(next))
+	}
+
+	return (
+		<div className="space-y-1.5">
+			<p className="text-xs text-gray-400 dark:text-gray-500 mb-2">Drag to reorder, or use the arrows</p>
+			{items.map((item, i) => (
+				<div
+					key={`${item}-${i}`}
+					draggable
+					onDragStart={() => setDragIndex(i)}
+					onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move' }}
+					onDrop={() => { if (dragIndex !== null && dragIndex !== i) moveItem(dragIndex, i); setDragIndex(null) }}
+					onDragEnd={() => setDragIndex(null)}
+					className={`flex items-center gap-3 rounded-xl border-2 px-4 py-3 cursor-grab active:cursor-grabbing transition-smooth select-none ${
+						dragIndex === i
+							? 'border-brand-400 dark:border-brand-600 bg-brand-50 dark:bg-brand-900/20 opacity-60'
+							: 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 hover:border-gray-300 dark:hover:border-gray-600'
+					}`}
+				>
+					<span className="text-sm font-bold text-brand-500 dark:text-brand-400 tabular-nums w-6 text-center shrink-0">
+						{i + 1}
+					</span>
+					<span className="flex-1 text-sm text-gray-900 dark:text-gray-100">{item}</span>
+					<div className="flex flex-col gap-0.5 shrink-0">
+						<button
+							onClick={(e) => { e.stopPropagation(); if (i > 0) moveItem(i, i - 1) }}
+							disabled={i === 0}
+							className="p-0.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 disabled:opacity-30 transition-smooth"
+						>
+							<ArrowLeft className="h-3 w-3 rotate-90" />
+						</button>
+						<button
+							onClick={(e) => { e.stopPropagation(); if (i < items.length - 1) moveItem(i, i + 1) }}
+							disabled={i === items.length - 1}
+							className="p-0.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 disabled:opacity-30 transition-smooth"
+						>
+							<ArrowRight className="h-3 w-3 rotate-90" />
+						</button>
+					</div>
+				</div>
+			))}
+		</div>
+	)
+}
+
+// Matrix / grid — rows × columns with radio selection per row
+function MatrixInput({
+	field,
+	value,
+	onChange,
+}: {
+	field: FormField
+	value: string
+	onChange: (value: string) => void
+}) {
+	const rows = (field.matrixRows || '').split(',').map(r => r.trim()).filter(Boolean)
+	const columns = (field.matrixColumns || '').split(',').map(c => c.trim()).filter(Boolean)
+
+	let answers: Record<string, string> = {}
+	try { if (value) answers = JSON.parse(value) } catch { /* ignore */ }
+
+	const setAnswer = (row: string, col: string) => {
+		const next = { ...answers, [row]: col }
+		onChange(JSON.stringify(next))
+	}
+
+	if (rows.length === 0 || columns.length === 0) {
+		return <p className="text-sm text-gray-400 italic">Matrix not configured</p>
+	}
+
+	return (
+		<div className="overflow-x-auto -mx-2">
+			<table className="w-full text-sm">
+				<thead>
+					<tr>
+						<th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 min-w-[120px]" />
+						{columns.map(col => (
+							<th key={col} className="px-3 py-2 text-center text-xs font-medium text-gray-500 dark:text-gray-400 min-w-[80px]">
+								{col}
+							</th>
+						))}
+					</tr>
+				</thead>
+				<tbody>
+					{rows.map((row, ri) => (
+						<tr key={row} className={ri % 2 === 0 ? 'bg-gray-50/50 dark:bg-gray-800/20' : ''}>
+							<td className="px-3 py-3 text-sm text-gray-700 dark:text-gray-300 font-medium">{row}</td>
+							{columns.map(col => (
+								<td key={col} className="px-3 py-3 text-center">
+									<button
+										onClick={() => setAnswer(row, col)}
+										className={`w-5 h-5 rounded-full border-2 transition-all duration-200 ${
+											answers[row] === col
+												? 'border-brand-500 bg-brand-500 shadow-sm shadow-brand-500/30'
+												: 'border-gray-300 dark:border-gray-600 hover:border-brand-400 dark:hover:border-brand-500'
+										}`}
+									>
+										{answers[row] === col && (
+											<div className="w-full h-full flex items-center justify-center">
+												<div className="w-2 h-2 rounded-full bg-white" />
+											</div>
+										)}
+									</button>
+								</td>
+							))}
+						</tr>
+					))}
+				</tbody>
+			</table>
 		</div>
 	)
 }

@@ -1,5 +1,5 @@
 // Form field types supported by the form builder
-export type FieldType = 'text' | 'number' | 'email' | 'phone' | 'textarea' | 'select' | 'radio' | 'checkbox' | 'date' | 'rating' | 'scale' | 'yesno' | 'time' | 'url' | 'section' | 'statement' | 'signature' | 'file' | 'calculated' | 'hidden'
+export type FieldType = 'text' | 'number' | 'email' | 'phone' | 'textarea' | 'select' | 'radio' | 'checkbox' | 'date' | 'rating' | 'scale' | 'yesno' | 'time' | 'url' | 'section' | 'statement' | 'signature' | 'file' | 'calculated' | 'hidden' | 'ranking' | 'matrix'
 
 // Conditional logic — show/hide fields based on previous answers
 export type ConditionOperator = 'equals' | 'not_equals' | 'contains' | 'not_contains' | 'is_empty' | 'is_not_empty' | 'greater_than' | 'less_than'
@@ -39,6 +39,9 @@ export interface FormField {
 	// Calculated / hidden field config
 	formula?: string         // e.g. "{field_1} + {field_2}"
 	defaultValue?: string    // Static default for hidden fields
+	// Matrix config — comma-separated rows and columns
+	matrixRows?: string      // e.g. "Quality,Service,Price"
+	matrixColumns?: string   // e.g. "Poor,Fair,Good,Excellent"
 	// Multi-language translations
 	translations?: Record<string, {
 		label?: string
@@ -95,6 +98,8 @@ export const FIELD_TYPES: { value: FieldType; label: string }[] = [
 	{ value: 'statement', label: 'Statement' },
 	{ value: 'signature', label: 'Signature' },
 	{ value: 'file', label: 'File Upload' },
+	{ value: 'ranking', label: 'Ranking' },
+	{ value: 'matrix', label: 'Matrix / Grid' },
 	{ value: 'calculated', label: 'Calculated' },
 	{ value: 'hidden', label: 'Hidden Field' },
 ]

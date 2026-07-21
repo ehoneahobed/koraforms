@@ -20,6 +20,8 @@ import {
 	Sparkles,
 	Zap,
 	ExternalLink,
+	Archive,
+	ArchiveRestore,
 } from 'lucide-react'
 import { useState, useRef, useEffect } from 'react'
 import { FORM_TEMPLATES, TEMPLATE_CATEGORIES } from '../templates'
@@ -54,10 +56,33 @@ export function FormList({ navigate, userId }: Props) {
 			app.forms.insert(data),
 	)
 
+	const { mutate: updateForm } = useMutation(
+		(data: { id: string; settings: string }) =>
+			app.forms.update(data.id, { settings: data.settings }),
+	)
+
 	const [showTemplates, setShowTemplates] = useState(false)
 	const [copiedId, setCopiedId] = useState<string | null>(null)
 	const [shareForm, setShareForm] = useState<Record<string, unknown> | null>(null)
-	const [filter, setFilter] = useState<'all' | 'published' | 'draft'>('all')
+	const [filter, setFilter] = useState<'all' | 'published' | 'draft' | 'archived'>('all')
+
+	const handleArchive = (form: Record<string, unknown>) => {
+		const settings = JSON.parse(String(form.settings || '{}'))
+		settings.archived = true
+		updateForm({ id: String(form.id), settings: JSON.stringify(settings) })
+	}
+
+	const handleUnarchive = (form: Record<string, unknown>) => {
+		const settings = JSON.parse(String(form.settings || '{}'))
+		delete settings.archived
+		updateForm({ id: String(form.id), settings: JSON.stringify(settings) })
+	}
+
+	const isArchived = (form: Record<string, unknown>) => {
+		try {
+			return JSON.parse(String(form.settings || '{}')).archived === true
+		} catch { return false }
+	}
 
 	const handleCreateFromTemplate = (key: string) => {
 		const template = FORM_TEMPLATES[key]
@@ -92,8 +117,10 @@ export function FormList({ navigate, userId }: Props) {
 		setTimeout(() => setCopiedId(null), 2000)
 	}
 
-	const published = allForms.filter((f) => String(f.status) === 'published')
-	const drafts = allForms.filter((f) => String(f.status) !== 'published')
+	const activeForms = allForms.filter(f => !isArchived(f))
+	const archivedForms = allForms.filter(f => isArchived(f))
+	const published = activeForms.filter((f) => String(f.status) === 'published')
+	const drafts = activeForms.filter((f) => String(f.status) !== 'published')
 
 	// Only count responses for the current user's forms
 	const userFormIds = new Set(allForms.map((f) => String(f.id)))
@@ -109,7 +136,8 @@ export function FormList({ navigate, userId }: Props) {
 	const filteredForms =
 		filter === 'published' ? published
 		: filter === 'draft' ? drafts
-		: allForms
+		: filter === 'archived' ? archivedForms
+		: activeForms
 
 	return (
 		<div className="max-w-5xl mx-auto">
@@ -149,7 +177,7 @@ export function FormList({ navigate, userId }: Props) {
 			{allForms.length > 0 && (
 				<div className="flex items-center justify-between mb-6">
 					<div className="flex items-center bg-gray-100/80 dark:bg-gray-800/60 rounded-full p-0.5">
-						{(['all', 'published', 'draft'] as const).map((f) => (
+						{(['all', 'published', 'draft', 'archived'] as const).map((f) => (
 							<button
 								key={f}
 								onClick={() => setFilter(f)}
@@ -159,7 +187,7 @@ export function FormList({ navigate, userId }: Props) {
 										: 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
 								}`}
 							>
-								{f === 'all' ? 'All' : f === 'published' ? 'Live' : 'Drafts'}
+								{f === 'all' ? 'All' : f === 'published' ? 'Live' : f === 'draft' ? 'Drafts' : `Archived${archivedForms.length > 0 ? ` (${archivedForms.length})` : ''}`}
 							</button>
 						))}
 					</div>
@@ -208,6 +236,9 @@ export function FormList({ navigate, userId }: Props) {
 							onDuplicate={() => handleDuplicate(form)}
 							onCopyLink={() => handleCopyLink(form)}
 							onShare={() => setShareForm(form)}
+							onArchive={() => handleArchive(form)}
+							onUnarchive={() => handleUnarchive(form)}
+							isFormArchived={isArchived(form)}
 							isCopied={copiedId === form.id}
 							responseCount={responseCountMap.get(String(form.id)) || 0}
 						/>
@@ -254,6 +285,9 @@ function FormCard({
 	onDuplicate,
 	onCopyLink,
 	onShare,
+	onArchive,
+	onUnarchive,
+	isFormArchived,
 	isCopied,
 	responseCount,
 }: {
@@ -263,6 +297,9 @@ function FormCard({
 	onDuplicate: () => void
 	onCopyLink: () => void
 	onShare: () => void
+	onArchive: () => void
+	onUnarchive: () => void
+	isFormArchived: boolean
 	isCopied: boolean
 	responseCount: number
 }) {
@@ -347,6 +384,11 @@ function FormCard({
 									<MenuButton icon={<Share2 className="h-3.5 w-3.5" />} label="Share" onClick={() => { onShare(); setMenuOpen(false) }} />
 								)}
 								<MenuButton icon={<CopyPlus className="h-3.5 w-3.5" />} label="Duplicate" onClick={() => { onDuplicate(); setMenuOpen(false) }} />
+								{isFormArchived ? (
+									<MenuButton icon={<ArchiveRestore className="h-3.5 w-3.5" />} label="Unarchive" onClick={() => { onUnarchive(); setMenuOpen(false) }} />
+								) : (
+									<MenuButton icon={<Archive className="h-3.5 w-3.5" />} label="Archive" onClick={() => { onArchive(); setMenuOpen(false) }} />
+								)}
 								<div className="my-1 mx-3 border-t border-gray-100 dark:border-gray-700/50" />
 								<MenuButton icon={<Trash2 className="h-3.5 w-3.5" />} label="Delete" danger onClick={() => { onDelete(); setMenuOpen(false) }} />
 							</div>
