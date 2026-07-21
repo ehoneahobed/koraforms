@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from 'react'
 import { useQuery } from '@korajs/react'
 import { app } from '../kora'
 import { setPageMeta } from '../utils/meta'
-import { ArrowLeft, Download, FileSpreadsheet, ChevronDown, ChevronRight, BarChart3, Share2, ExternalLink, Clock, TrendingUp, FileText, Search, Trash2 } from 'lucide-react'
+import { ArrowLeft, Download, FileSpreadsheet, ChevronDown, ChevronRight, ChevronUp as SortAsc, BarChart3, Share2, ExternalLink, Clock, TrendingUp, FileText, Search, Trash2, ArrowUpDown } from 'lucide-react'
 import type { FormField } from '../types'
 import { computeCrossInsights } from '../utils/analytics'
 
@@ -30,18 +30,53 @@ export function FormResponses({ formId, navigate }: Props) {
 	const [view, setView] = useState<'cards' | 'table' | 'analytics'>('cards')
 	const [expandedId, setExpandedId] = useState<string | null>(null)
 	const [search, setSearch] = useState('')
+	const [sortCol, setSortCol] = useState<string>('_date')
+	const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
 
 	// Filter responses by search query
 	const filteredResponses = useMemo(() => {
-		if (!search.trim()) return responses
-		const q = search.toLowerCase()
-		return responses.filter(r => {
-			try {
-				const data = JSON.parse(String(r.data || '{}')) as Record<string, string>
-				return Object.values(data).some(v => String(v).toLowerCase().includes(q))
-			} catch { return false }
-		})
-	}, [responses, search])
+		let result = responses
+		if (search.trim()) {
+			const q = search.toLowerCase()
+			result = result.filter(r => {
+				try {
+					const data = JSON.parse(String(r.data || '{}')) as Record<string, string>
+					return Object.values(data).some(v => String(v).toLowerCase().includes(q))
+				} catch { return false }
+			})
+		}
+		// Sort for table view
+		if (sortCol) {
+			result = [...result].sort((a, b) => {
+				let va: string, vb: string
+				if (sortCol === '_date') {
+					va = String(a.submittedAt || 0)
+					vb = String(b.submittedAt || 0)
+				} else {
+					try {
+						const da = JSON.parse(String(a.data || '{}'))
+						va = String(da[sortCol] || '')
+					} catch { va = '' }
+					try {
+						const db = JSON.parse(String(b.data || '{}'))
+						vb = String(db[sortCol] || '')
+					} catch { vb = '' }
+				}
+				const cmp = va.localeCompare(vb, undefined, { numeric: true })
+				return sortDir === 'asc' ? cmp : -cmp
+			})
+		}
+		return result
+	}, [responses, search, sortCol, sortDir])
+
+	const toggleSort = (col: string) => {
+		if (sortCol === col) {
+			setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+		} else {
+			setSortCol(col)
+			setSortDir('asc')
+		}
+	}
 
 	if (!form) {
 		return (
@@ -484,15 +519,33 @@ ${responses.length > 100 ? `<p style="text-align:center;color:#888;margin-top:8p
 								<th className="px-4 py-3 text-left text-[11px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">
 									#
 								</th>
-								<th className="px-4 py-3 text-left text-[11px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">
-									Date
+								<th
+									onClick={() => toggleSort('_date')}
+									className="px-4 py-3 text-left text-[11px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide cursor-pointer hover:text-gray-600 dark:hover:text-gray-300 select-none"
+								>
+									<span className="inline-flex items-center gap-1">
+										Date
+										{sortCol === '_date' ? (
+											<span className="text-brand-500">{sortDir === 'asc' ? '↑' : '↓'}</span>
+										) : (
+											<ArrowUpDown className="h-3 w-3 opacity-30" />
+										)}
+									</span>
 								</th>
 								{fields.map((field) => (
 									<th
 										key={field.id}
-										className="px-4 py-3 text-left text-[11px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide whitespace-nowrap"
+										onClick={() => toggleSort(field.id)}
+										className="px-4 py-3 text-left text-[11px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide whitespace-nowrap cursor-pointer hover:text-gray-600 dark:hover:text-gray-300 select-none"
 									>
-										{field.label || field.id}
+										<span className="inline-flex items-center gap-1">
+											{field.label || field.id}
+											{sortCol === field.id ? (
+												<span className="text-brand-500">{sortDir === 'asc' ? '↑' : '↓'}</span>
+											) : (
+												<ArrowUpDown className="h-3 w-3 opacity-30" />
+											)}
+										</span>
 									</th>
 								))}
 							</tr>
