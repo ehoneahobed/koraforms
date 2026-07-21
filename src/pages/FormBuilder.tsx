@@ -304,16 +304,14 @@ export function FormBuilder({ formId, navigate, userId }: Props) {
 							<span className="hidden sm:inline">Share</span>
 						</button>
 					)}
-					{isPublished && (
-						<button
-							onClick={() => navigate(`fill/${formId}`)}
-							className="inline-flex items-center gap-1.5 rounded-lg bg-gray-100 dark:bg-gray-800 px-2.5 py-2 sm:px-3 text-sm text-gray-600 dark:text-gray-300 transition-smooth hover:bg-gray-200 dark:hover:bg-gray-700"
-							title="Preview"
-						>
-							<Eye className="h-3.5 w-3.5" />
-							<span className="hidden sm:inline">Preview</span>
-						</button>
-					)}
+					<button
+						onClick={() => navigate(`fill/${formId}`)}
+						className="inline-flex items-center gap-1.5 rounded-lg bg-gray-100 dark:bg-gray-800 px-2.5 py-2 sm:px-3 text-sm text-gray-600 dark:text-gray-300 transition-smooth hover:bg-gray-200 dark:hover:bg-gray-700"
+						title="Preview"
+					>
+						<Eye className="h-3.5 w-3.5" />
+						<span className="hidden sm:inline">Preview</span>
+					</button>
 					<button
 						onClick={publish}
 						className="inline-flex items-center gap-1.5 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white shadow-sm shadow-brand-600/25 transition-smooth hover:bg-brand-500 active:scale-[0.98]"

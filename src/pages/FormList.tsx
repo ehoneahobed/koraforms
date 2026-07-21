@@ -125,13 +125,35 @@ export function FormList({ navigate, userId }: Props) {
 	// Only count responses for the current user's forms
 	const userFormIds = new Set(allForms.map((f) => String(f.id)))
 	const responseCountMap = new Map<string, number>()
+	const newResponseCountMap = new Map<string, number>()
 	let totalResponses = 0
+
+	// Track "last seen" per form for new response badges
+	const lastSeenKey = 'koraforms-last-seen'
+	const lastSeen: Record<string, number> = (() => {
+		try { return JSON.parse(localStorage.getItem(lastSeenKey) || '{}') } catch { return {} }
+	})()
+
 	for (const r of allResponses) {
 		const fid = String(r.formId)
 		if (!userFormIds.has(fid)) continue
 		responseCountMap.set(fid, (responseCountMap.get(fid) || 0) + 1)
 		totalResponses++
+		// Count responses newer than last seen
+		const ts = Number(r.submittedAt || 0)
+		if (ts > (lastSeen[fid] || 0)) {
+			newResponseCountMap.set(fid, (newResponseCountMap.get(fid) || 0) + 1)
+		}
 	}
+
+	// Update last seen timestamps when viewing dashboard
+	useEffect(() => {
+		const next: Record<string, number> = { ...lastSeen }
+		for (const fid of userFormIds) {
+			next[fid] = Date.now()
+		}
+		localStorage.setItem(lastSeenKey, JSON.stringify(next))
+	}, [allResponses.length]) // eslint-disable-line react-hooks/exhaustive-deps
 
 	const filteredForms =
 		filter === 'published' ? published
@@ -241,6 +263,7 @@ export function FormList({ navigate, userId }: Props) {
 							isFormArchived={isArchived(form)}
 							isCopied={copiedId === form.id}
 							responseCount={responseCountMap.get(String(form.id)) || 0}
+							newResponseCount={newResponseCountMap.get(String(form.id)) || 0}
 						/>
 					))}
 				</div>
@@ -290,6 +313,7 @@ function FormCard({
 	isFormArchived,
 	isCopied,
 	responseCount,
+	newResponseCount,
 }: {
 	form: Record<string, unknown>
 	navigate: (path: string) => void
@@ -302,6 +326,7 @@ function FormCard({
 	isFormArchived: boolean
 	isCopied: boolean
 	responseCount: number
+	newResponseCount: number
 }) {
 	const [menuOpen, setMenuOpen] = useState(false)
 	const [menuAbove, setMenuAbove] = useState(false)
@@ -419,7 +444,14 @@ function FormCard({
 					{isPublished && responseCount > 0 && (
 						<>
 							<span className="w-0.5 h-0.5 rounded-full bg-gray-300 dark:bg-gray-600" />
-							<span className="text-brand-500 dark:text-brand-400 font-medium">{responseCount} response{responseCount !== 1 ? 's' : ''}</span>
+							<span className="text-brand-500 dark:text-brand-400 font-medium">
+								{responseCount} response{responseCount !== 1 ? 's' : ''}
+								{newResponseCount > 0 && (
+									<span className="ml-1.5 inline-flex items-center rounded-full bg-brand-500 text-white text-[9px] font-bold px-1.5 py-0.5 leading-none">
+										+{newResponseCount} new
+									</span>
+								)}
+							</span>
 						</>
 					)}
 				</div>
