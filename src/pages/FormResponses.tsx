@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from 'react'
 import { useQuery } from '@korajs/react'
 import { app } from '../kora'
 import { setPageMeta } from '../utils/meta'
-import { ArrowLeft, Download, FileSpreadsheet, ChevronDown, ChevronRight, BarChart3, Share2, ExternalLink, Clock, TrendingUp, FileText } from 'lucide-react'
+import { ArrowLeft, Download, FileSpreadsheet, ChevronDown, ChevronRight, BarChart3, Share2, ExternalLink, Clock, TrendingUp, FileText, Search, Trash2 } from 'lucide-react'
 import type { FormField } from '../types'
 
 interface Props {
@@ -28,6 +28,19 @@ export function FormResponses({ formId, navigate }: Props) {
 
 	const [view, setView] = useState<'cards' | 'table' | 'analytics'>('cards')
 	const [expandedId, setExpandedId] = useState<string | null>(null)
+	const [search, setSearch] = useState('')
+
+	// Filter responses by search query
+	const filteredResponses = useMemo(() => {
+		if (!search.trim()) return responses
+		const q = search.toLowerCase()
+		return responses.filter(r => {
+			try {
+				const data = JSON.parse(String(r.data || '{}')) as Record<string, string>
+				return Object.values(data).some(v => String(v).toLowerCase().includes(q))
+			} catch { return false }
+		})
+	}, [responses, search])
 
 	if (!form) {
 		return (
@@ -304,6 +317,25 @@ ${responses.length > 100 ? `<p style="text-align:center;color:#888;margin-top:8p
 				</div>
 			)}
 
+			{/* Search bar (cards/table views) */}
+			{responses.length > 0 && view !== 'analytics' && (
+				<div className="relative mb-4">
+					<Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+					<input
+						type="text"
+						value={search}
+						onChange={(e) => setSearch(e.target.value)}
+						placeholder="Search responses..."
+						className="w-full rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-surface-elevated-dark pl-10 pr-4 py-2.5 text-sm outline-none focus:border-brand-400 dark:focus:border-brand-600 transition-smooth text-gray-700 dark:text-gray-300 placeholder-gray-400"
+					/>
+					{search && (
+						<span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">
+							{filteredResponses.length} of {responses.length}
+						</span>
+					)}
+				</div>
+			)}
+
 			{/* Empty state */}
 			{responses.length === 0 && (
 				<div className="flex flex-col items-center justify-center py-20">
@@ -340,7 +372,7 @@ ${responses.length > 100 ? `<p style="text-align:center;color:#888;margin-top:8p
 			{/* Card view */}
 			{responses.length > 0 && view === 'cards' && (
 				<div className="space-y-2">
-					{responses.map((response, index) => {
+					{filteredResponses.map((response, index) => {
 						let data: Record<string, string> = {}
 						try {
 							data = JSON.parse(String(response.data || '{}'))
@@ -364,7 +396,7 @@ ${responses.length > 100 ? `<p style="text-align:center;color:#888;margin-top:8p
 									className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-smooth"
 								>
 									<span className="w-7 h-7 rounded-lg bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-xs font-medium text-gray-500 shrink-0">
-										{responses.length - index}
+										{filteredResponses.length - index}
 									</span>
 									<div className="flex-1 min-w-0">
 										<p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
@@ -399,6 +431,20 @@ ${responses.length > 100 ? `<p style="text-align:center;color:#888;margin-top:8p
 												</div>
 											))}
 										</div>
+										<div className="flex justify-between items-center mt-4 pt-3 border-t border-gray-100 dark:border-gray-800">
+											<span className="text-[10px] text-gray-400">{submittedAt}</span>
+											<button
+												onClick={() => {
+													if (!window.confirm('Delete this response?')) return
+													app.responses.delete(response.id)
+													setExpandedId(null)
+												}}
+												className="inline-flex items-center gap-1 text-xs text-gray-400 hover:text-red-500 transition-smooth"
+											>
+												<Trash2 className="h-3 w-3" />
+												Delete
+											</button>
+										</div>
 									</div>
 								)}
 							</div>
@@ -430,7 +476,7 @@ ${responses.length > 100 ? `<p style="text-align:center;color:#888;margin-top:8p
 							</tr>
 						</thead>
 						<tbody>
-							{responses.map((response, index) => {
+							{filteredResponses.map((response, index) => {
 								let data: Record<string, string> = {}
 								try {
 									data = JSON.parse(String(response.data || '{}'))
@@ -447,7 +493,7 @@ ${responses.length > 100 ? `<p style="text-align:center;color:#888;margin-top:8p
 										className="border-b border-gray-50 dark:border-gray-800/50 hover:bg-gray-50 dark:hover:bg-gray-800/30 transition-smooth"
 									>
 										<td className="px-4 py-3 text-gray-400 tabular-nums">
-											{responses.length - index}
+											{filteredResponses.length - index}
 										</td>
 										<td className="px-4 py-3 text-gray-500 whitespace-nowrap">
 											{submittedAt}
