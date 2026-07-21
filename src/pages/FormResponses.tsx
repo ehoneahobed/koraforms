@@ -1320,6 +1320,126 @@ function DonutChart({
 }
 
 // ---------------------------------------------------------------------------
+// NPS Score Gauge
+// ---------------------------------------------------------------------------
+
+function NpsGauge({
+	nps,
+	promoters,
+	passives,
+	detractors,
+	total,
+	fieldLabel,
+}: {
+	nps: number
+	promoters: number
+	passives: number
+	detractors: number
+	total: number
+	fieldLabel: string
+}) {
+	const pPct = Math.round((promoters / total) * 100)
+	const paPct = Math.round((passives / total) * 100)
+	const dPct = Math.round((detractors / total) * 100)
+
+	let scoreColor = 'text-red-500'
+	let scoreBg = 'bg-red-50 dark:bg-red-900/20'
+	if (nps >= 50) { scoreColor = 'text-emerald-600 dark:text-emerald-400'; scoreBg = 'bg-emerald-50 dark:bg-emerald-900/20' }
+	else if (nps >= 0) { scoreColor = 'text-amber-600 dark:text-amber-400'; scoreBg = 'bg-amber-50 dark:bg-amber-900/20' }
+
+	return (
+		<div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-surface-elevated-dark p-5">
+			<div className="flex items-center justify-between mb-4">
+				<h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">NPS Score</h3>
+				<span className="text-[10px] text-gray-400 truncate ml-2">{fieldLabel}</span>
+			</div>
+			<div className="flex items-center gap-5">
+				<div className={`w-20 h-20 rounded-2xl ${scoreBg} flex items-center justify-center shrink-0`}>
+					<span className={`text-3xl font-bold ${scoreColor} tabular-nums`}>{nps}</span>
+				</div>
+				<div className="flex-1 space-y-2">
+					<div className="flex items-center gap-2 text-xs">
+						<div className="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0" />
+						<span className="text-gray-600 dark:text-gray-400">Promoters (9-10)</span>
+						<span className="ml-auto tabular-nums text-gray-500">{promoters} ({pPct}%)</span>
+					</div>
+					<div className="flex items-center gap-2 text-xs">
+						<div className="w-2.5 h-2.5 rounded-full bg-amber-400 shrink-0" />
+						<span className="text-gray-600 dark:text-gray-400">Passives (7-8)</span>
+						<span className="ml-auto tabular-nums text-gray-500">{passives} ({paPct}%)</span>
+					</div>
+					<div className="flex items-center gap-2 text-xs">
+						<div className="w-2.5 h-2.5 rounded-full bg-red-500 shrink-0" />
+						<span className="text-gray-600 dark:text-gray-400">Detractors (0-6)</span>
+						<span className="ml-auto tabular-nums text-gray-500">{detractors} ({dPct}%)</span>
+					</div>
+				</div>
+			</div>
+			{/* Stacked bar */}
+			<div className="flex h-2.5 rounded-full overflow-hidden mt-4">
+				{dPct > 0 && <div className="bg-red-500" style={{ width: `${dPct}%` }} />}
+				{paPct > 0 && <div className="bg-amber-400" style={{ width: `${paPct}%` }} />}
+				{pPct > 0 && <div className="bg-emerald-500" style={{ width: `${pPct}%` }} />}
+			</div>
+			<p className="text-[10px] text-gray-400 mt-2">{total} responses</p>
+		</div>
+	)
+}
+
+// ---------------------------------------------------------------------------
+// Drop-off Funnel
+// ---------------------------------------------------------------------------
+
+function DropoffFunnel({
+	data,
+}: {
+	data: { label: string; filled: number; pct: number }[]
+}) {
+	if (data.length === 0) return null
+	const maxFilled = data[0]?.filled ?? 1
+
+	return (
+		<div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-surface-elevated-dark p-5">
+			<h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-1">
+				Field Completion Funnel
+			</h3>
+			<p className="text-[10px] text-gray-400 dark:text-gray-500 mb-4">
+				See where respondents drop off — lower fill rates indicate friction points.
+			</p>
+			<div className="space-y-1.5">
+				{data.map((d, i) => {
+					const widthPct = maxFilled > 0 ? (d.filled / maxFilled) * 100 : 0
+					const isDropoff = i > 0 && d.pct < (data[i - 1]?.pct ?? 100) - 10
+					return (
+						<div key={`${d.label}-${i}`} className="group">
+							<div className="flex items-center gap-2">
+								<span className="text-[10px] text-gray-400 w-5 text-right tabular-nums shrink-0">{i + 1}</span>
+								<div className="flex-1 min-w-0">
+									<div className="flex items-center gap-2 mb-0.5">
+										<span className={`text-xs truncate ${isDropoff ? 'text-red-600 dark:text-red-400 font-medium' : 'text-gray-700 dark:text-gray-300'}`}>
+											{d.label}
+										</span>
+										<span className={`text-[10px] tabular-nums shrink-0 ${isDropoff ? 'text-red-500' : 'text-gray-400'}`}>
+											{d.pct}%
+										</span>
+									</div>
+									<div className="h-1.5 rounded-full bg-gray-100 dark:bg-gray-800 overflow-hidden">
+										<div
+											className={`h-full rounded-full transition-all duration-500 ${isDropoff ? 'bg-red-400' : 'bg-brand-500/70'}`}
+											style={{ width: `${widthPct}%` }}
+										/>
+									</div>
+								</div>
+							</div>
+						</div>
+					)
+				})}
+			</div>
+		</div>
+	)
+}
+
+// ---------------------------------------------------------------------------
 // Main AnalyticsView
 // ---------------------------------------------------------------------------
 
@@ -1331,18 +1451,32 @@ function AnalyticsView({
 	responses: Record<string, unknown>[]
 }) {
 	const [range, setRange] = useState<TimeRange>('30d')
+	const [filters, setFilters] = useState<{ fieldId: string; value: string }[]>([])
 
-	// Filter responses by time range
+	// Filter responses by time range + field-value filters
 	const filtered = useMemo(() => {
+		let result = responses
 		const days = daysForRange(range)
-		if (days === null) return responses
-		const cutoff = startOfDaysAgo(days)
-		return responses.filter((r) => {
-			// Include responses without a timestamp (legacy data)
-			if (!r.submittedAt) return true
-			return Number(r.submittedAt) >= cutoff
-		})
-	}, [responses, range])
+		if (days !== null) {
+			const cutoff = startOfDaysAgo(days)
+			result = result.filter((r) => {
+				if (!r.submittedAt) return true
+				return Number(r.submittedAt) >= cutoff
+			})
+		}
+		// Apply field-value filters
+		if (filters.length > 0) {
+			result = result.filter((r) => {
+				let data: Record<string, string> = {}
+				try { data = JSON.parse(String(r.data || '{}')) } catch { return false }
+				return filters.every(f => {
+					const v = data[f.fieldId] ?? ''
+					return v.toLowerCase().includes(f.value.toLowerCase())
+				})
+			})
+		}
+		return result
+	}, [responses, range, filters])
 
 	// Previous period responses (for trend calculation)
 	const previousPeriod = useMemo(() => {
@@ -1639,6 +1773,45 @@ function AnalyticsView({
 		return Math.round(durations.reduce((a, b) => a + b, 0) / durations.length)
 	}, [allData])
 
+	// NPS score — auto-detect scale fields with 0-10 range (or labels like "NPS", "recommend")
+	const npsData = useMemo(() => {
+		const npsFields = fields.filter(f => {
+			if (f.type !== 'scale' && f.type !== 'rating') return false
+			const label = f.label.toLowerCase()
+			return label.includes('nps') || label.includes('recommend') || label.includes('likely')
+		})
+		if (npsFields.length === 0) return null
+
+		const field = npsFields[0]!
+		const scores = allData.map(d => Number(d[field.id])).filter(n => !isNaN(n) && n >= 0 && n <= 10)
+		if (scores.length === 0) return null
+
+		const promoters = scores.filter(s => s >= 9).length
+		const passives = scores.filter(s => s >= 7 && s <= 8).length
+		const detractors = scores.filter(s => s <= 6).length
+		const nps = Math.round(((promoters - detractors) / scores.length) * 100)
+
+		return { nps, promoters, passives, detractors, total: scores.length, fieldLabel: field.label }
+	}, [allData, fields])
+
+	// Drop-off funnel — show fill rates per field in order
+	const funnelData = useMemo(() => {
+		const dataFields = fields.filter(f => f.type !== 'section' && f.type !== 'statement' && f.type !== 'hidden')
+		if (dataFields.length === 0 || totalResponses === 0) return []
+
+		return dataFields.map(field => {
+			const filled = allData.filter(d => {
+				const v = d[field.id]
+				return v !== undefined && v !== null && v !== ''
+			}).length
+			return {
+				label: field.label,
+				filled,
+				pct: Math.round((filled / totalResponses) * 100),
+			}
+		})
+	}, [allData, fields, totalResponses])
+
 	// Device / browser / OS breakdown
 	const deviceBreakdown = useMemo(() => {
 		const browsers: Record<string, number> = {}
@@ -1676,6 +1849,51 @@ function AnalyticsView({
 						{opt.label}
 					</button>
 				))}
+			</div>
+
+			{/* Response filters */}
+			<div className="flex flex-wrap items-center gap-2">
+				{filters.map((f, i) => {
+					const field = fields.find(fld => fld.id === f.fieldId)
+					return (
+						<span key={i} className="inline-flex items-center gap-1.5 rounded-lg bg-brand-50 dark:bg-brand-900/20 text-brand-700 dark:text-brand-300 px-2.5 py-1.5 text-xs font-medium">
+							{field?.label || f.fieldId}: {f.value}
+							<button
+								onClick={() => setFilters(filters.filter((_, j) => j !== i))}
+								className="p-0.5 hover:text-red-500 transition-smooth"
+							>
+								&times;
+							</button>
+						</span>
+					)
+				})}
+				<div className="relative">
+					<select
+						value=""
+						onChange={(e) => {
+							if (!e.target.value) return
+							const fieldId = e.target.value
+							const val = prompt(`Filter "${fields.find(f => f.id === fieldId)?.label || fieldId}" contains:`)
+							if (val) setFilters([...filters, { fieldId, value: val }])
+							e.target.value = ''
+						}}
+						className="text-xs rounded-lg border border-dashed border-gray-300 dark:border-gray-700 bg-transparent px-2.5 py-1.5 text-gray-500 dark:text-gray-400 outline-none cursor-pointer"
+					>
+						<option value="">+ Filter</option>
+						{fields
+							.filter(f => f.type !== 'section' && f.type !== 'statement')
+							.map(f => <option key={f.id} value={f.id}>{f.label}</option>)
+						}
+					</select>
+				</div>
+				{filters.length > 0 && (
+					<button
+						onClick={() => setFilters([])}
+						className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-smooth"
+					>
+						Clear all
+					</button>
+				)}
 			</div>
 
 			{/* Summary cards */}
@@ -1717,6 +1935,25 @@ function AnalyticsView({
 
 			{/* Calendar heatmap */}
 			<CalendarHeatmap responses={filtered} />
+
+			{/* NPS + Funnel row */}
+			{(npsData || funnelData.length > 0) && (
+				<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+					{npsData && (
+						<NpsGauge
+							nps={npsData.nps}
+							promoters={npsData.promoters}
+							passives={npsData.passives}
+							detractors={npsData.detractors}
+							total={npsData.total}
+							fieldLabel={npsData.fieldLabel}
+						/>
+					)}
+					{funnelData.length > 0 && (
+						<DropoffFunnel data={funnelData} />
+					)}
+				</div>
+			)}
 
 			{/* Device & browser breakdown */}
 			{deviceBreakdown.hasData && (
