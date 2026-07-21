@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Settings, Link as LinkIcon, Check, Copy, Ban, Globe, ChevronDown, Webhook, Plus, Trash2, X } from 'lucide-react'
+import { Settings, Link as LinkIcon, Check, Copy, Ban, Globe, ChevronDown, Webhook, Plus, Trash2, X, Mail, Lock, Code } from 'lucide-react'
 import { copyToClipboard } from '../../utils/clipboard'
 import type { FormSettings as FormSettingsType, WebhookConfig } from '../../types'
 import { LANGUAGES } from '../../types'
@@ -365,6 +365,70 @@ export function FormSettings({
 							<Plus className="h-3 w-3" />
 							Add webhook
 						</button>
+					</div>
+
+					{/* Divider */}
+					<div className="border-t border-gray-100 dark:border-gray-800" />
+
+					{/* Email notifications */}
+					<div>
+						<label className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 flex items-center gap-1.5">
+							<Mail className="h-3.5 w-3.5" />
+							Email notifications
+						</label>
+						<p className="text-[10px] text-gray-400 dark:text-gray-500 mb-3">
+							Get notified by email when someone submits a response.
+						</p>
+						<input
+							type="email"
+							value={settings.notifyEmail || ''}
+							onChange={(e) => updateSetting('notifyEmail', e.target.value)}
+							placeholder="you@example.com"
+							className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2 text-sm outline-none focus:border-brand-400 dark:focus:border-brand-600 transition-smooth text-gray-700 dark:text-gray-300 placeholder-gray-400"
+						/>
+					</div>
+
+					{/* Divider */}
+					<div className="border-t border-gray-100 dark:border-gray-800" />
+
+					{/* Password protection */}
+					<div>
+						<label className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 flex items-center gap-1.5">
+							<Lock className="h-3.5 w-3.5" />
+							Password protection
+						</label>
+						<p className="text-[10px] text-gray-400 dark:text-gray-500 mb-3">
+							Require a password to access this form. Leave blank for no protection.
+						</p>
+						<input
+							type="text"
+							value={settings.password || ''}
+							onChange={(e) => updateSetting('password', e.target.value)}
+							placeholder="Enter a password..."
+							className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2 text-sm outline-none focus:border-brand-400 dark:focus:border-brand-600 transition-smooth text-gray-700 dark:text-gray-300 placeholder-gray-400"
+						/>
+					</div>
+
+					{/* Divider */}
+					<div className="border-t border-gray-100 dark:border-gray-800" />
+
+					{/* Custom CSS */}
+					<div>
+						<label className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 flex items-center gap-1.5">
+							<Code className="h-3.5 w-3.5" />
+							Custom CSS
+						</label>
+						<p className="text-[10px] text-gray-400 dark:text-gray-500 mb-3">
+							Add custom styles to your form. Use <code className="bg-gray-100 dark:bg-gray-800 px-1 rounded">.kf-form</code> as the root selector.
+						</p>
+						<textarea
+							value={settings.customCSS || ''}
+							onChange={(e) => updateSetting('customCSS', e.target.value)}
+							placeholder={`.kf-form {\n  font-family: 'Inter', sans-serif;\n}\n.kf-form .kf-question {\n  border-radius: 16px;\n}`}
+							rows={5}
+							spellCheck={false}
+							className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-900 dark:bg-gray-950 px-3 py-2 text-sm outline-none focus:border-brand-400 dark:focus:border-brand-600 transition-smooth text-emerald-400 dark:text-emerald-300 placeholder-gray-600 font-mono resize-y"
+						/>
 					</div>
 				</div>
 			)}

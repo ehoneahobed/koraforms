@@ -70,6 +70,14 @@ export interface FormSettings {
 	// Multi-language
 	languages?: string[]
 	defaultLanguage?: string
+	// Custom branding
+	customCSS?: string
+	// Email notifications
+	notifyEmail?: string
+	// Password protection
+	password?: string
+	// Archived flag
+	archived?: boolean
 }
 
 export interface WebhookConfig {

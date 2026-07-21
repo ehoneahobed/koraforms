@@ -86,6 +86,9 @@ export function FormFill({ formId, navigate }: Props) {
 	const [isSubmitting, setIsSubmitting] = useState(false)
 	const [language, setLanguage] = useState<string | undefined>(undefined)
 	const startedAtRef = useRef<number>(0)
+	const [passwordUnlocked, setPasswordUnlocked] = useState(false)
+	const [passwordInput, setPasswordInput] = useState('')
+	const [passwordError, setPasswordError] = useState(false)
 
 	let fields: FormField[] = []
 	try {
@@ -398,6 +401,16 @@ export function FormFill({ formId, navigate }: Props) {
 		return () => window.removeEventListener('keydown', handler)
 	}, [goNext, currentIndex, visibleFields, values]) // eslint-disable-line react-hooks/exhaustive-deps
 
+	// Inject custom CSS if present
+	useEffect(() => {
+		if (!settings.customCSS) return
+		const style = document.createElement('style')
+		style.setAttribute('data-kf-custom', 'true')
+		style.textContent = settings.customCSS
+		document.head.appendChild(style)
+		return () => { style.remove() }
+	}, [settings.customCSS])
+
 	// Embed mode — minimal chrome
 	const isEmbed = new URLSearchParams(window.location.search).get('embed') === '1'
 
@@ -434,6 +447,69 @@ export function FormFill({ formId, navigate }: Props) {
 					<p className="text-gray-500 dark:text-gray-400 leading-relaxed">
 						{settings.closedMessage || 'This form is no longer accepting responses.'}
 					</p>
+				</div>
+			</div>
+		)
+	}
+
+	// Password protection gate (server-side verification)
+	if ((form as Record<string, unknown>).passwordProtected && !passwordUnlocked) {
+		return (
+			<div className="kf-form flex items-center justify-center min-h-screen px-4" style={themeVars as React.CSSProperties}>
+				<div className="text-center animate-fade-in max-w-sm w-full">
+					<div className="w-14 h-14 rounded-full bg-brand-100 dark:bg-brand-900/30 flex items-center justify-center mx-auto mb-5">
+						<svg className="h-6 w-6 text-brand-600 dark:text-brand-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+							<path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+						</svg>
+					</div>
+					<h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-2">
+						This form is protected
+					</h2>
+					<p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
+						Enter the password to access this form.
+					</p>
+					<form onSubmit={async (e) => {
+						e.preventDefault()
+						setPasswordError(false)
+						try {
+							const res = await fetch(`/api/public/forms/${encodeURIComponent(formId)}`, {
+								method: 'POST',
+								headers: { 'Content-Type': 'application/json' },
+								body: JSON.stringify({ password: passwordInput }),
+							})
+							if (res.ok) {
+								const fullForm = await res.json()
+								setForm(fullForm)
+								setPasswordUnlocked(true)
+							} else {
+								setPasswordError(true)
+							}
+						} catch {
+							setPasswordError(true)
+						}
+					}}>
+						<input
+							type="password"
+							value={passwordInput}
+							onChange={(e) => { setPasswordInput(e.target.value); setPasswordError(false) }}
+							placeholder="Enter password"
+							autoFocus
+							className={`w-full rounded-xl border-2 px-4 py-3 text-center text-sm outline-none transition-smooth ${
+								passwordError
+									? 'border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300'
+									: 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-700 dark:text-gray-300 focus:border-brand-400 dark:focus:border-brand-600'
+							}`}
+						/>
+						{passwordError && (
+							<p className="mt-2 text-sm text-red-500 animate-fade-in">Incorrect password</p>
+						)}
+						<button
+							type="submit"
+							className="mt-4 w-full inline-flex items-center justify-center gap-2 rounded-xl bg-brand-600 px-6 py-3 text-sm font-medium text-white shadow-sm shadow-brand-600/25 transition-smooth hover:bg-brand-500 active:scale-[0.98]"
+						>
+							Continue
+						</button>
+					</form>
 				</div>
 			</div>
 		)
@@ -507,7 +583,7 @@ export function FormFill({ formId, navigate }: Props) {
 	// Welcome screen
 	if (currentIndex === -1) {
 		return (
-			<div className="flex flex-col min-h-screen" style={themeVars as React.CSSProperties}>
+			<div className="kf-form flex flex-col min-h-screen" style={themeVars as React.CSSProperties}>
 				{/* Progress bar */}
 				<div className="fixed top-0 left-0 right-0 h-1 bg-gray-100 dark:bg-gray-800 z-50">
 					<div
@@ -734,7 +810,7 @@ export function FormFill({ formId, navigate }: Props) {
 	}
 
 	return (
-		<div className="flex flex-col min-h-screen" style={themeVars as React.CSSProperties}>
+		<div className="kf-form flex flex-col min-h-screen" style={themeVars as React.CSSProperties}>
 			{/* Progress bar */}
 			<div className="fixed top-0 left-0 right-0 h-1 bg-gray-100 dark:bg-gray-800 z-50">
 				<div
@@ -763,7 +839,7 @@ export function FormFill({ formId, navigate }: Props) {
 			<div className="flex-1 flex items-center justify-center px-4 sm:px-8" dir={isRtl ? 'rtl' : undefined}>
 				<div
 					key={field.id}
-					className={`w-full max-w-lg ${direction === 'forward' ? 'animate-slide-up' : 'animate-fade-in'}`}
+					className={`kf-question w-full max-w-lg ${direction === 'forward' ? 'animate-slide-up' : 'animate-fade-in'}`}
 				>
 					{/* Question number + label */}
 					<div className="mb-6">

@@ -152,7 +152,34 @@ async function main(): Promise<void> {
 				path: '/api/public/forms',
 				async handle(req: ProductionHttpRouteRequest): Promise<ProductionHttpRouteResponse> {
 					const slug = req.path.replace('/api/public/forms/', '').replace(/\/$/, '')
-					if (!slug || req.method !== 'GET') {
+					if (!slug) {
+						return withCors({ status: 404, body: { error: 'Not found' } })
+					}
+
+					// POST = password verification
+					if (req.method === 'POST') {
+						try {
+							const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body
+							const { password } = body as { password?: string }
+							const [form] = await store.queryCollection('forms', {
+								where: { slug, status: 'published' },
+								limit: 1,
+							})
+							if (!form) return withCors({ status: 404, body: { error: 'Form not found' } })
+							const formSettings = JSON.parse(String(form.settings || '{}'))
+							if (!formSettings.password || formSettings.password === password) {
+								// Strip password from settings before sending
+								delete formSettings.password
+								return withCors({ status: 200, body: { ...form, settings: JSON.stringify(formSettings) } })
+							}
+							return withCors({ status: 403, body: { error: 'Incorrect password' } })
+						} catch {
+							return withCors({ status: 500, body: { error: 'Internal server error' } })
+						}
+					}
+
+					if (req.method === 'OPTIONS') return withCors({ status: 204 })
+					if (req.method !== 'GET') {
 						return withCors({ status: 404, body: { error: 'Not found' } })
 					}
 					try {
@@ -160,10 +187,25 @@ async function main(): Promise<void> {
 							where: { slug, status: 'published' },
 							limit: 1,
 						})
-						if (form) {
-							return withCors({ status: 200, body: form })
+						if (!form) {
+							return withCors({ status: 404, body: { error: 'Form not found' } })
 						}
-						return withCors({ status: 404, body: { error: 'Form not found' } })
+						// Check for password protection
+						const formSettings = JSON.parse(String(form.settings || '{}'))
+						if (formSettings.password) {
+							// Return only metadata — require POST with password for full form
+							return withCors({
+								status: 200,
+								body: {
+									id: form.id,
+									title: form.title,
+									description: form.description,
+									theme: form.theme,
+									passwordProtected: true,
+								},
+							})
+						}
+						return withCors({ status: 200, body: form })
 					} catch {
 						return withCors({ status: 500, body: { error: 'Internal server error' } })
 					}
@@ -276,23 +318,27 @@ async function main(): Promise<void> {
 							schemaVersion: 5,
 						}, clock)
 						await store.applyRemoteOperation(op)
-						// Fire webhooks (fire-and-forget)
+						// Fire webhooks and email notifications (fire-and-forget)
 						try {
 							const whSettings = JSON.parse(String(form.settings || '{}'))
+							const formFields = JSON.parse(String(form.fields || '[]'))
+							const fieldsMap: Record<string, { label: string; type: string }> = {}
+							for (const f of formFields) {
+								fieldsMap[f.id] = { label: f.label, type: f.type }
+							}
+							const formInfo = {
+								id: String(form.id),
+								title: String(form.title),
+								slug: String(form.slug || ''),
+							}
 							if (whSettings.webhooks?.length) {
-								const formFields = JSON.parse(String(form.fields || '[]'))
-								const fieldsMap: Record<string, { label: string; type: string }> = {}
-								for (const f of formFields) {
-									fieldsMap[f.id] = { label: f.label, type: f.type }
-								}
-								fireWebhooks(whSettings.webhooks, {
-									id: String(form.id),
-									title: String(form.title),
-									slug: String(form.slug || ''),
-								}, data, fieldsMap).catch(console.error)
+								fireWebhooks(whSettings.webhooks, formInfo, data, fieldsMap).catch(console.error)
+							}
+							if (whSettings.notifyEmail) {
+								sendEmailNotification(whSettings.notifyEmail, formInfo, data, fieldsMap).catch(console.error)
 							}
 						} catch {
-							// webhook error — don't block response
+							// webhook/notification error — don't block response
 						}
 						return withCors({ status: 201, body: { success: true } })
 					} catch (err) {
@@ -327,6 +373,76 @@ interface WebhookConfig {
 	method?: 'POST' | 'PUT'
 	headers?: Record<string, string>
 	active?: boolean
+}
+
+// ---------------------------------------------------------------------------
+// Email notification (via SMTP or Resend API)
+// ---------------------------------------------------------------------------
+
+async function sendEmailNotification(
+	toEmail: string,
+	form: { id: string; title: string; slug: string },
+	responseData: string,
+	fieldsMap: Record<string, { label: string; type: string }>,
+): Promise<void> {
+	const data = JSON.parse(responseData)
+	const baseUrl = process.env.PUBLIC_URL || 'https://forms.korajs.dev'
+
+	// Build a plain-text summary of the response
+	const lines: string[] = []
+	for (const [fieldId, value] of Object.entries(data)) {
+		if (fieldId === '_meta') continue
+		const info = fieldsMap[fieldId]
+		const label = info?.label || fieldId
+		lines.push(`${label}: ${String(value)}`)
+	}
+	const responseSummary = lines.join('\n')
+	const viewUrl = `${baseUrl}/forms/${form.id}/responses`
+
+	// Try Resend API first (recommended for production)
+	const resendKey = process.env.RESEND_API_KEY
+	if (resendKey) {
+		const fromEmail = process.env.EMAIL_FROM || 'KoraForms <notifications@koraforms.app>'
+		try {
+			const res = await fetch('https://api.resend.com/emails', {
+				method: 'POST',
+				headers: {
+					'Authorization': `Bearer ${resendKey}`,
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify({
+					from: fromEmail,
+					to: [toEmail],
+					subject: `New response: ${form.title}`,
+					html: `
+						<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:560px;margin:0 auto;padding:24px">
+							<h2 style="color:#1a1a1a;font-size:18px;margin:0 0 4px">New response received</h2>
+							<p style="color:#666;font-size:14px;margin:0 0 20px">${form.title}</p>
+							<div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:12px;padding:16px;margin:0 0 20px">
+								${lines.map(l => {
+									const [label, ...rest] = l.split(': ')
+									return `<div style="margin:0 0 8px"><span style="color:#6b7280;font-size:12px;display:block">${label}</span><span style="color:#1a1a1a;font-size:14px">${rest.join(': ')}</span></div>`
+								}).join('')}
+							</div>
+							<a href="${viewUrl}" style="display:inline-block;background:#2563eb;color:#fff;text-decoration:none;padding:10px 20px;border-radius:8px;font-size:14px;font-weight:500">View all responses</a>
+							<p style="color:#9ca3af;font-size:11px;margin:20px 0 0">Sent by KoraForms</p>
+						</div>
+					`,
+				}),
+			})
+			if (res.ok) {
+				console.log(`Email notification sent to ${toEmail} for form "${form.title}"`)
+				return
+			}
+			console.warn('Resend API error:', res.status, await res.text())
+		} catch (err) {
+			console.warn('Email notification failed:', err)
+		}
+		return
+	}
+
+	// Fallback: log the notification (no email service configured)
+	console.log(`[EMAIL] New response notification for "${form.title}" → ${toEmail}\n${responseSummary}`)
 }
 
 async function fireWebhooks(
