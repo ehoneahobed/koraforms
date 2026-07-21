@@ -97,6 +97,17 @@ async function main(): Promise<void> {
 		jwtSecret: process.env.KORA_AUTH_SECRET || 'koraforms-dev-secret-change-in-production',
 	})
 
+	// In-memory store for partial (save & continue later) responses
+	const partialResponses = new Map<string, { formId: string; data: string; savedAt: number; slug: string }>()
+
+	// Clean up old entries periodically (older than 7 days)
+	setInterval(() => {
+		const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000
+		for (const [id, entry] of partialResponses) {
+			if (entry.savedAt < cutoff) partialResponses.delete(id)
+		}
+	}, 60 * 60 * 1000)
+
 	const port = Number(process.env.PORT) || 3001
 	const distDir = resolve('./dist')
 
@@ -145,6 +156,63 @@ async function main(): Promise<void> {
 						console.error('Auth route error:', err)
 						return withCors({ status: 500, body: { error: 'Internal auth error' } })
 					}
+				},
+			},
+			// Public API: save and retrieve partial responses (save & continue later)
+			{
+				path: '/api/public/partial',
+				async handle(req: ProductionHttpRouteRequest): Promise<ProductionHttpRouteResponse> {
+					if (req.method === 'OPTIONS') return withCors({ status: 204 })
+
+					if (req.method === 'POST') {
+						try {
+							const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body
+							const { formId, data, resumeId: existingId } = body as { formId: string; data: string; resumeId?: string }
+							if (!formId || !data) return withCors({ status: 400, body: { error: 'formId and data required' } })
+
+							// Look up form by ID or slug
+							let [form] = await store.queryCollection('forms', {
+								where: { id: formId, status: 'published' },
+								limit: 1,
+							})
+							if (!form) {
+								;[form] = await store.queryCollection('forms', {
+									where: { slug: formId, status: 'published' },
+									limit: 1,
+								})
+							}
+							if (!form) return withCors({ status: 404, body: { error: 'Form not found' } })
+
+							const resumeId = existingId || randomUUID().slice(0, 8)
+							const slug = String(form.slug || form.id)
+							partialResponses.set(resumeId, { formId: String(form.id), data, savedAt: Date.now(), slug })
+
+							const baseUrl = process.env.PUBLIC_URL || 'https://forms.korajs.dev'
+							return withCors({
+								status: 200,
+								body: {
+									resumeId,
+									resumeUrl: `${baseUrl}/f/${slug}?resume=${resumeId}`,
+								},
+							})
+						} catch {
+							return withCors({ status: 500, body: { error: 'Internal server error' } })
+						}
+					}
+
+					if (req.method === 'GET') {
+						const resumeId = req.path.replace('/api/public/partial/', '').replace(/\/$/, '')
+						if (!resumeId || resumeId === '/api/public/partial') {
+							return withCors({ status: 400, body: { error: 'resumeId required' } })
+						}
+
+						const entry = partialResponses.get(resumeId)
+						if (!entry) return withCors({ status: 404, body: { error: 'No saved progress found' } })
+
+						return withCors({ status: 200, body: entry })
+					}
+
+					return withCors({ status: 405, body: { error: 'Method not allowed' } })
 				},
 			},
 			// Public API: get published form by slug

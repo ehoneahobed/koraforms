@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { ArrowLeft, ArrowRight, Check, Send, Star, X, RotateCcw, Upload, Trash2 } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Check, Send, Star, X, RotateCcw, Upload, Trash2, Link, Copy, Bookmark } from 'lucide-react'
 import type { FormField, FormSettings } from '../types'
 import { isFieldVisible, pipeValues, getFieldText, isRtlLanguage, LANGUAGES } from '../types'
 import { evaluateFormula } from '../utils/formula'
@@ -89,6 +89,10 @@ export function FormFill({ formId, navigate }: Props) {
 	const [passwordUnlocked, setPasswordUnlocked] = useState(false)
 	const [passwordInput, setPasswordInput] = useState('')
 	const [passwordError, setPasswordError] = useState(false)
+	const [resumeId, setResumeId] = useState<string | null>(null)
+	const [showSaveLink, setShowSaveLink] = useState(false)
+	const [resumeUrl, setResumeUrl] = useState('')
+	const [isSaving, setIsSaving] = useState(false)
 
 	let fields: FormField[] = []
 	try {
@@ -180,6 +184,58 @@ export function FormFill({ formId, navigate }: Props) {
 			// ignore
 		}
 	}, [form?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+	// Check for resume URL parameter (save & continue later)
+	useEffect(() => {
+		if (!form || fields.length === 0) return
+		const searchParams = new URLSearchParams(window.location.search)
+		const resume = searchParams.get('resume')
+		if (!resume) return
+		setResumeId(resume)
+		fetch(`/api/public/partial/${encodeURIComponent(resume)}`)
+			.then(res => res.ok ? res.json() : null)
+			.then(data => {
+				if (data?.data) {
+					const saved = JSON.parse(data.data)
+					setValues(saved)
+					// Find the first unanswered visible question to resume from
+					const visible = fields.filter(f => isFieldVisible(f, saved))
+					const lastIndex = visible.findIndex(f => !saved[f.id])
+					if (lastIndex > 0) setCurrentIndex(lastIndex)
+					else if (lastIndex === -1 && visible.length > 0) setCurrentIndex(visible.length - 1)
+					else setCurrentIndex(0)
+				}
+			})
+			.catch(() => {})
+	}, [form?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+	// Save and continue later — POST current progress to server
+	const saveAndContinueLater = useCallback(async () => {
+		if (!form || Object.keys(values).length === 0) return
+		setIsSaving(true)
+		try {
+			const realFormId = String(form.id || formId)
+			const res = await fetch('/api/public/partial', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					formId: realFormId,
+					data: JSON.stringify(values),
+					resumeId: resumeId || undefined,
+				}),
+			})
+			if (res.ok) {
+				const result = await res.json()
+				setResumeId(result.resumeId)
+				setResumeUrl(result.resumeUrl)
+				setShowSaveLink(true)
+			}
+		} catch {
+			// Save failed silently — local progress still works
+		} finally {
+			setIsSaving(false)
+		}
+	}, [form, formId, values, resumeId])
 
 	// Progress saving — auto-save on every answer change (debounced)
 	useEffect(() => {
@@ -916,9 +972,60 @@ export function FormFill({ formId, navigate }: Props) {
 			</div>
 
 			{/* Bottom bar */}
-			<div className="p-4 flex justify-center items-center">
+			<div className="p-4 flex justify-center items-center gap-4">
+				<button
+					onClick={saveAndContinueLater}
+					disabled={isSaving || Object.keys(values).length === 0}
+					className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-smooth disabled:opacity-40"
+				>
+					<Bookmark className="h-3 w-3 inline mr-1" />
+					{isSaving ? 'Saving...' : 'Save & continue later'}
+				</button>
 				<PoweredByBadge slug={String(form?.slug || formId)} />
 			</div>
+
+			{/* Save & continue later — resume URL overlay */}
+			{showSaveLink && (
+				<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-fade-in">
+					<div className="bg-white dark:bg-gray-900 rounded-2xl shadow-xl border border-gray-200 dark:border-gray-700 p-6 mx-4 max-w-sm w-full animate-scale-in">
+						<div className="flex items-center justify-between mb-4">
+							<div className="flex items-center gap-2">
+								<div className="w-8 h-8 rounded-full bg-brand-100 dark:bg-brand-900/30 flex items-center justify-center">
+									<Link className="h-4 w-4 text-brand-600 dark:text-brand-400" />
+								</div>
+								<h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Progress saved</h3>
+							</div>
+							<button
+								onClick={() => setShowSaveLink(false)}
+								className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-smooth"
+							>
+								<X className="h-4 w-4" />
+							</button>
+						</div>
+						<p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+							Use this link to continue from where you left off, on any device.
+						</p>
+						<div className="flex items-center gap-2">
+							<input
+								type="text"
+								readOnly
+								value={resumeUrl}
+								className="flex-1 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2 text-xs text-gray-700 dark:text-gray-300 select-all outline-none"
+								onFocus={(e) => e.target.select()}
+							/>
+							<button
+								onClick={() => {
+									navigator.clipboard.writeText(resumeUrl).catch(() => {})
+								}}
+								className="shrink-0 inline-flex items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-2 text-xs font-medium text-white transition-smooth hover:bg-brand-500 active:scale-[0.96]"
+							>
+								<Copy className="h-3 w-3" />
+								Copy
+							</button>
+						</div>
+					</div>
+				</div>
+			)}
 		</div>
 	)
 }

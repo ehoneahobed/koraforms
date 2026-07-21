@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from 'react'
 import { useQuery } from '@korajs/react'
 import { app } from '../kora'
 import { setPageMeta } from '../utils/meta'
-import { ArrowLeft, Download, FileSpreadsheet, ChevronDown, ChevronRight, ChevronUp as SortAsc, BarChart3, Share2, ExternalLink, Clock, TrendingUp, FileText, Search, Trash2, ArrowUpDown } from 'lucide-react'
+import { ArrowLeft, Download, FileSpreadsheet, ChevronDown, ChevronRight, ChevronLeft, ChevronUp as SortAsc, BarChart3, Share2, ExternalLink, Clock, TrendingUp, FileText, Search, Trash2, ArrowUpDown, Eye, X, Copy, Monitor, Smartphone, Globe, Timer } from 'lucide-react'
 import type { FormField } from '../types'
 import { computeCrossInsights } from '../utils/analytics'
 
@@ -29,6 +29,7 @@ export function FormResponses({ formId, navigate }: Props) {
 
 	const [view, setView] = useState<'cards' | 'table' | 'analytics'>('cards')
 	const [expandedId, setExpandedId] = useState<string | null>(null)
+	const [selectedResponse, setSelectedResponse] = useState<string | null>(null)
 	const [search, setSearch] = useState('')
 	const [sortCol, setSortCol] = useState<string>('_date')
 	const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
@@ -448,27 +449,42 @@ ${responses.length > 100 ? `<p style="text-align:center;color:#888;margin-top:8p
 								key={response.id}
 								className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-surface-elevated-dark overflow-hidden transition-smooth"
 							>
-								<button
-									onClick={() => setExpandedId(isExpanded ? null : response.id)}
-									className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-smooth"
-								>
+								<div className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-smooth">
 									<span className="w-7 h-7 rounded-lg bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-xs font-medium text-gray-500 shrink-0">
 										{filteredResponses.length - index}
 									</span>
-									<div className="flex-1 min-w-0">
+									<button
+										onClick={() => setExpandedId(isExpanded ? null : response.id)}
+										className="flex-1 min-w-0 text-left"
+									>
 										<p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
 											{preview || 'Response'}
 										</p>
 										<p className="text-xs text-gray-400 dark:text-gray-500">
 											{submittedAt}
 										</p>
-									</div>
-									{isExpanded ? (
-										<ChevronDown className="h-4 w-4 text-gray-400 shrink-0" />
-									) : (
-										<ChevronRight className="h-4 w-4 text-gray-400 shrink-0" />
-									)}
-								</button>
+									</button>
+									<button
+										onClick={(e) => {
+											e.stopPropagation()
+											setSelectedResponse(response.id)
+										}}
+										className="w-7 h-7 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center justify-center transition-smooth shrink-0"
+										title="View full response"
+									>
+										<Eye className="h-3.5 w-3.5 text-gray-400 hover:text-brand-500" />
+									</button>
+									<button
+										onClick={() => setExpandedId(isExpanded ? null : response.id)}
+										className="shrink-0"
+									>
+										{isExpanded ? (
+											<ChevronDown className="h-4 w-4 text-gray-400" />
+										) : (
+											<ChevronRight className="h-4 w-4 text-gray-400" />
+										)}
+									</button>
+								</div>
 
 								{isExpanded && (
 									<div className="px-4 pb-4 pt-1 border-t border-gray-100 dark:border-gray-800 animate-fade-in">
@@ -565,7 +581,8 @@ ${responses.length > 100 ? `<p style="text-align:center;color:#888;margin-top:8p
 								return (
 									<tr
 										key={response.id}
-										className="border-b border-gray-50 dark:border-gray-800/50 hover:bg-gray-50 dark:hover:bg-gray-800/30 transition-smooth"
+										onClick={() => setSelectedResponse(response.id)}
+										className="border-b border-gray-50 dark:border-gray-800/50 hover:bg-gray-50 dark:hover:bg-gray-800/30 transition-smooth cursor-pointer"
 									>
 										<td className="px-4 py-3 text-gray-400 tabular-nums">
 											{filteredResponses.length - index}
@@ -596,6 +613,21 @@ ${responses.length > 100 ? `<p style="text-align:center;color:#888;margin-top:8p
 			{/* Analytics view */}
 			{responses.length > 0 && view === 'analytics' && (
 				<AnalyticsView fields={fields} responses={responses} />
+			)}
+
+			{/* Response detail modal */}
+			{selectedResponse && (
+				<ResponseDetailModal
+					responseId={selectedResponse}
+					responses={filteredResponses}
+					fields={fields}
+					onClose={() => setSelectedResponse(null)}
+					onNavigate={setSelectedResponse}
+					onDelete={(id) => {
+						app.responses.delete(id)
+						setSelectedResponse(null)
+					}}
+				/>
 			)}
 		</div>
 	)
@@ -2138,6 +2170,281 @@ function AnalyticsView({
 					</div>
 				</div>
 			)}
+		</div>
+	)
+}
+
+// ---------------------------------------------------------------------------
+// Response Detail Modal
+// ---------------------------------------------------------------------------
+
+function ResponseDetailModal({
+	responseId,
+	responses,
+	fields,
+	onClose,
+	onNavigate,
+	onDelete,
+}: {
+	responseId: string
+	responses: Record<string, unknown>[]
+	fields: FormField[]
+	onClose: () => void
+	onNavigate: (id: string) => void
+	onDelete: (id: string) => void
+}) {
+	const currentIndex = responses.findIndex((r) => r.id === responseId)
+	const response = responses[currentIndex]
+	const hasPrev = currentIndex > 0
+	const hasNext = currentIndex < responses.length - 1
+	const responseNumber = responses.length - currentIndex
+
+	// Parse response data
+	let data: Record<string, unknown> = {}
+	try {
+		data = JSON.parse(String(response?.data || '{}'))
+	} catch {
+		// ignore
+	}
+
+	const meta = data._meta as {
+		duration?: number
+		ua?: string
+		screen?: string
+		startedAt?: number
+	} | undefined
+
+	// Parse UA
+	const uaInfo = meta?.ua ? parseUA(meta.ua) : null
+
+	const submittedAt = response?.submittedAt
+		? new Date(Number(response.submittedAt))
+		: null
+
+	// Keyboard navigation
+	useEffect(() => {
+		const handleKeyDown = (e: KeyboardEvent) => {
+			if (e.key === 'Escape') {
+				onClose()
+			} else if (e.key === 'ArrowLeft' && hasPrev) {
+				onNavigate(String(responses[currentIndex - 1]?.id))
+			} else if (e.key === 'ArrowRight' && hasNext) {
+				onNavigate(String(responses[currentIndex + 1]?.id))
+			}
+		}
+		window.addEventListener('keydown', handleKeyDown)
+		return () => window.removeEventListener('keydown', handleKeyDown)
+	}, [currentIndex, hasPrev, hasNext, onClose, onNavigate, responses])
+
+	// Copy all answers to clipboard
+	const copyToClipboard = () => {
+		const lines: string[] = []
+		lines.push(`Response #${responseNumber}`)
+		if (submittedAt) {
+			lines.push(`Submitted: ${submittedAt.toLocaleString()}`)
+		}
+		lines.push('')
+		for (const field of fields) {
+			const value = data[field.id]
+			lines.push(`${field.label || field.id}: ${value ? String(value) : '(empty)'}`)
+		}
+		if (meta?.duration) {
+			lines.push('')
+			lines.push(`Duration: ${formatDuration(Math.round(meta.duration))}`)
+		}
+		if (uaInfo) {
+			lines.push(`Device: ${uaInfo.device} | Browser: ${uaInfo.browser} | OS: ${uaInfo.os}`)
+		}
+		navigator.clipboard.writeText(lines.join('\n'))
+	}
+
+	if (!response) return null
+
+	return (
+		<div
+			className="fixed inset-0 z-50 flex items-center justify-center"
+			onClick={(e) => {
+				if (e.target === e.currentTarget) onClose()
+			}}
+		>
+			{/* Backdrop */}
+			<div className="absolute inset-0 bg-black/50 backdrop-blur-sm animate-fade-in" />
+
+			{/* Navigation arrows */}
+			{hasPrev && (
+				<button
+					onClick={() => onNavigate(String(responses[currentIndex - 1]?.id))}
+					className="absolute left-4 top-1/2 -translate-y-1/2 z-[60] w-10 h-10 rounded-full bg-white/90 dark:bg-gray-800/90 shadow-lg flex items-center justify-center hover:bg-white dark:hover:bg-gray-700 transition-smooth"
+					title="Previous response"
+				>
+					<ChevronLeft className="h-5 w-5 text-gray-700 dark:text-gray-300" />
+				</button>
+			)}
+			{hasNext && (
+				<button
+					onClick={() => onNavigate(String(responses[currentIndex + 1]?.id))}
+					className="absolute right-4 top-1/2 -translate-y-1/2 z-[60] w-10 h-10 rounded-full bg-white/90 dark:bg-gray-800/90 shadow-lg flex items-center justify-center hover:bg-white dark:hover:bg-gray-700 transition-smooth"
+					title="Next response"
+				>
+					<ChevronRight className="h-5 w-5 text-gray-700 dark:text-gray-300" />
+				</button>
+			)}
+
+			{/* Modal card */}
+			<div className="relative z-[55] w-full max-w-3xl max-h-[90vh] mx-4 bg-white dark:bg-surface-elevated-dark rounded-2xl shadow-2xl overflow-hidden flex flex-col animate-fade-in">
+				{/* Header */}
+				<div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-gray-800 shrink-0">
+					<div className="flex items-center gap-3 min-w-0">
+						<span className="w-8 h-8 rounded-xl bg-brand-50 dark:bg-brand-900/20 flex items-center justify-center text-sm font-bold text-brand-600 dark:text-brand-400 shrink-0">
+							{responseNumber}
+						</span>
+						<div className="min-w-0">
+							<h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+								Response #{responseNumber}
+							</h2>
+							{submittedAt && (
+								<p className="text-xs text-gray-400 dark:text-gray-500">
+									{submittedAt.toLocaleDateString('en', {
+										weekday: 'long',
+										year: 'numeric',
+										month: 'long',
+										day: 'numeric',
+									})}{' '}
+									at{' '}
+									{submittedAt.toLocaleTimeString('en', {
+										hour: '2-digit',
+										minute: '2-digit',
+									})}
+								</p>
+							)}
+						</div>
+					</div>
+					<div className="flex items-center gap-1.5 shrink-0">
+						<button
+							onClick={copyToClipboard}
+							className="w-8 h-8 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 flex items-center justify-center transition-smooth"
+							title="Copy all answers"
+						>
+							<Copy className="h-4 w-4 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" />
+						</button>
+						<button
+							onClick={() => {
+								if (window.confirm('Delete this response?')) {
+									onDelete(String(response.id))
+								}
+							}}
+							className="w-8 h-8 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center justify-center transition-smooth"
+							title="Delete response"
+						>
+							<Trash2 className="h-4 w-4 text-gray-400 hover:text-red-500" />
+						</button>
+						<button
+							onClick={onClose}
+							className="w-8 h-8 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 flex items-center justify-center transition-smooth"
+							title="Close (Esc)"
+						>
+							<X className="h-4 w-4 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" />
+						</button>
+					</div>
+				</div>
+
+				{/* Content */}
+				<div className="flex-1 overflow-y-auto px-6 py-5">
+					{/* Metadata bar */}
+					{meta && (
+						<div className="flex flex-wrap items-center gap-3 mb-6 p-3 rounded-xl bg-gray-50 dark:bg-gray-800/50 border border-gray-100 dark:border-gray-800">
+							{meta.duration != null && meta.duration > 0 && (
+								<span className="inline-flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+									<Timer className="h-3.5 w-3.5 text-gray-400" />
+									{formatDuration(Math.round(meta.duration))}
+								</span>
+							)}
+							{uaInfo && (
+								<>
+									<span className="inline-flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+										{uaInfo.device === 'Mobile' ? (
+											<Smartphone className="h-3.5 w-3.5 text-gray-400" />
+										) : (
+											<Monitor className="h-3.5 w-3.5 text-gray-400" />
+										)}
+										{uaInfo.device}
+									</span>
+									<span className="inline-flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+										<Globe className="h-3.5 w-3.5 text-gray-400" />
+										{uaInfo.browser} / {uaInfo.os}
+									</span>
+								</>
+							)}
+							{meta.screen && (
+								<span className="inline-flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+									<Monitor className="h-3.5 w-3.5 text-gray-400" />
+									{meta.screen}
+								</span>
+							)}
+						</div>
+					)}
+
+					{/* Field answers grid */}
+					<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+						{fields.map((field) => {
+							const value = data[field.id]
+							const displayValue = value ? String(value) : null
+							const isLong = displayValue && displayValue.length > 100
+
+							return (
+								<div
+									key={field.id}
+									className={`rounded-xl border border-gray-100 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/30 p-4 transition-smooth ${
+										isLong ? 'sm:col-span-2' : ''
+									}`}
+								>
+									<p className="text-[11px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-1.5">
+										{field.label || field.id}
+										{field.required && (
+											<span className="text-red-400 ml-0.5">*</span>
+										)}
+									</p>
+									{displayValue ? (
+										<p className="text-sm text-gray-900 dark:text-gray-100 leading-relaxed whitespace-pre-wrap break-words">
+											{displayValue}
+										</p>
+									) : (
+										<p className="text-sm text-gray-300 dark:text-gray-600 italic">
+											Empty
+										</p>
+									)}
+								</div>
+							)
+						})}
+					</div>
+				</div>
+
+				{/* Footer */}
+				<div className="flex items-center justify-between px-6 py-3 border-t border-gray-100 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/30 shrink-0">
+					<span className="text-[11px] text-gray-400">
+						{currentIndex + 1} of {responses.length} responses
+					</span>
+					<div className="flex items-center gap-2">
+						<button
+							onClick={() => hasPrev && onNavigate(String(responses[currentIndex - 1]?.id))}
+							disabled={!hasPrev}
+							className="inline-flex items-center gap-1 text-xs font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 disabled:opacity-30 disabled:cursor-not-allowed transition-smooth"
+						>
+							<ChevronLeft className="h-3.5 w-3.5" />
+							Previous
+						</button>
+						<span className="text-gray-300 dark:text-gray-600">|</span>
+						<button
+							onClick={() => hasNext && onNavigate(String(responses[currentIndex + 1]?.id))}
+							disabled={!hasNext}
+							className="inline-flex items-center gap-1 text-xs font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 disabled:opacity-30 disabled:cursor-not-allowed transition-smooth"
+						>
+							Next
+							<ChevronRight className="h-3.5 w-3.5" />
+						</button>
+					</div>
+				</div>
+			</div>
 		</div>
 	)
 }
