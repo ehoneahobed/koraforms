@@ -76,7 +76,7 @@ export function FormList({ navigate, userId }: Props) {
 	const allResponses = useQuery(app.responses.where({}).orderBy('submittedAt', 'desc'))
 	const { mutate: deleteForm } = useMutation((id: string) => app.forms.delete(id))
 	const { mutate: createForm } = useMutation(
-		(data: { title: string; description: string; fields: string; status: string; ownerId: string }) =>
+		(data: { title: string; description: string; fields: string; status: string; ownerId: string; theme: string }) =>
 			app.forms.insert(data),
 	)
 	const { mutate: duplicateForm } = useMutation(
@@ -122,6 +122,7 @@ export function FormList({ navigate, userId }: Props) {
 			fields: JSON.stringify(template.fields),
 			status: 'draft',
 			ownerId: userId,
+			theme: 'red',
 		})
 		setShowTemplates(false)
 	}
@@ -224,103 +225,94 @@ export function FormList({ navigate, userId }: Props) {
 		: filteredForms
 
 	return (
-		<div className="max-w-6xl mx-auto px-1">
+		<div className="mx-auto w-full max-w-[1220px] min-w-0 overflow-x-hidden">
 			{/* Header */}
 			<div className="flex items-start justify-between mb-6">
 				<div>
-					<h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 tracking-tight">
+					<h1 className="text-[40px] leading-none font-bold text-slate-950 dark:text-gray-100 tracking-[-0.02em]">
 						Forms
 					</h1>
-					<p className="text-sm text-gray-400 dark:text-gray-500 mt-1">
+					<p className="text-[16px] text-slate-500 dark:text-gray-400 mt-3">
 						Create, collect and stay productive—even offline.
 					</p>
 				</div>
 				<button
 					onClick={() => setShowTemplates(true)}
-					className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-all duration-200 hover:bg-brand-500 hover:shadow-md active:scale-[0.97]"
+					className="inline-flex items-center gap-2.5 kf-primary px-6 py-3.5 text-[15px] font-semibold"
 				>
-					<Plus className="h-4 w-4" />
-					New Form
+					<Plus className="h-4.5 w-4.5" />
+					New form
 				</button>
 			</div>
 
 			{/* Sync Status Banner */}
-			<div className="mb-6 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900/30 px-5 py-3.5 flex items-center gap-3">
-				<span className="relative flex h-2.5 w-2.5 shrink-0">
-					<span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-					<span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" />
-				</span>
+			<div className="mb-5 rounded-2xl bg-emerald-50/35 dark:bg-emerald-950/20 border border-emerald-200/70 dark:border-emerald-900/30 px-5 py-3.5 flex items-center gap-4">
+				<span className="h-3 w-3 rounded-full bg-emerald-500 shrink-0" />
 				<div className="min-w-0">
-					<p className="text-sm font-medium text-emerald-800 dark:text-emerald-300">
+					<p className="text-[15px] font-semibold text-slate-950 dark:text-emerald-200">
 						Everything is saved on this device
 					</p>
-					<p className="text-xs text-emerald-600/70 dark:text-emerald-400/50 mt-0.5">
+					<p className="text-[13px] text-slate-500 dark:text-emerald-400/70 mt-1">
 						Changes sync automatically when you're online.
 					</p>
 				</div>
 			</div>
 
-			{/* Section divider */}
-			<div className="border-t border-gray-100 dark:border-gray-800/50 mb-6" />
-
 			{/* Stat Cards */}
 			{allForms.length > 0 && (
-				<div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+				<div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-5">
 					{/* Total Forms */}
-					<div className="rounded-2xl bg-white dark:bg-surface-elevated-dark border border-gray-100 dark:border-gray-800/50 shadow-sm p-5 flex items-center gap-4 transition-all duration-200 hover:shadow-md">
-						<div className="w-11 h-11 rounded-xl bg-brand-50 dark:bg-brand-900/20 flex items-center justify-center shrink-0">
-							<FileText className="h-5 w-5 text-brand-500 dark:text-brand-400" />
+					<div className="kf-panel px-5 py-4 flex items-center gap-4">
+						<div className="w-10 h-10 rounded-full bg-brand-50 dark:bg-brand-900/20 flex items-center justify-center shrink-0">
+							<FileText className="h-5 w-5 text-brand-600 dark:text-brand-400" />
 						</div>
 						<div>
-							<p className="text-xs font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider">Total forms</p>
-							<p className="text-2xl font-bold text-gray-900 dark:text-gray-100 tracking-tight mt-0.5">{allForms.length}</p>
+							<p className="text-[13px] font-medium text-slate-500 dark:text-gray-500">Total forms</p>
+							<p className="text-[25px] leading-none font-bold text-slate-950 dark:text-gray-100 tracking-tight mt-1">{allForms.length}</p>
+							<p className="text-[12px] text-slate-500 dark:text-gray-500 mt-1.5">All forms in your workspace</p>
 						</div>
 					</div>
 
 					{/* Published */}
-					<div className="rounded-2xl bg-white dark:bg-surface-elevated-dark border border-gray-100 dark:border-gray-800/50 shadow-sm p-5 flex items-center gap-4 transition-all duration-200 hover:shadow-md">
-						<div className="w-11 h-11 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 flex items-center justify-center shrink-0">
-							<Globe className="h-5 w-5 text-emerald-500 dark:text-emerald-400" />
+					<div className="kf-panel px-5 py-4 flex items-center gap-4">
+						<div className="w-10 h-10 rounded-full bg-emerald-50 dark:bg-emerald-900/20 flex items-center justify-center shrink-0">
+							<Check className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
 						</div>
 						<div>
-							<p className="text-xs font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider">Published</p>
-							<p className="text-2xl font-bold text-gray-900 dark:text-gray-100 tracking-tight mt-0.5">{published.length}</p>
-							{published.length > 0 && (
-								<p className="text-[11px] text-emerald-600 dark:text-emerald-400 mt-0.5">{published.length} live and collecting responses</p>
-							)}
+							<p className="text-[13px] font-medium text-slate-500 dark:text-gray-500">Published</p>
+							<p className="text-[25px] leading-none font-bold text-slate-950 dark:text-gray-100 tracking-tight mt-1">{published.length}</p>
+							<p className="text-[12px] text-slate-500 dark:text-gray-500 mt-1.5">Live and collecting responses</p>
 						</div>
 					</div>
 
 					{/* Responses */}
-					<div className="rounded-2xl bg-white dark:bg-surface-elevated-dark border border-gray-100 dark:border-gray-800/50 shadow-sm p-5 flex items-center gap-4 transition-all duration-200 hover:shadow-md">
-						<div className="w-11 h-11 rounded-xl bg-brand-50 dark:bg-brand-900/20 flex items-center justify-center shrink-0">
-							<BarChart3 className="h-5 w-5 text-brand-500 dark:text-brand-400" />
+					<div className="kf-panel px-5 py-4 flex items-center gap-4">
+						<div className="w-10 h-10 rounded-full bg-violet-50 dark:bg-violet-900/20 flex items-center justify-center shrink-0">
+							<BarChart3 className="h-5 w-5 text-violet-600 dark:text-violet-400" />
 						</div>
 						<div>
-							<p className="text-xs font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider">Responses</p>
-							<p className="text-2xl font-bold text-gray-900 dark:text-gray-100 tracking-tight mt-0.5">{totalResponses}</p>
+							<p className="text-[13px] font-medium text-slate-500 dark:text-gray-500">Responses</p>
+							<p className="text-[25px] leading-none font-bold text-slate-950 dark:text-gray-100 tracking-tight mt-1">{totalResponses}</p>
+							<p className="text-[12px] text-slate-500 dark:text-gray-500 mt-1.5">Total across all forms</p>
 						</div>
 					</div>
 				</div>
 			)}
 
-			{/* Section divider */}
-			{allForms.length > 0 && <div className="border-t border-gray-100 dark:border-gray-800/50 mb-6" />}
-
 			{/* Filter / Search Bar */}
 			{allForms.length > 0 && (
-				<div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-6">
+				<div className="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-3 mb-5">
 					<div className="flex items-center gap-3 w-full sm:w-auto">
 						{/* Filter pills */}
-						<div className="flex items-center bg-gray-100/80 dark:bg-gray-800/60 rounded-xl p-1">
+						<div className="flex items-center rounded-xl border border-slate-200 bg-white p-1 dark:border-slate-800 dark:bg-slate-900">
 							{(['all', 'published', 'draft', 'archived'] as const).map((f) => (
 								<button
 									key={f}
 									onClick={() => setFilter(f)}
-									className={`px-4 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 ${
+									className={`px-5 py-2.5 rounded-lg text-[13px] font-semibold transition-all duration-200 ${
 										filter === f
-											? 'bg-gray-900 dark:bg-gray-200 text-white dark:text-gray-900 shadow-sm'
-											: 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+											? 'bg-brand-50 text-brand-600 shadow-sm dark:bg-brand-900/30 dark:text-brand-300'
+											: 'text-slate-600 dark:text-gray-400 hover:text-slate-950 dark:hover:text-gray-300'
 									}`}
 								>
 									{f === 'all' ? 'All' : f === 'published' ? 'Published' : f === 'draft' ? 'Drafts' : `Archived${archivedForms.length > 0 ? ` (${archivedForms.length})` : ''}`}
@@ -329,23 +321,23 @@ export function FormList({ navigate, userId }: Props) {
 						</div>
 					</div>
 
-					<div className="flex items-center gap-2 w-full sm:w-auto">
+					<div className="flex items-center gap-3 w-full xl:w-auto">
 						{/* Search input */}
 						<div className="relative flex-1 sm:flex-initial">
-							<Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 dark:text-gray-500" />
+							<Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4.5 w-4.5 text-slate-400 dark:text-gray-500" />
 							<input
 								type="text"
 								placeholder="Search forms..."
 								value={searchQuery}
 								onChange={(e) => setSearchQuery(e.target.value)}
-								className="w-full sm:w-52 pl-9 pr-4 py-2 rounded-xl bg-gray-100/80 dark:bg-gray-800/60 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500/30 border-0 transition-all duration-200"
+								className="w-full xl:w-[360px] pl-10 pr-4 py-3 rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 text-[14px] text-slate-950 dark:text-gray-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500/20 transition-all duration-200"
 							/>
 						</div>
 
 						{/* Sort dropdown */}
 						<div className="relative">
-							<button className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-gray-100/80 dark:bg-gray-800/60 text-xs font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-200/80 dark:hover:bg-gray-700/60 transition-all duration-200">
-								<Clock className="h-3.5 w-3.5" />
+							<button className="inline-flex items-center gap-2 kf-control px-4 py-3 text-[13px] font-semibold whitespace-nowrap min-w-[142px] justify-center">
+								<Clock className="h-4 w-4" />
 								Last edited
 								<ChevronDown className="h-3 w-3 opacity-50" />
 							</button>
@@ -354,9 +346,9 @@ export function FormList({ navigate, userId }: Props) {
 						{/* Templates button */}
 						<button
 							onClick={() => navigate('templates')}
-							className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-gray-100/80 dark:bg-gray-800/60 text-xs font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-200/80 dark:hover:bg-gray-700/60 transition-all duration-200"
+							className="inline-flex items-center gap-2 kf-control px-4 py-3 text-[13px] font-semibold text-brand-600 whitespace-nowrap"
 						>
-							<LayoutTemplate className="h-3.5 w-3.5" />
+							<LayoutTemplate className="h-4 w-4" />
 							Templates
 						</button>
 					</div>
@@ -374,18 +366,18 @@ export function FormList({ navigate, userId }: Props) {
 
 			{/* Form grid */}
 			{displayForms.length > 0 ? (
-				<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+				<div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
 					{/* Create card */}
 					<button
 						onClick={() => setShowTemplates(true)}
-						className="group rounded-2xl border-2 border-dashed border-gray-200 dark:border-gray-700/60 bg-white/50 dark:bg-gray-900/30 flex flex-col items-center justify-center gap-3 min-h-[320px] transition-all duration-200 hover:border-brand-300 dark:hover:border-brand-700 hover:bg-brand-50/30 dark:hover:bg-brand-950/10"
+						className="group rounded-2xl border border-dashed border-brand-200 bg-white/35 dark:bg-gray-900/30 flex flex-col items-center justify-center gap-2.5 min-h-[214px] transition-colors duration-200 hover:border-brand-400 dark:hover:border-brand-700 hover:bg-brand-50/35 dark:hover:bg-brand-950/10"
 					>
-						<div className="w-14 h-14 rounded-2xl bg-gray-100 dark:bg-gray-800 flex items-center justify-center transition-all duration-200 group-hover:scale-110 group-hover:bg-brand-100 dark:group-hover:bg-brand-900/30 group-hover:shadow-md">
-							<Plus className="h-6 w-6 text-gray-400 transition-colors duration-200 group-hover:text-brand-600 dark:group-hover:text-brand-400" />
+						<div className="w-12 h-12 rounded-full bg-brand-50 dark:bg-gray-800 flex items-center justify-center transition-colors duration-200 group-hover:bg-brand-100 dark:group-hover:bg-brand-900/30">
+							<Plus className="h-6 w-6 text-brand-600 dark:text-brand-400" />
 						</div>
 						<div className="text-center px-4">
-							<p className="text-sm font-semibold text-gray-600 dark:text-gray-400 group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors duration-200">Create new form</p>
-							<p className="text-xs text-gray-400 dark:text-gray-500 mt-1 leading-relaxed">Start from scratch or choose a template.</p>
+							<p className="text-[15px] font-semibold text-slate-950 dark:text-gray-100 transition-colors duration-200">Create new form</p>
+							<p className="text-[13px] text-slate-500 dark:text-gray-500 mt-1.5 leading-relaxed">Start from scratch or choose a template.</p>
 						</div>
 					</button>
 
@@ -492,17 +484,13 @@ function FormCard({
 	}, [menuOpen])
 
 	return (
-		<div className="group relative rounded-2xl bg-white dark:bg-surface-elevated-dark border border-gray-100 dark:border-gray-800/60 shadow-sm transition-all duration-200 hover:shadow-lg hover:border-gray-200 dark:hover:border-gray-700 overflow-hidden">
+		<div className="group relative kf-panel overflow-hidden transition-shadow duration-200 hover:shadow-[0_8px_22px_rgba(15,23,42,0.06)]">
 			{/* Colorful gradient header */}
-			<div
-				className="relative h-[100px] overflow-hidden"
-				style={{ background: gradient }}
-			>
+			<div className="relative h-14 overflow-hidden" style={{ background: gradient }}>
 				{/* Decorative geometric shapes */}
 				<div className="absolute inset-0 opacity-20">
-					<div className="absolute -top-6 -right-6 w-24 h-24 rounded-full border-[3px] border-white/40" />
-					<div className="absolute bottom-2 left-4 w-16 h-16 rounded-xl border-[2px] border-white/30 rotate-12" />
-					<div className="absolute top-3 left-1/2 w-8 h-8 rounded-full bg-white/20" />
+					<div className="absolute -top-8 -right-6 w-20 h-20 rounded-full border-[2px] border-white/35" />
+					<div className="absolute -bottom-4 left-5 w-14 h-14 rounded-xl border border-white/25 rotate-12" />
 				</div>
 
 				{/* Three-dot menu in header */}
@@ -517,9 +505,9 @@ function FormCard({
 							}
 							setMenuOpen(!menuOpen)
 						}}
-						className="p-1.5 rounded-lg bg-black/20 text-white/80 hover:bg-black/30 hover:text-white backdrop-blur-sm transition-all duration-200 opacity-0 group-hover:opacity-100"
+						className="p-1.5 rounded-lg bg-white/90 text-slate-950 hover:bg-white backdrop-blur-sm transition-colors duration-200 shadow-sm"
 					>
-						<MoreHorizontal className="h-4 w-4" />
+						<MoreHorizontal className="h-3.5 w-3.5" />
 					</button>
 					{menuOpen && (
 						<div className={`absolute right-0 w-48 rounded-xl border border-gray-200/80 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-xl py-1 z-20 animate-scale-in ${menuAbove ? 'bottom-9' : 'top-9'}`}>
@@ -555,17 +543,15 @@ function FormCard({
 			</div>
 
 			{/* Content area */}
-			<div className="relative px-5 pb-5 pt-4">
+			<div className="relative px-4 pb-3.5 pt-3.5">
 				{/* Status badge - overlapping the gradient/content junction */}
-				<div className="absolute -top-3 left-5">
+				<div className="absolute -top-3 left-4">
 					{isPublished ? (
-						<span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-500 text-white shadow-sm">
-							<span className="w-1.5 h-1.5 rounded-full bg-white/80" />
+						<span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-medium bg-emerald-100 text-emerald-700 shadow-sm">
 							Published
 						</span>
 					) : (
-						<span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 shadow-sm border border-gray-200/50 dark:border-gray-600/50">
-							<span className="w-1.5 h-1.5 rounded-full bg-gray-400 dark:bg-gray-500" />
+						<span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-medium bg-slate-100 dark:bg-gray-700 text-slate-600 dark:text-gray-400 shadow-sm border border-gray-200/50 dark:border-gray-600/50">
 							Draft
 						</span>
 					)}
@@ -576,25 +562,25 @@ function FormCard({
 					onClick={() => navigate(`build/${form.id}`)}
 					className="block w-full text-left mt-3 group/title"
 				>
-					<h3 className="font-semibold text-[15px] text-gray-900 dark:text-gray-100 truncate transition-colors duration-200 group-hover/title:text-brand-600 dark:group-hover/title:text-brand-400">
+					<h3 className="font-semibold text-[15px] text-slate-950 dark:text-gray-100 truncate transition-colors duration-200 group-hover/title:text-brand-600 dark:group-hover/title:text-brand-400">
 						{String(form.title) || 'Untitled Form'}
 					</h3>
 					{String(form.description) && (
-						<p className="text-sm text-gray-400 dark:text-gray-500 truncate leading-relaxed mt-0.5">
+						<p className="text-[13px] text-slate-500 dark:text-gray-500 truncate leading-relaxed mt-1">
 							{String(form.description)}
 						</p>
 					)}
 				</button>
 
 				{/* Stats row */}
-				<div className="flex items-center gap-3 text-[11px] text-gray-400 dark:text-gray-500 mt-3 mb-4">
+				<div className="flex items-center gap-2.5 text-[12px] text-slate-500 dark:text-gray-500 mt-3 mb-3">
 					<span>{fieldCount} field{fieldCount !== 1 ? 's' : ''}</span>
-					<span className="w-0.5 h-0.5 rounded-full bg-gray-300 dark:bg-gray-600" />
+					<span className="w-1 h-1 rounded-full bg-slate-300 dark:bg-gray-600" />
 					<span>{timeAgo}</span>
 					{isPublished && responseCount > 0 && (
 						<>
-							<span className="w-0.5 h-0.5 rounded-full bg-gray-300 dark:bg-gray-600" />
-							<span className="text-brand-500 dark:text-brand-400 font-medium">
+							<span className="w-1 h-1 rounded-full bg-slate-300 dark:bg-gray-600" />
+							<span className="text-brand-600 dark:text-brand-400 font-semibold">
 								{responseCount} response{responseCount !== 1 ? 's' : ''}
 								{newResponseCount > 0 && (
 									<span className="ml-1.5 inline-flex items-center rounded-full bg-brand-500 text-white text-[9px] font-bold px-1.5 py-0.5 leading-none">
@@ -607,18 +593,17 @@ function FormCard({
 				</div>
 
 				{/* Action buttons */}
-				<div className="flex items-center border-t border-gray-100 dark:border-gray-800/60 pt-3 -mx-5 px-5">
+				<div className="flex items-center gap-2.5 pt-0.5">
 					<button
 						onClick={() => navigate(`build/${form.id}`)}
-						className="flex-1 inline-flex items-center justify-center gap-1.5 py-2 text-xs font-medium text-gray-600 dark:text-gray-300 transition-all duration-200 hover:text-brand-600 dark:hover:text-brand-400 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800/50"
+						className="flex-1 inline-flex items-center justify-center gap-2 kf-control py-2 text-[13px] font-semibold"
 					>
 						<Pencil className="h-3.5 w-3.5" />
 						Edit
 					</button>
-					<div className="w-px h-5 bg-gray-100 dark:bg-gray-800/60" />
 					<button
 						onClick={() => isPublished ? navigate(`responses/${form.id}`) : navigate(`build/${form.id}`)}
-						className="flex-1 inline-flex items-center justify-center gap-1.5 py-2 text-xs font-medium text-gray-600 dark:text-gray-300 transition-all duration-200 hover:text-brand-600 dark:hover:text-brand-400 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800/50"
+						className="flex-1 inline-flex items-center justify-center gap-2 kf-control py-2 text-[13px] font-semibold"
 					>
 						<BarChart3 className="h-3.5 w-3.5" />
 						Responses

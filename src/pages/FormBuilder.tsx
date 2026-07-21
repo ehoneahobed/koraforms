@@ -5,7 +5,6 @@ import { setPageMeta } from '../utils/meta'
 import {
 	GripVertical,
 	Plus,
-	Check,
 	Trash2,
 	ChevronUp,
 	ChevronDown,
@@ -38,10 +37,9 @@ import {
 	Search,
 } from 'lucide-react'
 import { FIELD_TYPES, CONDITION_OPERATORS, LANGUAGES, type FormField, type FormSettings as FormSettingsType, type FieldType, type ConditionalRule } from '../types'
-import { THEME_PRESETS, getThemeById } from '../themes'
+import { getThemeById } from '../themes'
 import { useSlashCommand } from '../hooks/useSlashCommand'
 import { SlashCommandMenu } from '../components/editor/SlashCommandMenu'
-import { FormSettings } from '../components/editor/FormSettings'
 import { Copy } from 'lucide-react'
 
 const FIELD_ICONS: Record<FieldType, React.ReactNode> = {
@@ -69,6 +67,8 @@ const FIELD_ICONS: Record<FieldType, React.ReactNode> = {
 	hidden: <EyeOff className="h-3.5 w-3.5" />,
 }
 
+const QUICK_FIELD_TYPES: FieldType[] = ['text', 'email', 'phone', 'select', 'radio', 'checkbox']
+
 interface Props {
 	formId?: string
 	navigate: (path: string) => void
@@ -86,15 +86,13 @@ export function FormBuilder({ formId, navigate, userId }: Props) {
 	const [title, setTitle] = useState('')
 	const [description, setDescription] = useState('')
 	const [fields, setFields] = useState<FormField[]>([])
-	const [theme, setTheme] = useState('blue')
+	const [theme, setTheme] = useState('red')
 	const [settings, setSettings] = useState<FormSettingsType>({})
 	const [loaded, setLoaded] = useState(false)
-	const [saved, setSaved] = useState(false)
 	const [activeField, setActiveField] = useState<string | null>(null)
-	const [showThemePicker, setShowThemePicker] = useState(false)
-	const [showSettings, setShowSettings] = useState(false)
 	const [previewMode, setPreviewMode] = useState<'desktop' | 'mobile'>('desktop')
 	const [fieldSearch, setFieldSearch] = useState('')
+	const themePreset = getThemeById(theme)
 	// Share modal is now handled by FormPageShell
 
 	useEffect(() => {
@@ -167,7 +165,7 @@ export function FormBuilder({ formId, navigate, userId }: Props) {
 		if (form && !loaded) {
 			setTitle(String(form.title || ''))
 			setDescription(String(form.description || ''))
-			setTheme(String(form.theme || 'blue'))
+			setTheme(String(form.theme || 'red'))
 			try {
 				setFields(JSON.parse(String(form.fields || '[]')))
 			} catch {
@@ -193,8 +191,6 @@ export function FormBuilder({ formId, navigate, userId }: Props) {
 			settings: JSON.stringify(settings),
 			ownerId: userId,
 		})
-		setSaved(true)
-		setTimeout(() => setSaved(false), 2000)
 	}, [formId, title, description, fields, theme, settings, userId, updateForm])
 
 	// Auto-save on changes (debounced)
@@ -285,8 +281,6 @@ export function FormBuilder({ formId, navigate, userId }: Props) {
 		return () => window.removeEventListener('keydown', handler)
 	}, [loaded, activeField, fields, save, duplicateField, removeField])
 
-	const isPublished = form ? String(form.status) === 'published' : false
-
 	if (!formId || (!form && loaded)) {
 		return (
 			<div className="text-center py-20 text-gray-500 animate-fade-in">
@@ -369,180 +363,132 @@ export function FormBuilder({ formId, navigate, userId }: Props) {
 	const activeFieldData = activeFieldIndex >= 0 ? fields[activeFieldIndex] : null
 
 	return (
-		<div className="flex -mx-4 sm:-mx-6 lg:-mx-8 -mb-8 sm:-mb-10" style={{ minHeight: 'calc(100vh - 200px)' }}>
+		<div className="flex h-[calc(100vh-222px)] min-h-[560px] -mx-4 sm:-mx-8 lg:-mx-10 -mb-8 sm:-mb-10 overflow-hidden border-t border-slate-200 dark:border-gray-800 bg-white/35 dark:bg-surface-dark">
 			{/* Left Panel: Add fields */}
-			<div className="hidden lg:flex flex-col w-[200px] shrink-0 border-r border-gray-100 dark:border-gray-800/50 p-4">
-				<h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3">Add fields</h3>
-				<div className="relative mb-3">
-					<Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+			<div className="hidden lg:flex h-full flex-col w-[260px] shrink-0 overflow-y-auto border-r border-slate-200 dark:border-gray-800/50 bg-white/70 dark:bg-gray-950/70 p-5">
+				<div className="mb-5">
+					<h3 className="text-[16px] font-semibold text-slate-950 dark:text-gray-100">Add field</h3>
+					<p className="mt-1 text-[12px] text-slate-500 dark:text-gray-500">Pick a common field or search all types.</p>
+				</div>
+				<div className="relative mb-4">
+					<Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
 					<input
 						type="text"
 						value={fieldSearch}
 						onChange={(e) => setFieldSearch(e.target.value)}
-						placeholder="Search field types..."
-						className="w-full rounded-lg bg-gray-100 dark:bg-gray-800 pl-8 pr-3 py-2 text-sm outline-none placeholder-gray-400 dark:placeholder-gray-500 text-gray-700 dark:text-gray-300 focus:ring-1 focus:ring-brand-300 dark:focus:ring-brand-700 transition-smooth"
+						placeholder="Search all field types"
+						className="w-full rounded-xl border border-slate-200 bg-white dark:border-gray-800 dark:bg-gray-900 pl-10 pr-3 py-2.5 text-[14px] outline-none placeholder-slate-400 dark:placeholder-gray-500 text-slate-700 dark:text-gray-300 focus:ring-2 focus:ring-brand-500/20 transition-smooth"
 					/>
 				</div>
-				<div className="flex-1 overflow-y-auto space-y-0.5">
-					{filteredFieldTypes.map((ft) => (
+				<div className="grid grid-cols-2 gap-2">
+					{QUICK_FIELD_TYPES.map((type) => {
+						const ft = FIELD_TYPES.find((item) => item.value === type)
+						if (!ft) return null
+						return (
+							<button
+								key={ft.value}
+								onClick={() => addFieldOfType(ft.value, fields.length > 0 ? fields.length - 1 : null)}
+								className="flex flex-col items-start gap-2 rounded-xl border border-slate-200 bg-white p-3 text-left text-[13px] font-semibold text-slate-700 transition-colors hover:border-brand-200 hover:bg-brand-50/40 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-brand-900/10"
+							>
+								<span className="text-slate-400 dark:text-gray-500">{FIELD_ICONS[ft.value]}</span>
+								<span>{ft.label}</span>
+							</button>
+						)
+					})}
+				</div>
+				<div className="mt-5 flex min-h-[260px] flex-col border-t border-slate-200 dark:border-gray-800 pt-4">
+					<p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400 dark:text-gray-500">
+						{fieldSearch.trim() ? 'Search results' : 'More fields'}
+					</p>
+					<div className="max-h-[320px] overflow-y-auto space-y-1.5 pr-1">
+					{filteredFieldTypes
+						.filter(ft => fieldSearch.trim() || !QUICK_FIELD_TYPES.includes(ft.value))
+						.map((ft) => (
 						<button
 							key={ft.value}
 							onClick={() => addFieldOfType(ft.value, fields.length > 0 ? fields.length - 1 : null)}
-							className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-smooth"
+							className="w-full flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-medium text-slate-600 transition-colors hover:bg-slate-100 dark:text-gray-400 dark:hover:bg-gray-800"
 						>
-							<span className="text-gray-400 dark:text-gray-500">{FIELD_ICONS[ft.value]}</span>
+							<span className="text-slate-400 dark:text-gray-500">{FIELD_ICONS[ft.value]}</span>
 							{ft.label}
 						</button>
 					))}
 					{filteredFieldTypes.length === 0 && (
 						<p className="text-xs text-gray-400 dark:text-gray-500 text-center py-4">No matching fields</p>
 					)}
+					</div>
+				</div>
+				<div className="mt-4 border-t border-slate-200 pt-4 dark:border-gray-800">
+					<p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400 dark:text-gray-500">Canvas</p>
+					<div className="grid grid-cols-2 gap-1 rounded-xl border border-slate-200 bg-white p-1 dark:border-gray-800 dark:bg-gray-900">
+						<button
+							onClick={() => setPreviewMode('desktop')}
+							className={`flex items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-[12px] font-semibold transition-colors ${
+								previewMode === 'desktop'
+									? 'bg-brand-50 text-brand-600 dark:bg-brand-900/30 dark:text-brand-300'
+									: 'text-slate-500 hover:bg-slate-50 dark:text-gray-500 dark:hover:bg-gray-800'
+							}`}
+						>
+							<Monitor className="h-3.5 w-3.5" />
+							Desktop
+						</button>
+						<button
+							onClick={() => setPreviewMode('mobile')}
+							className={`flex items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-[12px] font-semibold transition-colors ${
+								previewMode === 'mobile'
+									? 'bg-brand-50 text-brand-600 dark:bg-brand-900/30 dark:text-brand-300'
+									: 'text-slate-500 hover:bg-slate-50 dark:text-gray-500 dark:hover:bg-gray-800'
+							}`}
+						>
+							<Smartphone className="h-3.5 w-3.5" />
+							Mobile
+						</button>
+					</div>
+					<div className="mt-2 grid grid-cols-2 gap-2">
+						<button onClick={exportFormJson} className="inline-flex items-center justify-center gap-1.5 rounded-lg px-2.5 py-2 text-[12px] font-medium text-slate-500 hover:bg-slate-100 dark:text-gray-400 dark:hover:bg-gray-800" title="Export form as JSON">
+							<Download className="h-3.5 w-3.5" />
+							Export
+						</button>
+						<button onClick={importFormJson} className="inline-flex items-center justify-center gap-1.5 rounded-lg px-2.5 py-2 text-[12px] font-medium text-slate-500 hover:bg-slate-100 dark:text-gray-400 dark:hover:bg-gray-800" title="Import form from JSON">
+							<Upload className="h-3.5 w-3.5" />
+							Import
+						</button>
+					</div>
+					<div className="mt-3 space-y-1.5 text-[11px] text-slate-400 dark:text-gray-600">
+						<div><kbd className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-slate-500 dark:bg-gray-800 dark:text-gray-400">Ctrl+S</kbd> save</div>
+						<div><kbd className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-slate-500 dark:bg-gray-800 dark:text-gray-400">Ctrl+D</kbd> duplicate</div>
+						<div><kbd className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-slate-500 dark:bg-gray-800 dark:text-gray-400">/</kbd> insert field or answer</div>
+					</div>
 				</div>
 			</div>
 
 			{/* Center Panel: Form preview */}
-			<div className="flex-1 overflow-y-auto p-6">
-				{/* Toolbar */}
-				<div className="flex items-center justify-between mb-4">
-					<div className="flex items-center gap-1">
-						{/* Desktop/Mobile toggle */}
-						<button
-							onClick={() => setPreviewMode('desktop')}
-							className={`p-2 rounded-lg transition-smooth ${
-								previewMode === 'desktop'
-									? 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100'
-									: 'text-gray-400 dark:text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-600 dark:hover:text-gray-300'
-							}`}
-							title="Desktop preview"
-						>
-							<Monitor className="h-4 w-4" />
-						</button>
-						<button
-							onClick={() => setPreviewMode('mobile')}
-							className={`p-2 rounded-lg transition-smooth ${
-								previewMode === 'mobile'
-									? 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100'
-									: 'text-gray-400 dark:text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-600 dark:hover:text-gray-300'
-							}`}
-							title="Mobile preview"
-						>
-							<Smartphone className="h-4 w-4" />
-						</button>
-
-						<div className="w-px h-5 bg-gray-200 dark:bg-gray-700 mx-1" />
-
-						{/* Theme button */}
-						<button
-							onClick={() => setShowThemePicker(!showThemePicker)}
-							className="inline-flex items-center gap-2 rounded-lg p-2 text-gray-500 dark:text-gray-400 transition-smooth hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-700 dark:hover:text-gray-200"
-							title="Toggle theme picker"
-						>
-							<div
-								className="w-4 h-4 rounded-full ring-1 ring-black/10"
-								style={{ backgroundColor: getThemeById(theme).preview }}
-							/>
-						</button>
-
-						<div className="w-px h-5 bg-gray-200 dark:bg-gray-700 mx-1" />
-
-						{/* Export/Import */}
-						<button
-							onClick={exportFormJson}
-							className="p-2 rounded-lg text-gray-400 dark:text-gray-500 transition-smooth hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-600 dark:hover:text-gray-300"
-							title="Export form as JSON"
-						>
-							<Download className="h-4 w-4" />
-						</button>
-						<button
-							onClick={importFormJson}
-							className="p-2 rounded-lg text-gray-400 dark:text-gray-500 transition-smooth hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-600 dark:hover:text-gray-300"
-							title="Import form from JSON"
-						>
-							<Upload className="h-4 w-4" />
-						</button>
-					</div>
-
-					{/* Save status */}
-					<div className="flex items-center">
-						{saved && (
-							<span className="flex items-center gap-1 text-xs text-emerald-500 animate-fade-in">
-								<Check className="h-3 w-3" />
-								Saved
-							</span>
-						)}
-					</div>
-				</div>
-
-				{/* Theme picker (below toolbar when toggled) */}
-				{showThemePicker && (
-					<div className="mb-4 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-surface-elevated-dark p-4 animate-fade-in">
-						<div className="grid grid-cols-6 sm:grid-cols-12 gap-2">
-							{THEME_PRESETS.map((preset) => (
-								<button
-									key={preset.id}
-									onClick={() => setTheme(preset.id)}
-									className={`group relative flex flex-col items-center gap-1.5 rounded-xl p-2 transition-smooth ${
-										theme === preset.id
-											? 'bg-gray-100 dark:bg-gray-800'
-											: 'hover:bg-gray-50 dark:hover:bg-gray-800/50'
-									}`}
-									title={preset.name}
-								>
-									<div
-										className={`w-8 h-8 rounded-full shadow-sm transition-smooth group-hover:scale-110 ${
-											theme === preset.id ? 'ring-2 ring-offset-2 ring-offset-white dark:ring-offset-gray-900' : ''
-										}`}
-										style={{
-											backgroundColor: preset.preview,
-											...(theme === preset.id ? { '--tw-ring-color': preset.preview } as React.CSSProperties : {}),
-										}}
-									/>
-									<span className="text-[10px] text-gray-500 dark:text-gray-400 leading-none truncate w-full text-center">
-										{preset.name}
-									</span>
-								</button>
-							))}
-						</div>
-					</div>
-				)}
-
+			<div className="flex-1 min-w-0 overflow-y-auto px-8 py-6">
 				{/* Form preview card */}
-				<div className={`mx-auto ${previewMode === 'desktop' ? 'max-w-xl' : 'max-w-sm'} transition-all duration-300`}>
+				<div className={`mx-auto ${previewMode === 'desktop' ? 'max-w-[640px]' : 'max-w-sm'} transition-all duration-300`}>
 					{/* Form header */}
-					<div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-surface-elevated-dark p-6 sm:p-8 mb-4 shadow-sm">
+					<div
+						className="kf-panel p-7 mb-4 overflow-hidden border-t-[3px]"
+						style={{
+							borderTopColor: themePreset.preview,
+							backgroundImage: `linear-gradient(180deg, ${themePreset.colors[50]} 0%, rgba(255,255,255,0) 56px)`,
+						}}
+					>
 						<input
 							type="text"
 							value={title}
 							onChange={(e) => setTitle(e.target.value)}
 							placeholder="Untitled Form"
-							className="w-full bg-transparent text-xl font-bold outline-none placeholder-gray-300 dark:placeholder-gray-600 text-gray-900 dark:text-gray-100 mb-2"
+							className="w-full bg-transparent text-[24px] font-bold outline-none placeholder-gray-300 dark:placeholder-gray-600 text-slate-950 dark:text-gray-100 mb-2"
 						/>
 						<input
 							type="text"
 							value={description}
 							onChange={(e) => setDescription(e.target.value)}
 							placeholder="Add a description..."
-							className="w-full bg-transparent text-gray-500 dark:text-gray-400 outline-none placeholder-gray-300 dark:placeholder-gray-700 text-sm"
+							className="w-full bg-transparent text-slate-500 dark:text-gray-400 outline-none placeholder-gray-300 dark:placeholder-gray-700 text-[15px]"
 						/>
 					</div>
-
-					{/* Form settings (slug, status, thank-you, limits) */}
-					{isPublished && (
-						<FormSettings
-							slug={String(form?.slug || '')}
-							status={String(form?.status || 'draft')}
-							settings={settings}
-							onSlugChange={(newSlug) => {
-								if (formId) updateForm(formId, { slug: newSlug })
-							}}
-							onStatusChange={(newStatus) => {
-								if (formId) updateForm(formId, { status: newStatus })
-							}}
-							onSettingsChange={setSettings}
-							isOpen={showSettings}
-							onToggle={() => setShowSettings(!showSettings)}
-						/>
-					)}
 
 					{/* Field preview cards */}
 					<div className="space-y-2">
@@ -559,28 +505,23 @@ export function FormBuilder({ formId, navigate, userId }: Props) {
 								onDragOver={(e) => handleDragOver(e, index)}
 								onDrop={() => handleDrop(index)}
 								onDragEnd={handleDragEnd}
+								onUpdate={(updates) => updateField(index, updates)}
+								pipeableFields={fields.slice(0, index).filter(f => f.type !== 'section' && f.type !== 'statement' && f.type !== 'hidden')}
+								allFields={fields}
 							/>
 						))}
 					</div>
 
 					{/* Add field -- click or type / for slash command */}
 					<div className="relative mt-3">
-						<div className="flex gap-2">
-							<button
-								onClick={() => addField()}
-								className="flex-1 rounded-2xl border-2 border-dashed border-gray-200 dark:border-gray-800 py-4 text-gray-400 dark:text-gray-500 transition-smooth hover:border-brand-300 dark:hover:border-brand-700 hover:text-brand-500 flex items-center justify-center gap-2 text-sm font-medium active:scale-[0.99]"
-							>
-								<Plus className="h-4 w-4" />
-								Add field
-							</button>
-							<button
-								onClick={() => slashCommand.open(fields.length - 1)}
-								className="rounded-2xl border-2 border-dashed border-gray-200 dark:border-gray-800 px-4 py-4 text-gray-400 dark:text-gray-500 transition-smooth hover:border-brand-300 dark:hover:border-brand-700 hover:text-brand-500 flex items-center justify-center text-sm font-medium active:scale-[0.99]"
-								title="Choose field type (or press /)"
-							>
-								/
-							</button>
-						</div>
+						<button
+							onClick={() => slashCommand.open(fields.length - 1)}
+							className="flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-slate-200 bg-white/50 py-3.5 text-[14px] font-semibold text-slate-500 transition-colors hover:border-brand-300 hover:bg-brand-50/30 hover:text-brand-600 dark:border-gray-800 dark:bg-gray-900/30 dark:text-gray-500 dark:hover:border-brand-700"
+							title="Choose field type (or press /)"
+						>
+							<Plus className="h-4 w-4" />
+							Add field
+						</button>
 						<SlashCommandMenu
 							isOpen={slashCommand.isOpen}
 							query={slashCommand.query}
@@ -624,25 +565,16 @@ export function FormBuilder({ formId, navigate, userId }: Props) {
 						</p>
 					)}
 
-					{/* Keyboard shortcuts hint */}
-					{fields.length > 0 && (
-						<div className="mt-6 flex items-center justify-center gap-4 text-[10px] text-gray-300 dark:text-gray-700">
-							<span><kbd className="px-1 py-0.5 rounded bg-gray-100 dark:bg-gray-800 font-mono">Ctrl+S</kbd> save</span>
-							<span><kbd className="px-1 py-0.5 rounded bg-gray-100 dark:bg-gray-800 font-mono">Ctrl+D</kbd> duplicate</span>
-							<span><kbd className="px-1 py-0.5 rounded bg-gray-100 dark:bg-gray-800 font-mono">/</kbd> insert</span>
-							<span><kbd className="px-1 py-0.5 rounded bg-gray-100 dark:bg-gray-800 font-mono">Esc</kbd> deselect</span>
-						</div>
-					)}
-
 					{/* Bottom spacer */}
 					<div className="h-20" />
 				</div>
 			</div>
 
 			{/* Right Panel: Field settings */}
-			<div className="hidden lg:flex flex-col w-[280px] shrink-0 border-l border-gray-100 dark:border-gray-800/50 overflow-y-auto">
-				<div className="p-4">
-					<h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3">Field settings</h3>
+			<div className="hidden lg:flex h-full flex-col w-[320px] shrink-0 border-l border-slate-200 dark:border-gray-800/50 bg-white/70 dark:bg-gray-950/70 overflow-y-auto">
+				<div className="px-5 py-5">
+					<h3 className="text-[16px] font-semibold text-slate-950 dark:text-gray-100">Field settings</h3>
+					<p className="mt-1 text-[12px] text-slate-500 dark:text-gray-500">Edit the selected question.</p>
 				</div>
 				{activeFieldData && activeFieldIndex >= 0 ? (
 					<FieldSettingsPanel
@@ -673,6 +605,157 @@ export function FormBuilder({ formId, navigate, userId }: Props) {
    FieldPreviewCard -- simplified field card for center panel
    ============================================================ */
 
+type TokenSegment =
+	| { type: 'text'; value: string }
+	| { type: 'token'; value: string }
+
+function parseTokenSegments(value: string): TokenSegment[] {
+	const segments: TokenSegment[] = []
+	const regex = /\{\{([^}]+)\}\}/g
+	let cursor = 0
+	let match: RegExpExecArray | null
+	while ((match = regex.exec(value)) !== null) {
+		if (match.index > cursor) {
+			segments.push({ type: 'text', value: value.slice(cursor, match.index) })
+		}
+		segments.push({ type: 'token', value: match[1] || '' })
+		cursor = match.index + match[0].length
+	}
+	if (cursor < value.length || segments.length === 0 || segments[segments.length - 1]?.type === 'token') {
+		segments.push({ type: 'text', value: value.slice(cursor) })
+	}
+	return segments
+}
+
+function serializeTokenSegments(segments: TokenSegment[]): string {
+	return segments.map(segment => segment.type === 'token' ? `{{${segment.value}}}` : segment.value).join('')
+}
+
+function fieldDisplayName(field: FormField, allFields: FormField[]): string {
+	return field.label || `Question ${allFields.findIndex(f => f.id === field.id) + 1}`
+}
+
+function escapeRegExp(value: string): string {
+	return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function stripTrailingFieldLabel(text: string, label: string): string {
+	const trimmedLabel = label.trim()
+	if (!trimmedLabel) return text
+	const labelPattern = escapeRegExp(trimmedLabel).replace(/\s+/g, '\\s+')
+	return text.replace(new RegExp(`${labelPattern}\\s*$`, 'i'), '')
+}
+
+function LabelTokenEditor({
+	value,
+	onChange,
+	placeholder,
+	pipeableFields,
+	allFields,
+	onFocus,
+	variant = 'panel',
+}: {
+	value: string
+	onChange: (value: string) => void
+	placeholder: string
+	pipeableFields: FormField[]
+	allFields: FormField[]
+	onFocus?: () => void
+	variant?: 'inline' | 'panel'
+}) {
+	const [menuIndex, setMenuIndex] = useState<number | null>(null)
+	const segments = parseTokenSegments(value)
+
+	const commit = (next: TokenSegment[]) => onChange(serializeTokenSegments(next))
+
+	const updateText = (index: number, nextValue: string) => {
+		const slashIndex = nextValue.lastIndexOf('/')
+		const next = [...segments]
+		next[index] = { type: 'text', value: slashIndex >= 0 ? nextValue.slice(0, slashIndex) : nextValue }
+		commit(next)
+		setMenuIndex(slashIndex >= 0 && pipeableFields.length > 0 ? index : null)
+	}
+
+	const insertToken = (index: number, sourceField: FormField) => {
+		const name = fieldDisplayName(sourceField, allFields)
+		const next = [...segments]
+		const current = next[index]
+		if (current?.type === 'text') {
+			next[index] = { type: 'text', value: stripTrailingFieldLabel(current.value, name) }
+		}
+		next.splice(index + 1, 0, { type: 'token', value: name }, { type: 'text', value: '' })
+		commit(next)
+		setMenuIndex(null)
+	}
+
+	const removeToken = (index: number) => {
+		const next = segments.filter((_, segmentIndex) => segmentIndex !== index)
+		commit(next.length > 0 ? next : [{ type: 'text', value: '' }])
+	}
+
+	const shellClass = variant === 'inline'
+		? 'flex min-w-0 flex-1 flex-wrap items-center gap-1'
+		: 'relative flex min-h-[48px] w-full flex-wrap items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[14px] text-slate-900 transition-colors focus-within:border-brand-300 focus-within:ring-2 focus-within:ring-brand-500/15 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100'
+
+	const inputClass = variant === 'inline'
+		? 'min-w-[42px] flex-1 bg-transparent text-[14px] font-semibold text-slate-900 outline-none placeholder:text-gray-300 dark:text-gray-100 dark:placeholder:text-gray-600'
+		: 'min-w-[70px] flex-1 bg-transparent text-[14px] outline-none placeholder:text-slate-300 dark:placeholder:text-gray-600'
+
+	return (
+		<div className={shellClass}>
+			{segments.map((segment, index) => (
+				segment.type === 'token' ? (
+					<span key={`${index}-${segment.value}`} className="inline-flex max-w-full items-center gap-1 rounded-md bg-brand-50 px-1.5 py-0.5 text-[12px] font-semibold text-brand-700 ring-1 ring-brand-200 dark:bg-brand-900/30 dark:text-brand-200 dark:ring-brand-800/60">
+						<span className="text-[10px] font-bold opacity-60">fx</span>
+						<span className="max-w-[160px] truncate">{segment.value}</span>
+						<button
+							type="button"
+							onClick={(event) => {
+								event.stopPropagation()
+								removeToken(index)
+							}}
+							className="rounded-sm text-brand-500 hover:bg-brand-100 hover:text-brand-800 dark:text-brand-300 dark:hover:bg-brand-800"
+							aria-label={`Remove ${segment.value} reference`}
+						>
+							<X className="h-3 w-3" />
+						</button>
+					</span>
+				) : (
+					<div key={index} className="relative flex min-w-[44px] flex-1 items-center">
+						<input
+							type="text"
+							value={segment.value}
+							onChange={(event) => updateText(index, event.target.value)}
+							onFocus={onFocus}
+							placeholder={value ? '' : placeholder}
+							className={inputClass}
+						/>
+						{menuIndex === index && (
+							<div className="absolute left-0 top-full z-30 mt-2 w-64 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl shadow-slate-200/70 dark:border-gray-800 dark:bg-gray-950 dark:shadow-black/40">
+								<div className="border-b border-slate-100 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400 dark:border-gray-800 dark:text-gray-500">Insert answer</div>
+								{pipeableFields.slice(-6).map(sourceField => (
+									<button
+										key={sourceField.id}
+										type="button"
+										onMouseDown={(event) => event.preventDefault()}
+										onClick={() => insertToken(index, sourceField)}
+										className="block w-full truncate px-3 py-2 text-left text-[13px] font-medium text-slate-600 hover:bg-brand-50 hover:text-brand-700 dark:text-gray-300 dark:hover:bg-brand-900/25 dark:hover:text-brand-300"
+									>
+										{fieldDisplayName(sourceField, allFields)}
+									</button>
+								))}
+							</div>
+						)}
+					</div>
+				)
+			))}
+			{pipeableFields.length > 0 && variant === 'panel' && (
+				<span className="text-[11px] text-slate-400 dark:text-gray-500">Type / to insert an answer</span>
+			)}
+		</div>
+	)
+}
+
 function FieldPreviewCard({
 	field,
 	index,
@@ -684,6 +767,9 @@ function FieldPreviewCard({
 	onDragOver,
 	onDrop,
 	onDragEnd,
+	onUpdate,
+	pipeableFields,
+	allFields,
 }: {
 	field: FormField
 	index: number
@@ -695,12 +781,67 @@ function FieldPreviewCard({
 	onDragOver?: (e: React.DragEvent) => void
 	onDrop?: () => void
 	onDragEnd?: () => void
+	onUpdate: (updates: Partial<FormField>) => void
+	pipeableFields: FormField[]
+	allFields: FormField[]
 }) {
 	const needsOptions = ['select', 'radio', 'checkbox', 'ranking'].includes(field.type)
 	const isMatrix = field.type === 'matrix'
 	const needsScaleLabels = field.type === 'scale'
 	const isRating = field.type === 'rating'
 	const hasConditions = field.conditions && field.conditions.length > 0
+
+	if (field.type === 'section') {
+		return (
+			<div
+				onClick={onFocus}
+				draggable
+				onDragStart={(e) => {
+					e.dataTransfer.effectAllowed = 'move'
+					onDragStart?.()
+				}}
+				onDragOver={(e) => onDragOver?.(e)}
+				onDrop={() => onDrop?.()}
+				onDragEnd={() => onDragEnd?.()}
+				className={`group rounded-2xl border bg-white px-5 py-4 transition-colors dark:bg-surface-elevated-dark ${
+					isActive
+						? 'border-brand-300 ring-2 ring-brand-500/10 dark:border-brand-700'
+						: 'border-slate-200 hover:bg-slate-50/70 dark:border-gray-800 dark:hover:bg-gray-800/30'
+				}`}
+			>
+				<div className="mb-3 flex items-center gap-2 text-[12px] font-semibold uppercase tracking-wide text-slate-400 dark:text-gray-500">
+					<div className="opacity-0 group-hover:opacity-50 hover:!opacity-100 transition-smooth cursor-grab active:cursor-grabbing">
+						<GripVertical className="h-4 w-4" />
+					</div>
+					{FIELD_ICONS[field.type]}
+					<span>{index + 1}. Section</span>
+				</div>
+					<div className="flex items-center gap-4">
+						<div className="h-px flex-1 bg-slate-200 dark:bg-gray-800" />
+					<div className="min-w-0 flex-[2]">
+						<LabelTokenEditor
+							value={field.label}
+							onChange={(label) => onUpdate({ label })}
+							placeholder="Section title"
+							pipeableFields={pipeableFields}
+							allFields={allFields}
+							onFocus={onFocus}
+							variant="inline"
+						/>
+					</div>
+						<div className="h-px flex-1 bg-slate-200 dark:bg-gray-800" />
+					</div>
+				<input
+					type="text"
+					value={field.placeholder || ''}
+					onChange={(e) => onUpdate({ placeholder: e.target.value })}
+					onFocus={onFocus}
+					placeholder="Optional section description"
+					className="mt-2 w-full bg-transparent text-center text-[13px] text-slate-500 outline-none placeholder:text-slate-300 dark:text-gray-400 dark:placeholder:text-gray-700"
+				/>
+			</div>
+		)
+	}
 
 	return (
 		<div
@@ -713,14 +854,14 @@ function FieldPreviewCard({
 			onDragOver={(e) => onDragOver?.(e)}
 			onDrop={() => onDrop?.()}
 			onDragEnd={() => onDragEnd?.()}
-			className={`group rounded-xl p-4 transition-smooth cursor-pointer ${
+			className={`group rounded-2xl p-4 transition-colors cursor-pointer ${
 				isDragging
-					? 'opacity-40 border-2 border-brand-300 dark:border-brand-700 bg-white dark:bg-surface-elevated-dark'
+					? 'opacity-40 border border-brand-200 dark:border-brand-700 bg-white dark:bg-surface-elevated-dark'
 					: isDragOver
-						? 'border-2 border-brand-400 dark:border-brand-600 shadow-md shadow-brand-100 dark:shadow-none bg-white dark:bg-surface-elevated-dark'
+						? 'border border-brand-300 dark:border-brand-600 bg-white shadow-sm dark:bg-surface-elevated-dark'
 						: isActive
-							? 'border-l-[3px] border-brand-500 border-t border-r border-b border-t-gray-200 dark:border-t-gray-800 border-r-gray-200 dark:border-r-gray-800 border-b-gray-200 dark:border-b-gray-800 bg-white dark:bg-surface-elevated-dark shadow-sm'
-							: 'border border-gray-200 dark:border-gray-800 bg-white dark:bg-surface-elevated-dark hover:bg-gray-50 dark:hover:bg-gray-800/30'
+							? 'border border-brand-300 bg-white ring-2 ring-brand-500/10 dark:border-brand-700 dark:bg-surface-elevated-dark'
+							: 'border border-slate-200 dark:border-gray-800 bg-white dark:bg-surface-elevated-dark hover:bg-slate-50/70 dark:hover:bg-gray-800/30'
 			}`}
 		>
 			<div className="flex items-start gap-3">
@@ -734,9 +875,15 @@ function FieldPreviewCard({
 					<div className="flex items-center gap-2 mb-1">
 						<span className="text-gray-400 dark:text-gray-500">{FIELD_ICONS[field.type]}</span>
 						<span className="text-xs text-gray-400 dark:text-gray-500 font-medium">{index + 1}.</span>
-						<span className={`text-sm font-medium ${field.label ? 'text-gray-900 dark:text-gray-100' : 'text-gray-300 dark:text-gray-600'}`}>
-							{field.label || 'Untitled'}
-						</span>
+						<LabelTokenEditor
+							value={field.label}
+							onChange={(label) => onUpdate({ label })}
+							placeholder="Untitled"
+							pipeableFields={pipeableFields}
+							allFields={allFields}
+							onFocus={onFocus}
+							variant="inline"
+						/>
 						{field.required && (
 							<span className="text-xs text-amber-500 font-medium">*</span>
 						)}
@@ -749,19 +896,29 @@ function FieldPreviewCard({
 					<div className="ml-6">
 						{/* Text/email/phone/url/number/date/time -- show a gray line */}
 						{['text', 'email', 'phone', 'url', 'number', 'date', 'time'].includes(field.type) && (
-							<div className="h-8 rounded-lg bg-gray-100 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700/50 flex items-center px-3">
-								<span className="text-xs text-gray-300 dark:text-gray-600">
-									{field.placeholder || FIELD_TYPES.find(ft => ft.value === field.type)?.label || 'Type here...'}
-								</span>
+							<div className="h-8 rounded-lg bg-slate-50 dark:bg-gray-800/50 border border-slate-200 dark:border-gray-700/50 flex items-center px-3">
+								<input
+									type="text"
+									value={field.placeholder || ''}
+									onChange={(e) => onUpdate({ placeholder: e.target.value })}
+									onFocus={onFocus}
+									placeholder={FIELD_TYPES.find(ft => ft.value === field.type)?.label || 'Type here...'}
+									className="w-full bg-transparent text-xs text-slate-400 outline-none placeholder:text-gray-300 dark:text-gray-500 dark:placeholder:text-gray-600"
+								/>
 							</div>
 						)}
 
 						{/* Textarea -- taller gray box */}
 						{field.type === 'textarea' && (
-							<div className="h-14 rounded-lg bg-gray-100 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700/50 flex items-start px-3 pt-2">
-								<span className="text-xs text-gray-300 dark:text-gray-600">
-									{field.placeholder || 'Type your answer...'}
-								</span>
+							<div className="h-14 rounded-lg bg-slate-50 dark:bg-gray-800/50 border border-slate-200 dark:border-gray-700/50 flex items-start px-3 pt-2">
+								<input
+									type="text"
+									value={field.placeholder || ''}
+									onChange={(e) => onUpdate({ placeholder: e.target.value })}
+									onFocus={onFocus}
+									placeholder="Type your answer..."
+									className="w-full bg-transparent text-xs text-slate-400 outline-none placeholder:text-gray-300 dark:text-gray-500 dark:placeholder:text-gray-600"
+								/>
 							</div>
 						)}
 
@@ -836,14 +993,16 @@ function FieldPreviewCard({
 							</div>
 						)}
 
-						{/* Section break */}
-						{field.type === 'section' && (
-							<div className="border-t-2 border-gray-200 dark:border-gray-700 mt-1" />
-						)}
-
 						{/* Statement */}
 						{field.type === 'statement' && (
-							<p className="text-xs text-gray-400 dark:text-gray-500 italic">Display text</p>
+							<input
+								type="text"
+								value={field.placeholder || ''}
+								onChange={(e) => onUpdate({ placeholder: e.target.value })}
+								onFocus={onFocus}
+								placeholder="Display text"
+								className="w-full bg-transparent text-xs italic text-slate-400 outline-none placeholder:text-gray-300 dark:text-gray-500"
+							/>
 						)}
 
 						{/* Calculated */}
@@ -914,6 +1073,9 @@ function FieldSettingsPanel({
 	const availableFields = allFields.slice(0, index).filter(
 		f => f.type !== 'section' && f.type !== 'statement'
 	)
+	const pipeableFields = allFields.slice(0, index).filter(
+		f => f.type !== 'section' && f.type !== 'statement' && f.type !== 'hidden'
+	)
 	const hasConditions = field.conditions && field.conditions.length > 0
 
 	const addCondition = () => {
@@ -938,42 +1100,47 @@ function FieldSettingsPanel({
 		if (next.length === 0) setShowConditions(false)
 	}
 
+	const insertFormulaToken = (sourceField: FormField) => {
+		const token = `{${sourceField.label || `Question ${allFields.findIndex(f => f.id === sourceField.id) + 1}`}}`
+		const separator = field.formula && !/[+\-*/(,\s]$/.test(field.formula) ? ' + ' : ''
+		onUpdate({ formula: `${field.formula || ''}${separator}${token}` })
+	}
+
 	return (
-		<div className="px-4 pb-4 space-y-4 text-sm">
+		<div className="px-5 pb-5 space-y-5 text-sm">
 			{/* Field type selector */}
 			<div>
-				<label className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 block">
+				<label className="text-xs font-medium text-slate-500 dark:text-gray-400 mb-1.5 block">
 					Type
 				</label>
-				<div className="flex flex-wrap gap-1.5">
-					{FIELD_TYPES.map((ft) => (
-						<button
-							key={ft.value}
-							onClick={() => onUpdate({ type: ft.value })}
-							className={`inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-medium transition-smooth ${
-								field.type === ft.value
-									? 'bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300'
-									: 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
-							}`}
-						>
-							{FIELD_ICONS[ft.value]}
-							{ft.label}
-						</button>
-					))}
+				<div className="relative">
+					<span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 dark:text-gray-500">
+						{FIELD_ICONS[field.type]}
+					</span>
+					<select
+						value={field.type}
+						onChange={(e) => onUpdate({ type: e.target.value as FieldType })}
+						className="w-full appearance-none rounded-xl border border-slate-200 bg-white py-3 pl-10 pr-9 text-[14px] font-semibold text-slate-800 outline-none transition-colors focus:border-brand-300 focus:ring-2 focus:ring-brand-500/15 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100"
+					>
+						{FIELD_TYPES.map((ft) => (
+							<option key={ft.value} value={ft.value}>{ft.label}</option>
+						))}
+					</select>
+					<ChevronDown className="pointer-events-none absolute right-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
 				</div>
 			</div>
 
 			{/* Label input */}
 			<div>
-				<label className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5 block">
+				<label className="text-xs font-medium text-slate-500 dark:text-gray-400 mb-1.5 block">
 					Label
 				</label>
-				<input
-					type="text"
+				<LabelTokenEditor
 					value={field.label}
-					onChange={(e) => onUpdate({ label: e.target.value })}
+					onChange={(label) => onUpdate({ label })}
 					placeholder={`Question ${index + 1}`}
-					className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2 text-sm outline-none focus:border-brand-400 dark:focus:border-brand-600 transition-smooth text-gray-900 dark:text-gray-100 placeholder-gray-300 dark:placeholder-gray-600"
+					pipeableFields={pipeableFields}
+					allFields={allFields}
 				/>
 			</div>
 
@@ -988,7 +1155,23 @@ function FieldSettingsPanel({
 						value={field.options || ''}
 						onChange={(e) => onUpdate({ options: e.target.value })}
 						placeholder="Comma-separated: Yes, No, Maybe"
-						className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2 text-sm outline-none focus:border-brand-400 dark:focus:border-brand-600 transition-smooth"
+					className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-3 text-[14px] outline-none transition-colors focus:border-brand-300 focus:ring-2 focus:ring-brand-500/15 dark:border-gray-800 dark:bg-gray-900"
+					/>
+				</div>
+			)}
+
+			{/* Section description */}
+			{field.type === 'section' && (
+				<div>
+					<label className="text-xs font-medium text-slate-500 dark:text-gray-400 mb-1.5 block">
+						Description
+					</label>
+					<textarea
+						value={field.placeholder || ''}
+						onChange={(e) => onUpdate({ placeholder: e.target.value })}
+						placeholder="Optional text shown before the next group of questions"
+						rows={3}
+						className="w-full resize-none rounded-xl border border-slate-200 bg-white px-3.5 py-3 text-[14px] text-slate-900 outline-none transition-colors placeholder-slate-300 focus:border-brand-300 focus:ring-2 focus:ring-brand-500/15 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100 dark:placeholder-gray-600"
 					/>
 				</div>
 			)}
@@ -1103,11 +1286,24 @@ function FieldSettingsPanel({
 						type="text"
 						value={field.formula || ''}
 						onChange={(e) => onUpdate({ formula: e.target.value })}
-						placeholder="{field_id} + {field_id} or SUM({a}, {b})"
+						placeholder="{Number of guests} * 25"
 						className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2 text-sm font-mono outline-none focus:border-brand-400 dark:focus:border-brand-600 transition-smooth"
 					/>
+					{pipeableFields.length > 0 && (
+						<div className="flex flex-wrap gap-1.5">
+							{pipeableFields.slice(-5).map((sourceField) => (
+								<button
+									key={sourceField.id}
+									onClick={() => insertFormulaToken(sourceField)}
+									className="rounded-md bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-brand-50 hover:text-brand-700 dark:bg-gray-800 dark:text-gray-300"
+								>
+									{sourceField.label || `Question ${allFields.findIndex(f => f.id === sourceField.id) + 1}`}
+								</button>
+							))}
+						</div>
+					)}
 					<p className="text-[10px] text-gray-400 dark:text-gray-500">
-						Use {'{'}<em>field_id</em>{'}'} to reference fields. Supports +, -, *, /, SUM(), AVG(), IF(), CONCAT().
+						Supports +, -, *, /, SUM(), AVG(), IF(), CONCAT().
 					</p>
 				</div>
 			)}
@@ -1293,11 +1489,6 @@ function FieldSettingsPanel({
 					})}
 				</div>
 			)}
-
-			{/* Answer piping hint */}
-			<div className="text-[10px] text-gray-400 dark:text-gray-500">
-				Use <code className="bg-gray-100 dark:bg-gray-800 px-1 rounded text-[10px]">{'{'}{'{'}<em>field_id</em>{'}'}{'}'}</code> in labels for answer piping.
-			</div>
 
 			{/* Divider */}
 			<div className="border-t border-gray-100 dark:border-gray-800" />

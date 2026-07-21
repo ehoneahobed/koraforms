@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, lazy, Suspense } from 'react'
+import { useState, useEffect, useRef, useMemo, lazy, Suspense } from 'react'
 import { Routes, Route, Navigate, Outlet, useNavigate, useParams, useLocation, useSearchParams } from 'react-router-dom'
 import { useSyncStatus, useMutation, useQuery } from '@korajs/react'
 import { app } from './kora'
@@ -26,12 +26,23 @@ import {
 	Menu,
 	X,
 	ChevronDown,
-	ChevronRight,
 	ChevronsUpDown,
 	Eye,
 	Share2,
 	Send,
+	Copy,
+	ExternalLink,
+	Link as LinkIcon,
+	Code,
+	Globe,
+	Ban,
+	Lock,
+	Calendar,
+	Check,
+	QrCode,
+	Download,
 } from 'lucide-react'
+import QRCode from 'qrcode'
 import { Landing } from './pages/Landing'
 import { SignIn } from './pages/SignIn'
 import { SignUp } from './pages/SignUp'
@@ -48,6 +59,9 @@ const Privacy = lazy(() => import('./pages/Privacy').then(m => ({ default: m.Pri
 const Terms = lazy(() => import('./pages/Terms').then(m => ({ default: m.Terms })))
 import { ErrorBoundary } from './components/shared/ErrorBoundary'
 import { FORM_TEMPLATES } from './templates'
+import { copyToClipboard } from './utils/clipboard'
+import { THEME_PRESETS } from './themes'
+import type { FormSettings as FormSettingsType } from './types'
 
 // ---------------------------------------------------------------------------
 // Dark mode management
@@ -141,29 +155,29 @@ function AuthenticatedLayout() {
 	const sidebarContent = (
 		<div className="flex flex-col h-full">
 			{/* Logo */}
-			<div className="px-5 pt-6 pb-4">
+			<div className="px-8 pt-8 pb-6">
 				<button
 					onClick={() => { navigate('dashboard'); setSidebarOpen(false) }}
 					className="flex items-center gap-2.5 hover:opacity-80 transition-all duration-200"
 				>
-					<img src="/logo-icon.png" alt="KoraForms" className="w-8 h-8 rounded-lg" />
-					<span className="text-[16px] font-semibold tracking-tight text-gray-900 dark:text-gray-100">KoraForms</span>
+					<img src="/logo-icon.png" alt="KoraForms" className="w-9 h-9 rounded-xl" />
+					<span className="text-[19px] font-bold tracking-tight text-slate-950 dark:text-white">Kora<span className="text-brand-600">forms</span></span>
 				</button>
 			</div>
 
 			{/* Workspace selector */}
-			<div className="px-3 mb-1">
+			<div className="px-6 mb-6">
 				<button
-					className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800/60 transition-all duration-150 group"
+					className="w-full flex items-center gap-2.5 px-4 py-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-800 transition-all duration-150 group shadow-sm"
 					title="Switch workspace (coming soon)"
 				>
-					<div className="w-7 h-7 rounded-lg bg-brand-600 flex items-center justify-center shrink-0">
+					<div className="w-7 h-7 rounded-lg bg-brand-600 flex items-center justify-center shrink-0 shadow-sm shadow-brand-600/20">
 						<span className="text-[11px] font-bold text-white">
 							{(user?.name || 'U').charAt(0).toUpperCase()}
 						</span>
 					</div>
 					<div className="flex-1 min-w-0 text-left">
-						<p className="text-[13px] font-semibold text-gray-900 dark:text-gray-100 truncate leading-tight">
+						<p className="text-[13px] font-semibold text-slate-950 dark:text-gray-100 truncate leading-tight">
 							My Workspace
 						</p>
 						<p className="text-[11px] text-gray-400 dark:text-gray-500 truncate leading-tight">
@@ -174,10 +188,8 @@ function AuthenticatedLayout() {
 				</button>
 			</div>
 
-			<div className="mx-5 my-2 border-t border-gray-100 dark:border-gray-800/50" />
-
 			{/* Navigation */}
-			<nav className="flex-1 px-3 space-y-0.5">
+			<nav className="flex-1 px-4 space-y-2">
 				{navItems.map(({ label, icon: Icon, path }) => {
 					const active = isActive(path, label)
 					return (
@@ -185,10 +197,10 @@ function AuthenticatedLayout() {
 							key={label}
 							onClick={() => { navigate(path === '/dashboard' ? 'dashboard' : path.slice(1)); setSidebarOpen(false) }}
 							className={`
-								w-full flex items-center gap-3 px-3 py-2 rounded-lg text-[13.5px] font-medium transition-all duration-150
+								w-full flex items-center gap-3 px-4 py-3 rounded-lg text-[15px] font-medium transition-all duration-150
 								${active
 									? 'bg-brand-50 dark:bg-brand-900/25 text-brand-700 dark:text-brand-400'
-									: 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800/60 hover:text-gray-900 dark:hover:text-gray-200'
+									: 'text-slate-600 dark:text-gray-400 hover:bg-slate-100 dark:hover:bg-gray-800/60 hover:text-slate-950 dark:hover:text-gray-200'
 								}
 							`}
 						>
@@ -200,11 +212,11 @@ function AuthenticatedLayout() {
 			</nav>
 
 			{/* Bottom section: user menu, dark mode, sync */}
-			<div className="mt-auto border-t border-gray-100 dark:border-gray-800/50 px-3 pt-3 pb-4 space-y-1">
+			<div className="mt-auto px-6 pt-3 pb-7 space-y-2">
 				{/* Dark mode toggle */}
 				<button
 					onClick={() => setDark(!dark)}
-					className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800/60 hover:text-gray-700 dark:hover:text-gray-200 transition-all duration-150"
+					className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] font-medium text-slate-500 dark:text-gray-400 hover:bg-slate-100 dark:hover:bg-gray-800/60 hover:text-slate-700 dark:hover:text-gray-200 transition-all duration-150"
 					aria-label="Toggle theme"
 				>
 					{dark ? <Sun className="h-4 w-4 text-gray-400 dark:text-gray-500" /> : <Moon className="h-4 w-4 text-gray-400 dark:text-gray-500" />}
@@ -215,7 +227,7 @@ function AuthenticatedLayout() {
 				<div className="relative">
 					<button
 						onClick={() => setShowUserMenu(!showUserMenu)}
-						className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800/60 hover:text-gray-700 dark:hover:text-gray-200 transition-all duration-150"
+						className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] font-medium text-slate-500 dark:text-gray-400 hover:bg-slate-100 dark:hover:bg-gray-800/60 hover:text-slate-700 dark:hover:text-gray-200 transition-all duration-150"
 					>
 						<div className="w-5 h-5 rounded-full bg-brand-100 dark:bg-brand-900/40 flex items-center justify-center flex-shrink-0">
 							<User className="h-2.5 w-2.5 text-brand-600 dark:text-brand-400" />
@@ -250,7 +262,7 @@ function AuthenticatedLayout() {
 					)}
 				</div>
 
-				<div className="mx-1 my-1 border-t border-gray-100 dark:border-gray-800/50" />
+				<div className="mx-1 my-2 border-t border-slate-200/70 dark:border-gray-800/50" />
 
 				{/* Sync status */}
 				<SidebarSyncIndicator status={status} />
@@ -259,7 +271,7 @@ function AuthenticatedLayout() {
 	)
 
 	return (
-		<div className="min-h-screen bg-gray-50/50 dark:bg-surface-dark transition-colors duration-200">
+		<div className="min-h-screen overflow-x-hidden bg-surface dark:bg-surface-dark transition-colors duration-200">
 			{/* Mobile top bar */}
 			<header className="sticky top-0 z-40 md:hidden bg-white/80 dark:bg-surface-dark/80 backdrop-blur-xl border-b border-gray-100 dark:border-gray-800/60">
 				<div className="flex items-center justify-between px-4 h-12">
@@ -302,14 +314,14 @@ function AuthenticatedLayout() {
 			)}
 
 			{/* Desktop sidebar */}
-			<aside className="hidden md:flex md:flex-col md:fixed md:inset-y-0 md:left-0 md:w-[240px] bg-white dark:bg-gray-900 border-r border-gray-100 dark:border-gray-800/60 z-30">
+			<aside className="hidden md:flex md:flex-col md:fixed md:inset-y-0 md:left-0 md:w-[264px] bg-white/92 dark:bg-gray-950 border-r border-slate-200 dark:border-gray-800/60 z-30">
 				{sidebarContent}
 			</aside>
 
 			{/* Main content area */}
-			<main className="md:ml-[240px]">
-				<div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8 py-8 sm:py-10">
-					<div className="animate-fade-in">
+			<main className="min-w-0 overflow-x-hidden md:ml-[264px]">
+				<div className="mx-auto w-full max-w-[1440px] box-border px-4 sm:px-8 lg:px-10 py-8 sm:py-10">
+					<div className="min-w-0 animate-fade-in">
 						<AuthenticatedRoutes />
 					</div>
 				</div>
@@ -350,6 +362,7 @@ function FormPageShell({ navigate, userId }: { navigate: (path: string) => void;
 	const syncStatus = useSyncStatus()
 	const [activePanel, setActivePanel] = useState<'url' | 'share' | 'settings' | null>(null)
 	const [showShareModal, setShowShareModal] = useState(false)
+	const [publishFeedback, setPublishFeedback] = useState<'idle' | 'saving' | 'saved'>('idle')
 
 	// Load form data
 	const allForms = useQuery(app.forms.where({}).orderBy('createdAt', 'desc'))
@@ -361,6 +374,22 @@ function FormPageShell({ navigate, userId }: { navigate: (path: string) => void;
 
 	const isPublished = form ? String(form.status) === 'published' : false
 	const formTitle = form ? String(form.title || 'Untitled Form') : 'Loading...'
+	const slug = form ? String(form.slug || '') : ''
+	const formTheme = form ? String(form.theme || 'red') : 'red'
+	const formSettings = useMemo<FormSettingsType>(() => {
+		if (!form) return {}
+		try {
+			return JSON.parse(String(form.settings || '{}')) as FormSettingsType
+		} catch {
+			return {}
+		}
+	}, [form])
+	const formUrl = getPublicFormUrl(slug || formId || '')
+
+	const updateSettings = (next: FormSettingsType) => {
+		if (!formId) return
+		updateForm(formId, { settings: JSON.stringify(next) })
+	}
 
 	// Determine active tab from URL
 	const activeTab: FormShellTab = activePanel
@@ -384,6 +413,7 @@ function FormPageShell({ navigate, userId }: { navigate: (path: string) => void;
 	// Publish handler
 	const handlePublish = () => {
 		if (!formId || !form) return
+		setPublishFeedback('saving')
 		const title = String(form.title || 'Untitled Form')
 		const existingSlug = String(form.slug || '')
 		const slug = existingSlug || generateSlug(title)
@@ -391,9 +421,29 @@ function FormPageShell({ navigate, userId }: { navigate: (path: string) => void;
 			status: 'published',
 			slug,
 		})
+		window.setTimeout(() => {
+			setPublishFeedback('saved')
+			window.setTimeout(() => setPublishFeedback('idle'), 1800)
+		}, 300)
 		if (!existingSlug) {
 			setShowShareModal(true)
 		}
+	}
+
+	const handleSlugChange = (nextSlug: string) => {
+		if (!formId) return
+		const sanitized = sanitizeSlug(nextSlug)
+		if (!sanitized) return
+		updateForm(formId, { slug: sanitized })
+	}
+
+	const handleStatusChange = (status: string) => {
+		if (!formId || !form) return
+		const next: Record<string, unknown> = { status }
+		if (status === 'published' && !slug) {
+			next.slug = generateSlug(formTitle)
+		}
+		updateForm(formId, next)
 	}
 
 	// Sync status text for the breadcrumb bar
@@ -425,33 +475,33 @@ function FormPageShell({ navigate, userId }: { navigate: (path: string) => void;
 	return (
 		<div className="animate-fade-in">
 			{/* Breadcrumb bar */}
-			<div className="flex items-center justify-between mb-1">
+			<div className="flex items-center justify-between mb-3">
 				<div className="flex items-center gap-1.5 text-sm">
 					<button
 						onClick={() => navigate('dashboard')}
-						className="text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 font-medium transition-colors duration-150"
+						className="text-slate-500 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 font-medium transition-colors duration-150"
 					>
 						Forms
 					</button>
-					<ChevronRight className="h-3.5 w-3.5 text-gray-300 dark:text-gray-600" />
+					<span className="text-slate-300 dark:text-slate-700">/</span>
 					<span className="text-gray-500 dark:text-gray-400 truncate max-w-[200px] sm:max-w-[300px]">
 						{formTitle}
 					</span>
 				</div>
-				<div className="flex items-center gap-1.5 text-xs text-gray-400 dark:text-gray-500">
+				<div className="hidden lg:flex items-center gap-2 text-[13px] text-slate-500 dark:text-gray-500">
 					<span className={`w-1.5 h-1.5 rounded-full ${syncDotColor} shrink-0`} />
-					<span className="hidden sm:inline">{syncText}</span>
+					<span>{syncText}</span>
 				</div>
 			</div>
 
 			{/* Title row */}
-			<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+			<div className="flex flex-col xl:flex-row xl:items-start justify-between gap-5 mb-6">
 				<div className="flex items-center gap-3 min-w-0">
-					<h1 className="text-xl font-bold text-gray-900 dark:text-gray-100 truncate">
+					<h1 className="text-3xl font-bold text-slate-950 dark:text-gray-100 tracking-[-0.01em] truncate">
 						{formTitle}
 					</h1>
 					{form && (
-						<span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold shrink-0 ${
+						<span className={`inline-flex items-center px-3 py-1 rounded-full text-[12px] font-medium shrink-0 ${
 							isPublished
 								? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400'
 								: 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400'
@@ -460,36 +510,37 @@ function FormPageShell({ navigate, userId }: { navigate: (path: string) => void;
 						</span>
 					)}
 				</div>
-				<div className="flex items-center gap-2 shrink-0">
+				<div className="flex items-center gap-3 shrink-0">
 					{isPublished && (
 						<button
 							onClick={() => setShowShareModal(true)}
-							className="inline-flex items-center gap-1.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 transition-all duration-150 hover:bg-gray-50 dark:hover:bg-gray-700"
+							className="inline-flex items-center gap-2 kf-control px-5 py-3 text-[15px] font-semibold"
 						>
-							<Share2 className="h-3.5 w-3.5" />
+							<Share2 className="h-4 w-4" />
 							<span className="hidden sm:inline">Share</span>
 						</button>
 					)}
 					<button
 						onClick={() => routerNav(`/f/${String(form?.slug || formId)}`)}
-						className="inline-flex items-center gap-1.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 transition-all duration-150 hover:bg-gray-50 dark:hover:bg-gray-700"
+						className="inline-flex items-center gap-2 kf-control px-5 py-3 text-[15px] font-semibold"
 					>
-						<Eye className="h-3.5 w-3.5" />
+						<Eye className="h-4 w-4" />
 						<span className="hidden sm:inline">Preview</span>
 					</button>
 					<button
 						onClick={handlePublish}
-						className="inline-flex items-center gap-1.5 rounded-xl bg-brand-600 px-4 py-2 text-sm font-medium text-white shadow-sm shadow-brand-600/25 transition-all duration-150 hover:bg-brand-500 active:scale-[0.98]"
+						disabled={publishFeedback === 'saving'}
+						className="inline-flex min-w-[168px] items-center justify-center gap-2 kf-primary px-6 py-3 text-[15px] font-semibold disabled:cursor-wait disabled:opacity-85"
 					>
-						<Send className="h-3.5 w-3.5" />
-						{isPublished ? 'Publish changes' : 'Publish'}
+						{publishFeedback === 'saved' ? <Check className="h-4 w-4" /> : <Send className="h-4 w-4" />}
+						{publishFeedback === 'saving' ? 'Publishing...' : publishFeedback === 'saved' ? 'Published' : isPublished ? 'Publish changes' : 'Publish'}
 					</button>
 				</div>
 			</div>
 
 			{/* Tab navigation bar */}
-			<div className="border-b border-gray-200 dark:border-gray-800 mb-6">
-				<nav className="flex gap-0 -mb-px">
+			<div className="border-b border-slate-200 dark:border-gray-800 mb-0">
+				<nav className="flex gap-8 -mb-px">
 					{tabs.map((tab) => {
 						const isActive = activeTab === tab.key
 						return (
@@ -497,9 +548,9 @@ function FormPageShell({ navigate, userId }: { navigate: (path: string) => void;
 								key={tab.key}
 								onClick={() => handleTabClick(tab.key)}
 								className={`
-									px-4 py-2.5 text-sm font-medium transition-all duration-150 border-b-2 whitespace-nowrap
+									px-1 py-3 text-[15px] font-medium transition-all duration-150 border-b-2 whitespace-nowrap
 									${isActive
-										? 'border-brand-600 dark:border-brand-400 text-gray-900 dark:text-gray-100 font-semibold'
+										? 'border-brand-600 dark:border-brand-400 text-brand-600 dark:text-brand-400 font-semibold'
 										: 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600'
 									}
 								`}
@@ -512,20 +563,37 @@ function FormPageShell({ navigate, userId }: { navigate: (path: string) => void;
 			</div>
 
 			{/* Panel content for URL / Share / Settings tabs */}
-			{activePanel === 'url' && (
-				<div className="mb-6 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-surface-elevated-dark p-5">
-					<p className="text-sm text-gray-500 dark:text-gray-400">URL settings panel coming soon.</p>
-				</div>
+			{activePanel === 'url' && form && (
+				<FormUrlPanel
+					formId={formId}
+					title={formTitle}
+					status={String(form.status || 'draft')}
+					slug={slug}
+					formUrl={formUrl}
+					onSlugChange={handleSlugChange}
+					onPublish={handlePublish}
+				/>
 			)}
-			{activePanel === 'share' && (
-				<div className="mb-6 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-surface-elevated-dark p-5">
-					<p className="text-sm text-gray-500 dark:text-gray-400">Share settings panel coming soon.</p>
-				</div>
+			{activePanel === 'share' && form && (
+				<FormSharePanel
+					title={formTitle}
+					isPublished={isPublished}
+					slug={slug || formId}
+					formUrl={formUrl}
+					resultsUrl={`${formUrl}/results`}
+					publicResults={!!formSettings.publicResults}
+					onPublish={handlePublish}
+				/>
 			)}
-			{activePanel === 'settings' && (
-				<div className="mb-6 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-surface-elevated-dark p-5">
-					<p className="text-sm text-gray-500 dark:text-gray-400">Form settings panel coming soon.</p>
-				</div>
+			{activePanel === 'settings' && form && (
+				<FormSettingsPanel
+					status={String(form.status || 'draft')}
+					theme={formTheme}
+					settings={formSettings}
+					onStatusChange={handleStatusChange}
+					onThemeChange={(theme) => updateForm(formId, { theme })}
+					onSettingsChange={updateSettings}
+				/>
 			)}
 
 			{/* Render child route content (FormBuilder or FormResponses) */}
@@ -544,6 +612,528 @@ function FormPageShell({ navigate, userId }: { navigate: (path: string) => void;
 				/>
 			)}
 		</div>
+	)
+}
+
+function getPublicFormUrl(identifier: string) {
+	const origin = typeof window === 'undefined' ? '' : window.location.origin
+	return `${origin}/f/${identifier}`
+}
+
+function sanitizeSlug(value: string) {
+	return value
+		.toLowerCase()
+		.trim()
+		.replace(/[^a-z0-9-]/g, '-')
+		.replace(/-+/g, '-')
+		.replace(/^-|-$/g, '')
+}
+
+function timestampToDatetimeLocal(ts: number | undefined): string {
+	if (!ts) return ''
+	const d = new Date(ts)
+	const offset = d.getTimezoneOffset()
+	const local = new Date(d.getTime() - offset * 60000)
+	return local.toISOString().slice(0, 16)
+}
+
+function datetimeLocalToTimestamp(value: string): number | undefined {
+	if (!value) return undefined
+	return new Date(value).getTime()
+}
+
+function FormUrlPanel({
+	formId,
+	title,
+	status,
+	slug,
+	formUrl,
+	onSlugChange,
+	onPublish,
+}: {
+	formId: string
+	title: string
+	status: string
+	slug: string
+	formUrl: string
+	onSlugChange: (slug: string) => void
+	onPublish: () => void
+}) {
+	const [draftSlug, setDraftSlug] = useState(slug || generateSlug(title))
+	const [copied, setCopied] = useState(false)
+	const isPublished = status === 'published'
+
+	useEffect(() => {
+		setDraftSlug(slug || generateSlug(title))
+	}, [slug, title])
+
+	const saveSlug = () => {
+		const sanitized = sanitizeSlug(draftSlug || formId)
+		setDraftSlug(sanitized)
+		onSlugChange(sanitized)
+	}
+
+	const copyUrl = () => {
+		copyToClipboard(formUrl)
+		setCopied(true)
+		setTimeout(() => setCopied(false), 1600)
+	}
+
+	return (
+		<section className="py-8 animate-fade-in">
+			<div className="mx-auto max-w-4xl space-y-6">
+				<div>
+					<h2 className="text-[22px] font-semibold tracking-tight text-slate-950 dark:text-gray-100">Public URL</h2>
+					<p className="mt-1 text-[14px] text-slate-500 dark:text-gray-400">Choose the public address people use to open this form.</p>
+				</div>
+
+				<div className="kf-panel p-6">
+					<div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+						<div className="min-w-0 flex-1">
+							<div className="mb-2 flex items-center gap-2 text-[13px] font-semibold text-slate-600 dark:text-gray-300">
+								<LinkIcon className="h-4 w-4 text-slate-400" />
+								Form link
+							</div>
+							<div className="flex min-w-0 items-center rounded-xl border border-slate-200 bg-slate-50 dark:border-gray-800 dark:bg-gray-900">
+								<span className="hidden shrink-0 pl-4 pr-1 text-[13px] text-slate-400 sm:inline">
+									{typeof window === 'undefined' ? '' : window.location.origin}/f/
+								</span>
+								<input
+									value={draftSlug}
+									onChange={(event) => setDraftSlug(event.target.value)}
+									onBlur={saveSlug}
+									className="min-w-0 flex-1 bg-transparent px-4 py-3 text-[15px] font-medium text-slate-900 outline-none placeholder:text-slate-300 dark:text-gray-100 sm:px-1"
+									placeholder="form-url"
+								/>
+							</div>
+							<p className="mt-2 truncate text-[12px] text-slate-400 dark:text-gray-500">{formUrl}</p>
+						</div>
+						<div className="flex shrink-0 flex-wrap gap-2">
+							<button onClick={copyUrl} className="inline-flex items-center gap-2 kf-control px-4 py-2.5 text-[13px] font-semibold">
+								{copied ? <Check className="h-4 w-4 text-emerald-500" /> : <Copy className="h-4 w-4" />}
+								{copied ? 'Copied' : 'Copy'}
+							</button>
+							<a href={formUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 kf-control px-4 py-2.5 text-[13px] font-semibold">
+								<ExternalLink className="h-4 w-4" />
+								Open
+							</a>
+						</div>
+					</div>
+				</div>
+
+				{!isPublished && (
+					<div className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-[14px] text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-200">
+						This form is still a draft. Publish it when you are ready for people to use this URL.
+						<button onClick={onPublish} className="ml-3 font-semibold underline decoration-amber-400 underline-offset-4">
+							Publish now
+						</button>
+					</div>
+				)}
+			</div>
+		</section>
+	)
+}
+
+function FormSharePanel({
+	title,
+	isPublished,
+	slug,
+	formUrl,
+	resultsUrl,
+	publicResults,
+	onPublish,
+}: {
+	title: string
+	isPublished: boolean
+	slug: string
+	formUrl: string
+	resultsUrl: string
+	publicResults: boolean
+	onPublish: () => void
+}) {
+	const [copied, setCopied] = useState<'link' | 'embed' | 'results' | null>(null)
+	const [embedMode, setEmbedMode] = useState<'inline' | 'popup' | 'slidein'>('inline')
+	const [qrDataUrl, setQrDataUrl] = useState('')
+	const baseUrl = typeof window === 'undefined' ? '' : window.location.origin
+
+	useEffect(() => {
+		QRCode.toDataURL(formUrl, {
+			width: 480,
+			margin: 2,
+			color: { dark: '#111827', light: '#ffffff' },
+			errorCorrectionLevel: 'M',
+		}).then(setQrDataUrl).catch(console.error)
+	}, [formUrl])
+
+	const getEmbedCode = (mode: 'inline' | 'popup' | 'slidein') => {
+		if (mode === 'inline') {
+			return `<iframe src="${formUrl}?embed=1" width="100%" height="600" frameborder="0" style="border:none;border-radius:12px;"></iframe>`
+		}
+		if (mode === 'popup') {
+			return `<script src="${baseUrl}/embed.js"></script>\n<button onclick="KoraForms.popup('${slug}')">Open Form</button>`
+		}
+		return `<script src="${baseUrl}/embed.js"></script>\n<script>KoraForms.slideIn('${slug}', { position: 'right' })</script>`
+	}
+
+	const embedCode = getEmbedCode(embedMode)
+	const copy = (value: string, key: 'link' | 'embed' | 'results') => {
+		copyToClipboard(value)
+		setCopied(key)
+		setTimeout(() => setCopied(null), 1600)
+	}
+	const downloadQR = () => {
+		if (!qrDataUrl) return
+		const a = document.createElement('a')
+		a.href = qrDataUrl
+		a.download = `${slug}-qr-code.png`
+		a.click()
+	}
+
+	return (
+		<section className="py-8 animate-fade-in">
+			<div className="mx-auto max-w-6xl space-y-6">
+				<div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+					<div>
+						<h2 className="text-[22px] font-semibold tracking-tight text-slate-950 dark:text-gray-100">Share</h2>
+						<p className="mt-1 text-[14px] text-slate-500 dark:text-gray-400">Share {title} by link, social post, embed, QR code, or results link.</p>
+					</div>
+					{!isPublished && (
+						<button onClick={onPublish} className="inline-flex items-center justify-center gap-2 kf-primary px-5 py-3 text-[14px] font-semibold">
+							<Send className="h-4 w-4" />
+							Publish to share
+						</button>
+					)}
+				</div>
+
+				<div className="grid gap-4 xl:grid-cols-[1fr_1fr]">
+					<div className="kf-panel p-6">
+						<div className="flex h-full flex-col justify-between gap-6">
+							<div>
+								<div className="mb-3 inline-flex h-10 w-10 items-center justify-center rounded-xl bg-brand-50 text-brand-600 dark:bg-brand-900/25 dark:text-brand-300">
+									<Globe className="h-5 w-5" />
+								</div>
+								<h3 className="text-[17px] font-semibold text-slate-950 dark:text-gray-100">Public form link</h3>
+								<p className="mt-1 text-[13px] text-slate-500 dark:text-gray-400">Use this link in email, chat, or your website.</p>
+							</div>
+							<div className="space-y-3">
+								<div className="truncate rounded-xl bg-slate-50 px-4 py-3 text-[13px] text-slate-500 dark:bg-gray-900 dark:text-gray-400">{formUrl}</div>
+								<div className="flex flex-wrap gap-2">
+									<button onClick={() => copy(formUrl, 'link')} className="inline-flex items-center gap-2 kf-control px-4 py-2.5 text-[13px] font-semibold">
+										{copied === 'link' ? <Check className="h-4 w-4 text-emerald-500" /> : <Copy className="h-4 w-4" />}
+										{copied === 'link' ? 'Copied' : 'Copy link'}
+									</button>
+									<a href={formUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 kf-control px-4 py-2.5 text-[13px] font-semibold">
+										<ExternalLink className="h-4 w-4" />
+										Open
+									</a>
+								</div>
+								<div className="mt-4">
+									<p className="mb-2 text-[12px] font-semibold text-slate-500 dark:text-gray-400">Share on social</p>
+									<div className="grid grid-cols-3 gap-2">
+										<a href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(`Check out "${title}" on KoraForms`)}&url=${encodeURIComponent(formUrl)}`} target="_blank" rel="noreferrer" className="rounded-lg border border-slate-200 px-3 py-2 text-center text-[12px] font-medium text-slate-600 hover:bg-slate-50 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800">X</a>
+										<a href={`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(formUrl)}`} target="_blank" rel="noreferrer" className="rounded-lg border border-slate-200 px-3 py-2 text-center text-[12px] font-medium text-slate-600 hover:bg-slate-50 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800">LinkedIn</a>
+										<a href={`https://wa.me/?text=${encodeURIComponent(`${title}: ${formUrl}`)}`} target="_blank" rel="noreferrer" className="rounded-lg border border-slate-200 px-3 py-2 text-center text-[12px] font-medium text-slate-600 hover:bg-slate-50 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800">WhatsApp</a>
+									</div>
+								</div>
+							</div>
+						</div>
+					</div>
+
+					<div className="kf-panel p-6">
+						<div className="mb-4 inline-flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-600 dark:bg-gray-800 dark:text-gray-300">
+							<Code className="h-5 w-5" />
+						</div>
+						<h3 className="text-[17px] font-semibold text-slate-950 dark:text-gray-100">Embed</h3>
+						<p className="mt-1 text-[13px] text-slate-500 dark:text-gray-400">Place the form inline, open it as a popup, or slide it into the page.</p>
+						<div className="mt-4 flex rounded-xl bg-slate-100 p-1 dark:bg-gray-800">
+							{[
+								{ value: 'inline' as const, label: 'Inline' },
+								{ value: 'popup' as const, label: 'Popup' },
+								{ value: 'slidein' as const, label: 'Slide-in' },
+							].map(option => (
+								<button
+									key={option.value}
+									onClick={() => setEmbedMode(option.value)}
+									className={`flex-1 rounded-lg px-3 py-2 text-[12px] font-semibold transition-colors ${
+										embedMode === option.value
+											? 'bg-white text-slate-900 shadow-sm dark:bg-gray-700 dark:text-gray-100'
+											: 'text-slate-500 hover:text-slate-700 dark:text-gray-400 dark:hover:text-gray-200'
+									}`}
+								>
+									{option.label}
+								</button>
+							))}
+						</div>
+						<textarea
+							readOnly
+							value={embedCode}
+							rows={4}
+							className="mt-4 w-full resize-none rounded-xl border border-slate-200 bg-slate-50 p-3 font-mono text-[12px] text-slate-600 outline-none dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300"
+						/>
+						<button onClick={() => copy(embedCode, 'embed')} className="mt-3 inline-flex items-center gap-2 kf-control px-4 py-2.5 text-[13px] font-semibold">
+							{copied === 'embed' ? <Check className="h-4 w-4 text-emerald-500" /> : <Copy className="h-4 w-4" />}
+							{copied === 'embed' ? 'Copied' : 'Copy embed'}
+						</button>
+						<p className="mt-2 text-[11px] text-slate-400 dark:text-gray-500">
+							{embedMode === 'inline' && 'Paste this where the form should appear.'}
+							{embedMode === 'popup' && 'Adds a button that opens the form in a centered popup.'}
+							{embedMode === 'slidein' && 'Slides the form in from the right side of the page.'}
+						</p>
+					</div>
+				</div>
+
+				<div className="grid gap-4 xl:grid-cols-[.85fr_1.15fr]">
+					<div className="kf-panel p-6">
+						<div className="mb-4 inline-flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-600 dark:bg-gray-800 dark:text-gray-300">
+							<QrCode className="h-5 w-5" />
+						</div>
+						<h3 className="text-[17px] font-semibold text-slate-950 dark:text-gray-100">QR code</h3>
+						<p className="mt-1 text-[13px] text-slate-500 dark:text-gray-400">Print it, place it on slides, or share it where scanning is easier than typing.</p>
+						<div className="mt-5 flex flex-col items-center gap-4">
+							{qrDataUrl ? (
+								<div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-gray-800">
+									<img src={qrDataUrl} alt={`QR code for ${title}`} className="h-44 w-44" />
+								</div>
+							) : (
+								<div className="h-44 w-44 rounded-2xl bg-slate-100 animate-pulse dark:bg-gray-800" />
+							)}
+							<div className="flex flex-wrap justify-center gap-2">
+								<button onClick={downloadQR} className="inline-flex items-center gap-2 kf-control px-4 py-2.5 text-[13px] font-semibold">
+									<Download className="h-4 w-4" />
+									Download PNG
+								</button>
+								<button onClick={() => copy(formUrl, 'link')} className="inline-flex items-center gap-2 kf-control px-4 py-2.5 text-[13px] font-semibold">
+									{copied === 'link' ? <Check className="h-4 w-4 text-emerald-500" /> : <Copy className="h-4 w-4" />}
+									{copied === 'link' ? 'Copied' : 'Copy link'}
+								</button>
+							</div>
+						</div>
+					</div>
+
+					<div className="kf-panel p-5">
+					<div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+						<div>
+							<h3 className="text-[15px] font-semibold text-slate-950 dark:text-gray-100">Public results</h3>
+							<p className="mt-1 text-[13px] text-slate-500 dark:text-gray-400">
+								{publicResults ? 'Results are available to anyone with the results link.' : 'Enable public results from Settings when you want viewers to see responses.'}
+							</p>
+						</div>
+						<button
+							onClick={() => copy(resultsUrl, 'results')}
+							disabled={!publicResults}
+							className="inline-flex items-center justify-center gap-2 kf-control px-4 py-2.5 text-[13px] font-semibold disabled:cursor-not-allowed disabled:opacity-45"
+						>
+							{copied === 'results' ? <Check className="h-4 w-4 text-emerald-500" /> : <Copy className="h-4 w-4" />}
+							{copied === 'results' ? 'Copied' : 'Copy results link'}
+						</button>
+					</div>
+					</div>
+				</div>
+			</div>
+		</section>
+	)
+}
+
+function FormSettingsPanel({
+	status,
+	theme,
+	settings,
+	onStatusChange,
+	onThemeChange,
+	onSettingsChange,
+}: {
+	status: string
+	theme: string
+	settings: FormSettingsType
+	onStatusChange: (status: string) => void
+	onThemeChange: (theme: string) => void
+	onSettingsChange: (settings: FormSettingsType) => void
+}) {
+	const updateSetting = <K extends keyof FormSettingsType>(key: K, value: FormSettingsType[K]) => {
+		onSettingsChange({ ...settings, [key]: value })
+	}
+
+	return (
+		<section className="py-8 animate-fade-in">
+			<div className="mx-auto max-w-5xl space-y-6">
+				<div>
+					<h2 className="text-[22px] font-semibold tracking-tight text-slate-950 dark:text-gray-100">Settings</h2>
+					<p className="mt-1 text-[14px] text-slate-500 dark:text-gray-400">Control form behavior, access, and presentation.</p>
+				</div>
+
+				<div className="grid gap-4 lg:grid-cols-[1fr_1fr]">
+					<div className="kf-panel p-6">
+						<h3 className="text-[15px] font-semibold text-slate-950 dark:text-gray-100">Availability</h3>
+						<div className="mt-4 grid grid-cols-3 gap-2">
+							{[
+								{ value: 'draft', label: 'Draft', icon: Ban },
+								{ value: 'published', label: 'Live', icon: Globe },
+								{ value: 'closed', label: 'Closed', icon: Lock },
+							].map(({ value, label, icon: Icon }) => (
+								<button
+									key={value}
+									onClick={() => onStatusChange(value)}
+									className={`flex items-center justify-center gap-2 rounded-xl border px-3 py-2.5 text-[13px] font-semibold transition-colors ${
+										status === value
+											? 'border-brand-200 bg-brand-50 text-brand-700 dark:border-brand-800 dark:bg-brand-900/25 dark:text-brand-300'
+											: 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400 dark:hover:bg-gray-800'
+									}`}
+								>
+									<Icon className="h-4 w-4" />
+									{label}
+								</button>
+							))}
+						</div>
+
+						<div className="mt-5 grid gap-3 sm:grid-cols-2">
+							<label className="block">
+								<span className="mb-1.5 flex items-center gap-1.5 text-[12px] font-medium text-slate-500 dark:text-gray-400">
+									<Calendar className="h-3.5 w-3.5" />
+									Opens
+								</span>
+								<input
+									type="datetime-local"
+									value={timestampToDatetimeLocal(settings.opensAt)}
+									onChange={(event) => updateSetting('opensAt', datetimeLocalToTimestamp(event.target.value))}
+									className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-[13px] text-slate-700 outline-none focus:border-brand-300 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300"
+								/>
+							</label>
+							<label className="block">
+								<span className="mb-1.5 flex items-center gap-1.5 text-[12px] font-medium text-slate-500 dark:text-gray-400">
+									<Calendar className="h-3.5 w-3.5" />
+									Closes
+								</span>
+								<input
+									type="datetime-local"
+									value={timestampToDatetimeLocal(settings.closesAt)}
+									onChange={(event) => updateSetting('closesAt', datetimeLocalToTimestamp(event.target.value))}
+									className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-[13px] text-slate-700 outline-none focus:border-brand-300 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300"
+								/>
+							</label>
+						</div>
+					</div>
+
+					<div className="kf-panel p-6">
+						<h3 className="text-[15px] font-semibold text-slate-950 dark:text-gray-100">Theme</h3>
+						<p className="mt-1 text-[13px] text-slate-500 dark:text-gray-400">Applied as a restrained accent on the public form.</p>
+						<div className="mt-4 grid grid-cols-4 gap-2 sm:grid-cols-7">
+							{THEME_PRESETS.map((preset) => (
+								<button
+									key={preset.id}
+									onClick={() => onThemeChange(preset.id)}
+									className={`rounded-xl p-2 text-center transition-colors ${
+										theme === preset.id ? 'bg-slate-100 dark:bg-gray-800' : 'hover:bg-slate-50 dark:hover:bg-gray-800/60'
+									}`}
+									title={preset.name}
+								>
+									<span
+										className="mx-auto block h-8 w-8 rounded-full ring-1 ring-black/10"
+										style={{
+											backgroundColor: preset.preview,
+											...(theme === preset.id ? { boxShadow: `0 0 0 3px ${preset.colors[100]}` } : {}),
+										}}
+									/>
+									<span className="mt-1 block truncate text-[10px] text-slate-500 dark:text-gray-400">{preset.name}</span>
+								</button>
+							))}
+						</div>
+					</div>
+				</div>
+
+				<div className="grid gap-4 lg:grid-cols-[1.1fr_.9fr]">
+					<div className="kf-panel p-6">
+						<h3 className="text-[15px] font-semibold text-slate-950 dark:text-gray-100">After Submit</h3>
+						<label className="mt-4 block">
+							<span className="mb-1.5 block text-[12px] font-medium text-slate-500 dark:text-gray-400">Thank-you message</span>
+							<textarea
+								value={settings.thankYouMessage || ''}
+								onChange={(event) => updateSetting('thankYouMessage', event.target.value)}
+								rows={3}
+								placeholder="Thanks. Your response has been received."
+								className="w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-[14px] text-slate-700 outline-none focus:border-brand-300 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300"
+							/>
+						</label>
+						<label className="mt-3 block">
+							<span className="mb-1.5 block text-[12px] font-medium text-slate-500 dark:text-gray-400">Redirect URL</span>
+							<input
+								type="url"
+								value={settings.redirectUrl || ''}
+								onChange={(event) => updateSetting('redirectUrl', event.target.value)}
+								placeholder="https://example.com/thank-you"
+								className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-[14px] text-slate-700 outline-none focus:border-brand-300 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300"
+							/>
+						</label>
+					</div>
+
+					<div className="kf-panel p-6">
+						<h3 className="text-[15px] font-semibold text-slate-950 dark:text-gray-100">Responses</h3>
+						<div className="mt-4 space-y-4">
+							<SettingsCheckbox
+								label="Allow multiple submissions"
+								checked={settings.allowMultiple !== false}
+								onChange={(checked) => updateSetting('allowMultiple', checked)}
+							/>
+							<SettingsCheckbox
+								label="Public results"
+								checked={!!settings.publicResults}
+								onChange={(checked) => updateSetting('publicResults', checked)}
+							/>
+							<SettingsCheckbox
+								label="Show results after submit"
+								checked={!!settings.showResultsAfterSubmit}
+								disabled={!settings.publicResults}
+								onChange={(checked) => updateSetting('showResultsAfterSubmit', checked)}
+							/>
+							<label className="block">
+								<span className="mb-1.5 block text-[12px] font-medium text-slate-500 dark:text-gray-400">Response limit</span>
+								<input
+									type="number"
+									min={0}
+									value={settings.maxResponses || 0}
+									onChange={(event) => updateSetting('maxResponses', Number(event.target.value) || undefined)}
+									className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-[14px] text-slate-700 outline-none focus:border-brand-300 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300"
+								/>
+							</label>
+							<label className="block">
+								<span className="mb-1.5 block text-[12px] font-medium text-slate-500 dark:text-gray-400">Password</span>
+								<input
+									type="password"
+									value={settings.password || ''}
+									onChange={(event) => updateSetting('password', event.target.value || undefined)}
+									placeholder="Optional"
+									className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-[14px] text-slate-700 outline-none focus:border-brand-300 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300"
+								/>
+							</label>
+						</div>
+					</div>
+				</div>
+			</div>
+		</section>
+	)
+}
+
+function SettingsCheckbox({
+	label,
+	checked,
+	disabled,
+	onChange,
+}: {
+	label: string
+	checked: boolean
+	disabled?: boolean
+	onChange: (checked: boolean) => void
+}) {
+	return (
+		<label className={`flex items-center justify-between gap-4 text-[13px] font-medium text-slate-600 dark:text-gray-300 ${disabled ? 'opacity-45' : ''}`}>
+			<span>{label}</span>
+			<input
+				type="checkbox"
+				checked={checked}
+				disabled={disabled}
+				onChange={(event) => onChange(event.target.checked)}
+				className="h-4 w-4 rounded border-slate-300 accent-brand-600"
+			/>
+		</label>
 	)
 }
 
@@ -589,7 +1179,7 @@ function FormBuilderPage({ navigate, userId }: { navigate: (path: string) => voi
 			fields: JSON.stringify(template?.fields || []),
 			status: 'draft',
 			ownerId: userId,
-			theme: 'blue',
+			theme: 'red',
 		}
 
 		createForm(data).then((record) => {

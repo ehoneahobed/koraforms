@@ -10,6 +10,7 @@ import {
 	Lightbulb, ListChecks
 } from 'lucide-react'
 import type { FormField } from '../types'
+import { pipeValues } from '../types'
 import { computeCrossInsights } from '../utils/analytics'
 import { ShareModal } from '../components/shared/ShareModal'
 
@@ -28,7 +29,7 @@ type ExportRange = 'all' | 'date' | 'custom'
 type TimeRange = '7d' | '14d' | '30d' | '90d' | 'all'
 
 const SUB_TABS: { key: SubTab; label: string; icon: typeof Inbox }[] = [
-	{ key: 'all', label: 'All', icon: Inbox },
+	{ key: 'all', label: 'Inbox', icon: Inbox },
 	{ key: 'analytics', label: 'Analytics', icon: BarChart3 },
 	{ key: 'insights', label: 'Field insights', icon: Lightbulb },
 	{ key: 'todo', label: 'To do', icon: ListChecks },
@@ -125,6 +126,33 @@ function parseUA(ua: string): { browser: string; os: string; device: string } {
 	return { browser, os, device }
 }
 
+function isResponseField(field: FormField): boolean {
+	return field.type !== 'section' && field.type !== 'statement' && field.type !== 'hidden'
+}
+
+function responseFields(fields: FormField[]): FormField[] {
+	return fields.filter(isResponseField)
+}
+
+function fieldLabel(field: FormField, data: Record<string, unknown>, fields: FormField[]): string {
+	const stringData = Object.fromEntries(Object.entries(data).map(([key, value]) => [key, value == null ? '' : String(value)]))
+	return pipeValues(field.label || field.id, stringData, fields)
+}
+
+function formatResponseValue(field: FormField, value: unknown): { kind: 'empty' | 'text' | 'list'; values: string[] } {
+	if (value == null || value === '') return { kind: 'empty', values: [] }
+	const raw = String(value)
+	if (field.type === 'checkbox' || field.type === 'ranking') {
+		const values = raw.split(',').map(part => part.trim()).filter(Boolean)
+		return values.length > 0 ? { kind: 'list', values } : { kind: 'empty', values: [] }
+	}
+	if (field.type === 'rating') return { kind: 'text', values: [`${raw} star${raw === '1' ? '' : 's'}`] }
+	if (field.type === 'scale') return { kind: 'text', values: [`${raw} / 10`] }
+	if (field.type === 'file') return { kind: 'text', values: [raw] }
+	if (field.type === 'signature') return { kind: 'text', values: raw.startsWith('data:image') ? ['Signature captured'] : [raw] }
+	if (field.type === 'calculated') return { kind: 'text', values: [raw] }
+	return { kind: 'text', values: [raw] }
+}
 
 // ============================================================================
 // Main FormResponses Component
@@ -284,8 +312,8 @@ export function FormResponses({ formId, navigate }: Props) {
 	const exportCsv = (selectedFieldIds?: string[]) => {
 		if (responses.length === 0) return
 		const exportFields = selectedFieldIds
-			? fields.filter(f => selectedFieldIds.includes(f.id))
-			: fields
+			? responseFields(fields).filter(f => selectedFieldIds.includes(f.id))
+			: responseFields(fields)
 		const headers = ['#', 'Submitted At', ...exportFields.map(f => f.label || f.id)]
 		const rows = responses.map((r, i) => {
 			let data: Record<string, string> = {}
@@ -302,8 +330,8 @@ export function FormResponses({ formId, navigate }: Props) {
 	const exportJson = (selectedFieldIds?: string[]) => {
 		if (responses.length === 0) return
 		const exportFields = selectedFieldIds
-			? fields.filter(f => selectedFieldIds.includes(f.id))
-			: fields
+			? responseFields(fields).filter(f => selectedFieldIds.includes(f.id))
+			: responseFields(fields)
 		const exported = responses.map((r, i) => {
 			let data: Record<string, string> = {}
 			try { data = JSON.parse(String(r.data || '{}')) } catch { /* ignore */ }
@@ -327,8 +355,8 @@ export function FormResponses({ formId, navigate }: Props) {
 		const allData = responses.map(r => {
 			try { return JSON.parse(String(r.data || '{}')) as Record<string, string> } catch { return {} }
 		})
-		const fieldSummaries = fields
-			.filter(f => f.type !== 'section' && f.type !== 'statement')
+		const reportFields = responseFields(fields)
+		const fieldSummaries = reportFields
 			.map(field => {
 				const vals = allData.map(d => d[field.id] ?? '').filter(v => v !== '')
 				const isCategorical = ['select', 'radio', 'checkbox', 'yesno'].includes(field.type)
@@ -392,7 +420,7 @@ tr:nth-child(even){background:#fafafa}
 <p class="subtitle">Report generated on ${now} &bull; ${responses.length} response${responses.length !== 1 ? 's' : ''}</p>
 <div class="stats">
 <div class="stat"><div class="stat-label">Responses</div><div class="stat-value">${responses.length}</div></div>
-<div class="stat"><div class="stat-label">Fields</div><div class="stat-value">${fields.length}</div></div>
+<div class="stat"><div class="stat-label">Fields</div><div class="stat-value">${reportFields.length}</div></div>
 <div class="stat"><div class="stat-label">Avg. Time</div><div class="stat-value">${avgTime}</div></div>
 <div class="stat"><div class="stat-label">Date Range</div><div class="stat-value" style="font-size:13px">${responses.length > 0 && responses.at(-1)?.submittedAt ? new Date(Number(responses.at(-1)!.submittedAt)).toLocaleDateString('en', { month: 'short', day: 'numeric' }) : '—'} — ${responses.length > 0 && responses[0]?.submittedAt ? new Date(Number(responses[0].submittedAt)).toLocaleDateString('en', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</div></div>
 </div>
@@ -410,11 +438,11 @@ ${fieldSummaries.map(s => {
 			return `<div class="field-card"><div class="field-name">${s.label}</div><div class="text-stats">${s.total} responses, ${s.unique} unique values</div></div>`
 		}).join('\n')}
 <h2>All Responses</h2>
-<table><thead><tr><th>#</th><th>Date</th>${fields.slice(0, 8).map(f => `<th>${f.label || f.id}</th>`).join('')}</tr></thead><tbody>
+<table><thead><tr><th>#</th><th>Date</th>${reportFields.slice(0, 8).map(f => `<th>${f.label || f.id}</th>`).join('')}</tr></thead><tbody>
 ${responses.slice(0, 100).map((r, i) => {
 			const data = allData[i] ?? {}
 			const date = r.submittedAt ? new Date(Number(r.submittedAt)).toLocaleDateString() : ''
-			return `<tr><td>${responses.length - i}</td><td>${date}</td>${fields.slice(0, 8).map(f => `<td>${(data[f.id] || '—').slice(0, 60)}</td>`).join('')}</tr>`
+			return `<tr><td>${responses.length - i}</td><td>${date}</td>${reportFields.slice(0, 8).map(f => `<td>${(data[f.id] || '—').slice(0, 60)}</td>`).join('')}</tr>`
 		}).join('\n')}
 </tbody></table>
 ${responses.length > 100 ? `<p style="text-align:center;color:#888;margin-top:8px;font-size:12px">Showing first 100 of ${responses.length} responses</p>` : ''}
@@ -452,32 +480,46 @@ ${responses.length > 100 ? `<p style="text-align:center;color:#888;margin-top:8p
 		)
 	}
 
-	// --- Key fields for table (first 3 non-section fields) ---
-	const tableFields = fields.filter(f => f.type !== 'section' && f.type !== 'statement').slice(0, 3)
+	// --- Key fields for table (first 3 respondent-answer fields) ---
+	const tableFields = responseFields(fields).slice(0, 3)
 
 	// ========================================================================
 	// RENDER
 	// ========================================================================
 	return (
-		<div className="animate-fade-in">
+		<div className="animate-fade-in kf-panel rounded-t-none border-t-0 p-5 sm:p-6">
 			{/* ---------------------------------------------------------------- */}
 			{/* Sub-tabs                                                         */}
 			{/* ---------------------------------------------------------------- */}
-			<div className="border-b border-gray-200 dark:border-gray-800 mb-6">
-				<nav className="flex gap-6" aria-label="Response tabs">
+			<div className="border-b border-slate-200 dark:border-gray-800 mb-6 -mx-5 sm:-mx-6 px-5 sm:px-6">
+				<div className="flex items-center justify-between gap-4">
+					<div>
+						<h2 className="text-2xl font-bold text-slate-950 dark:text-gray-100 tracking-[-0.01em]">Responses</h2>
+						<p className="text-[15px] text-slate-500 dark:text-gray-400 mt-2">Review, organise and understand every submission.</p>
+					</div>
+					<button
+						onClick={() => setShowExportModal(true)}
+						disabled={responses.length === 0}
+						className="hidden sm:inline-flex items-center gap-2 kf-control px-5 py-3 text-[14px] font-semibold disabled:opacity-45 disabled:cursor-not-allowed"
+					>
+						<Download className="h-4 w-4" />
+						Export
+					</button>
+				</div>
+				<nav className="flex gap-8 mt-5" aria-label="Response tabs">
 					{SUB_TABS.map(tab => (
 						<button
 							key={tab.key}
 							onClick={() => setSubTab(tab.key)}
-							className={`relative pb-3 text-sm font-medium transition-colors duration-200 ${
+							className={`relative pb-3 text-[15px] font-medium transition-colors duration-200 ${
 								subTab === tab.key
-									? 'text-gray-900 dark:text-gray-100'
+									? 'text-brand-600 dark:text-brand-400'
 									: 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300'
 							}`}
 						>
 							{tab.label}
 							{subTab === tab.key && (
-								<span className="absolute bottom-0 left-0 right-0 h-0.5 bg-brand-500 rounded-full" />
+								<span className="absolute bottom-0 left-0 right-0 h-0.5 bg-brand-600 rounded-full" />
 							)}
 						</button>
 					))}
@@ -618,7 +660,7 @@ ${responses.length > 100 ? `<p style="text-align:center;color:#888;margin-top:8p
 													: ''
 												const globalIndex = (currentPage - 1) * ITEMS_PER_PAGE + index
 												const responseNum = filteredResponses.length - globalIndex
-												const requiredFields = fields.filter(f => f.required)
+												const requiredFields = responseFields(fields).filter(f => f.required)
 												let completionPct = 100
 												if (requiredFields.length > 0) {
 													const filled = requiredFields.filter(f => {
@@ -650,11 +692,14 @@ ${responses.length > 100 ? `<p style="text-align:center;color:#888;margin-top:8p
 														<td className="px-4 py-3 text-gray-500 dark:text-gray-400 whitespace-nowrap text-xs">
 															{submittedAt}
 														</td>
-														{tableFields.map(field => (
-															<td key={field.id} className="px-4 py-3 text-gray-900 dark:text-gray-100 max-w-[180px] truncate text-sm">
-																{data[field.id] || <span className="text-gray-300 dark:text-gray-600">—</span>}
-															</td>
-														))}
+														{tableFields.map(field => {
+															const formatted = formatResponseValue(field, data[field.id])
+															return (
+																<td key={field.id} className="px-4 py-3 text-gray-900 dark:text-gray-100 max-w-[180px] truncate text-sm">
+																	{formatted.kind === 'empty' ? <span className="text-gray-300 dark:text-gray-600">—</span> : formatted.values.join(', ')}
+																</td>
+															)
+														})}
 														<td className="px-4 py-3">
 															<span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${
 																isComplete
@@ -1010,11 +1055,11 @@ function ExportModal({
 	const [format, setFormat] = useState<ExportFormat>('csv')
 	const [exportRange, setExportRange] = useState<ExportRange>('all')
 	const [selectedFieldIds, setSelectedFieldIds] = useState<Set<string>>(
-		new Set(fields.map(f => f.id))
+		new Set(responseFields(fields).map(f => f.id))
 	)
 	const [includeMetadata, setIncludeMetadata] = useState(true)
 
-	const dataFields = fields.filter(f => f.type !== 'section' && f.type !== 'statement')
+	const dataFields = responseFields(fields)
 
 	const toggleField = (id: string) => {
 		setSelectedFieldIds(prev => {
@@ -1198,9 +1243,10 @@ function ResponseSlideOut({
 		lines.push(`Response #${responseNumber}`)
 		if (submittedAt) lines.push(`Submitted: ${submittedAt.toLocaleString()}`)
 		lines.push('')
-		for (const field of fields) {
+		for (const field of responseFields(fields)) {
 			const value = data[field.id]
-			lines.push(`${field.label || field.id}: ${value ? String(value) : '(empty)'}`)
+			const formatted = formatResponseValue(field, value)
+			lines.push(`${fieldLabel(field, data, fields)}: ${formatted.kind === 'empty' ? '(empty)' : formatted.values.join(', ')}`)
 		}
 		if (meta?.duration) { lines.push(''); lines.push(`Duration: ${formatDuration(Math.round(meta.duration))}`) }
 		if (uaInfo) lines.push(`Device: ${uaInfo.device} | Browser: ${uaInfo.browser} | OS: ${uaInfo.os}`)
@@ -1300,18 +1346,26 @@ function ResponseSlideOut({
 
 					{/* Field answers */}
 					<div className="space-y-4">
-						{fields.map(field => {
+						{responseFields(fields).map(field => {
 							const value = data[field.id]
-							const displayValue = value ? String(value) : null
+							const formatted = formatResponseValue(field, value)
 							return (
 								<div key={field.id} className="rounded-xl bg-gray-50/70 dark:bg-gray-800/30 border border-gray-100 dark:border-gray-800 p-4">
 									<p className="text-[11px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-1.5">
-										{field.label || field.id}
+										{fieldLabel(field, data, fields)}
 										{field.required && <span className="text-red-400 ml-0.5">*</span>}
 									</p>
-									{displayValue ? (
+									{formatted.kind === 'list' ? (
+										<div className="flex flex-wrap gap-1.5">
+											{formatted.values.map(item => (
+												<span key={item} className="rounded-md bg-white px-2 py-1 text-xs font-medium text-gray-700 ring-1 ring-gray-200 dark:bg-gray-900 dark:text-gray-200 dark:ring-gray-700">
+													{item}
+												</span>
+											))}
+										</div>
+									) : formatted.kind === 'text' ? (
 										<p className="text-sm text-gray-900 dark:text-gray-100 leading-relaxed whitespace-pre-wrap break-words">
-											{displayValue}
+											{formatted.values[0]}
 										</p>
 									) : (
 										<p className="text-sm text-gray-300 dark:text-gray-600 italic">Empty</p>
@@ -1844,7 +1898,7 @@ function AnalyticsView({ fields, responses }: { fields: FormField[]; responses: 
 	}
 
 	const completionRate = useMemo(() => {
-		const requiredFields = fields.filter(f => f.required)
+		const requiredFields = responseFields(fields).filter(f => f.required)
 		if (requiredFields.length === 0) return totalResponses > 0 ? 100 : 0
 		let complete = 0
 		for (const d of allData) { if (requiredFields.every(f => { const v = d[f.id]; return v !== undefined && v !== null && v !== '' })) complete++ }
@@ -1852,7 +1906,7 @@ function AnalyticsView({ fields, responses }: { fields: FormField[]; responses: 
 	}, [allData, fields, totalResponses])
 
 	const prevCompletionRate = useMemo(() => {
-		const requiredFields = fields.filter(f => f.required)
+		const requiredFields = responseFields(fields).filter(f => f.required)
 		if (requiredFields.length === 0) return previousPeriod.length > 0 ? 100 : 0
 		let complete = 0
 		for (const d of prevData) { if (requiredFields.every(f => { const v = d[f.id]; return v !== undefined && v !== null && v !== '' })) complete++ }
@@ -1860,17 +1914,19 @@ function AnalyticsView({ fields, responses }: { fields: FormField[]; responses: 
 	}, [prevData, fields, previousPeriod.length])
 
 	const avgFillRate = useMemo(() => {
-		if (fields.length === 0 || totalResponses === 0) return 0
+		const dataFields = responseFields(fields)
+		if (dataFields.length === 0 || totalResponses === 0) return 0
 		let totalFill = 0
-		for (const field of fields) { const filled = allData.filter(d => { const v = d[field.id]; return v !== undefined && v !== null && v !== '' }).length; totalFill += filled / totalResponses }
-		return Math.round((totalFill / fields.length) * 100)
+		for (const field of dataFields) { const filled = allData.filter(d => { const v = d[field.id]; return v !== undefined && v !== null && v !== '' }).length; totalFill += filled / totalResponses }
+		return Math.round((totalFill / dataFields.length) * 100)
 	}, [allData, fields, totalResponses])
 
 	const prevAvgFillRate = useMemo(() => {
-		if (fields.length === 0 || previousPeriod.length === 0) return 0
+		const dataFields = responseFields(fields)
+		if (dataFields.length === 0 || previousPeriod.length === 0) return 0
 		let totalFill = 0
-		for (const field of fields) { const filled = prevData.filter(d => { const v = d[field.id]; return v !== undefined && v !== null && v !== '' }).length; totalFill += filled / previousPeriod.length }
-		return Math.round((totalFill / fields.length) * 100)
+		for (const field of dataFields) { const filled = prevData.filter(d => { const v = d[field.id]; return v !== undefined && v !== null && v !== '' }).length; totalFill += filled / previousPeriod.length }
+		return Math.round((totalFill / dataFields.length) * 100)
 	}, [prevData, fields, previousPeriod.length])
 
 	const activeDays = useMemo(() => { const days = new Set<string>(); for (const r of filtered) { if (r.submittedAt) days.add(dateKey(new Date(Number(r.submittedAt)))) }; return days.size }, [filtered])
@@ -1894,7 +1950,7 @@ function AnalyticsView({ fields, responses }: { fields: FormField[]; responses: 
 	}, [allData, fields])
 
 	const funnelData = useMemo(() => {
-		const dataFields = fields.filter(f => f.type !== 'section' && f.type !== 'statement' && f.type !== 'hidden')
+		const dataFields = responseFields(fields)
 		if (dataFields.length === 0 || totalResponses === 0) return []
 		return dataFields.map(field => { const filled = allData.filter(d => { const v = d[field.id]; return v !== undefined && v !== null && v !== '' }).length; return { label: field.label, filled, pct: Math.round((filled / totalResponses) * 100) } })
 	}, [allData, fields, totalResponses])
@@ -1909,7 +1965,7 @@ function AnalyticsView({ fields, responses }: { fields: FormField[]; responses: 
 	const crossInsights = useMemo(() => computeCrossInsights(fields, allData), [fields, allData])
 
 	const completionSparkline = useMemo(() => {
-		const requiredFields = fields.filter(f => f.required); const last7 = dailyCounts.slice(-7)
+		const requiredFields = responseFields(fields).filter(f => f.required); const last7 = dailyCounts.slice(-7)
 		if (requiredFields.length === 0) return last7.map(d => (d.count > 0 ? 100 : 0))
 		const byDay: Record<string, Record<string, string>[]> = {}
 		for (let i = 0; i < filtered.length; i++) { const r = filtered[i]; if (r?.submittedAt) { const key = dateKey(new Date(Number(r.submittedAt))); if (!byDay[key]) byDay[key] = []; const d = allData[i]; if (d) byDay[key].push(d) } }
@@ -1918,9 +1974,10 @@ function AnalyticsView({ fields, responses }: { fields: FormField[]; responses: 
 
 	const fillRateSparkline = useMemo(() => {
 		const last7 = dailyCounts.slice(-7)
+		const dataFields = responseFields(fields)
 		const byDay: Record<string, Record<string, string>[]> = {}
 		for (let i = 0; i < filtered.length; i++) { const r = filtered[i]; if (r?.submittedAt) { const key = dateKey(new Date(Number(r.submittedAt))); if (!byDay[key]) byDay[key] = []; const d = allData[i]; if (d) byDay[key].push(d) } }
-		return last7.map(d => { const dayResponses = byDay[d.label] ?? []; if (dayResponses.length === 0 || fields.length === 0) return 0; let totalFill = 0; for (const field of fields) { const filled = dayResponses.filter(data => { const v = data[field.id]; return v !== undefined && v !== null && v !== '' }).length; totalFill += filled / dayResponses.length }; return Math.round((totalFill / fields.length) * 100) })
+		return last7.map(d => { const dayResponses = byDay[d.label] ?? []; if (dayResponses.length === 0 || dataFields.length === 0) return 0; let totalFill = 0; for (const field of dataFields) { const filled = dayResponses.filter(data => { const v = data[field.id]; return v !== undefined && v !== null && v !== '' }).length; totalFill += filled / dayResponses.length }; return Math.round((totalFill / dataFields.length) * 100) })
 	}, [allData, dailyCounts, fields, filtered])
 
 	return (
@@ -1948,7 +2005,7 @@ function AnalyticsView({ fields, responses }: { fields: FormField[]; responses: 
 				<div className="relative">
 					<select value="" onChange={e => { if (!e.target.value) return; const fieldId = e.target.value; const val = prompt(`Filter "${fields.find(f => f.id === fieldId)?.label || fieldId}" contains:`); if (val) setFilters([...filters, { fieldId, value: val }]); e.target.value = '' }} className="text-xs rounded-lg border border-dashed border-gray-300 dark:border-gray-700 bg-transparent px-2.5 py-1.5 text-gray-500 dark:text-gray-400 outline-none cursor-pointer">
 						<option value="">+ Filter</option>
-						{fields.filter(f => f.type !== 'section' && f.type !== 'statement').map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
+						{responseFields(fields).map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
 					</select>
 				</div>
 				{filters.length > 0 && <button onClick={() => setFilters([])} className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors">Clear all</button>}
@@ -2020,7 +2077,7 @@ function FieldInsightsView({ fields, responses }: { fields: FormField[]; respons
 	const totalResponses = responses.length
 
 	const fieldAnalytics = useMemo((): FieldAnalysis[] => {
-		const dataFields = fields.filter(f => f.type !== 'section' && f.type !== 'statement')
+		const dataFields = responseFields(fields)
 		return dataFields.map((field): FieldAnalysis => {
 			const values = allData.map(d => d[field.id] ?? '').filter(v => v !== '')
 			const total = values.length

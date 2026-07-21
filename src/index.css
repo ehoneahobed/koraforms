@@ -4,27 +4,40 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme {
-	--color-brand-50: #FEF2F2;
-	--color-brand-100: #FEE2E2;
-	--color-brand-200: #FECACA;
-	--color-brand-300: #FCA5A5;
-	--color-brand-400: #F87171;
-	--color-brand-500: #EF4444;
-	--color-brand-600: #DC2626;
-	--color-brand-700: #B91C1C;
-	--color-brand-800: #991B1B;
-	--color-brand-900: #7F1D1D;
+	--color-brand-50: #FFF1ED;
+	--color-brand-100: #FFE0D6;
+	--color-brand-200: #FFC0AD;
+	--color-brand-300: #FF967A;
+	--color-brand-400: #FF6745;
+	--color-brand-500: #FF3B1F;
+	--color-brand-600: #F02817;
+	--color-brand-700: #C91C11;
+	--color-brand-800: #A11911;
+	--color-brand-900: #821A14;
 
-	--color-surface: #FAFAFA;
-	--color-surface-dark: #111111;
+	--color-surface: #FBFCFF;
+	--color-surface-dark: #0B1020;
 	--color-surface-elevated: #FFFFFF;
-	--color-surface-elevated-dark: #1A1A1A;
+	--color-surface-elevated-dark: #111827;
 }
 
 @layer base {
+	html {
+		overflow-x: hidden;
+		overflow-y: scroll;
+		scrollbar-gutter: stable;
+	}
+
 	body {
-		@apply bg-surface text-gray-900 antialiased;
+		@apply bg-surface text-slate-950 antialiased;
+		overflow-x: hidden;
 		font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+		font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+	}
+
+	#root {
+		min-width: 0;
+		overflow-x: hidden;
 	}
 
 	.dark body,
@@ -43,6 +56,22 @@
 	select,
 	summary {
 		cursor: pointer;
+	}
+}
+
+@layer components {
+	.kf-panel {
+		@apply rounded-2xl border border-slate-200/75 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.035)] dark:border-slate-800 dark:bg-surface-elevated-dark;
+	}
+
+	.kf-control {
+		@apply rounded-xl border border-slate-200 bg-white text-slate-700 shadow-sm shadow-slate-200/30 hover:bg-slate-50 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800;
+		transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+	}
+
+	.kf-primary {
+		@apply rounded-xl bg-brand-600 text-white shadow-[0_8px_20px_rgba(240,40,23,0.22)] hover:bg-brand-500 active:scale-[0.98];
+		transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 	}
 }
 

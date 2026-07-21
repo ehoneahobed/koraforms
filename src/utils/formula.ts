@@ -4,7 +4,7 @@ import type { FormField } from '../types'
  * Evaluate a formula string against current form values.
  *
  * Supported syntax:
- *   Field references: {field_id}
+ *   Field references: {Question Label}; legacy field ids are still accepted
  *   Arithmetic: +, -, *, /
  *   Functions: SUM(...), AVG(...), MIN(...), MAX(...), COUNT(...)
  *   Conditionals: IF({field} == "yes", 10, 0)
@@ -18,12 +18,18 @@ export function evaluateFormula(
 	if (!formula) return ''
 
 	try {
-		// Replace field references {field_id} with their values
-		let expr = formula.replace(/\{(\w+)\}/g, (_match, fieldId) => {
+		// Replace field references with their values. Labels are supported so
+		// builders can insert readable tokens like {Number of guests}.
+		let expr = formula.replace(/\{([^}]+)\}/g, (_match, rawKey) => {
+			const fieldId = String(rawKey).trim()
 			const val = values[fieldId]
 			if (val !== undefined) return val
-			// Try matching by label
-			const field = fields.find(f => f.label.toLowerCase().replace(/\s+/g, '_') === fieldId.toLowerCase())
+			const normalized = fieldId.toLowerCase().replace(/\s+/g, '_')
+			const field = fields.find(f =>
+				f.id === fieldId ||
+				f.id.toLowerCase() === normalized ||
+				f.label.toLowerCase().trim().replace(/\s+/g, '_') === normalized
+			)
 			return field ? (values[field.id] || '0') : '0'
 		})
 

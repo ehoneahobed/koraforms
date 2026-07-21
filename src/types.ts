@@ -37,7 +37,7 @@ export interface FormField {
 	maxSize?: number         // Max file size in MB (default: 10)
 	capture?: 'environment' | 'user'  // Camera direction on mobile
 	// Calculated / hidden field config
-	formula?: string         // e.g. "{field_1} + {field_2}"
+	formula?: string         // e.g. "{Number of guests} * 25"
 	defaultValue?: string    // Static default for hidden fields
 	// Matrix config — comma-separated rows and columns
 	matrixRows?: string      // e.g. "Quality,Service,Price"
@@ -136,13 +136,50 @@ export function isFieldVisible(field: FormField, values: Record<string, string>)
 	return logic === 'and' ? results.every(Boolean) : results.some(Boolean)
 }
 
-// Replace {{field_id}} tokens in text with actual values (answer piping)
+function normalizePipeKey(value: string): string {
+	return value.toLowerCase().trim().replace(/\s+/g, '_')
+}
+
+function escapeRegExp(value: string): string {
+	return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function fieldLabelPattern(label: string): string {
+	return escapeRegExp(label.trim()).replace(/\s+/g, '\\s+')
+}
+
+function findPipeField(key: string, fields: FormField[]): FormField | undefined {
+	const normalizedKey = normalizePipeKey(key)
+	return fields.find(f =>
+		f.id === key ||
+		normalizePipeKey(f.id) === normalizedKey ||
+		normalizePipeKey(f.label) === normalizedKey
+	)
+}
+
+// Replace {{Question Label}} tokens in text with actual values. Field ids are
+// still accepted for backwards compatibility with older saved forms.
 export function pipeValues(text: string, values: Record<string, string>, fields: FormField[]): string {
-	return text.replace(/\{\{(\w+)\}\}/g, (match, fieldId) => {
-		if (values[fieldId]) return values[fieldId]
-		// Try matching by label (spaces → underscores)
-		const field = fields.find(f => f.label.toLowerCase().replace(/\s+/g, '_') === fieldId.toLowerCase())
-		return field ? (values[field.id] || match) : match
+	let output = text
+
+	// If a user typed a field label and then inserted that same field as a token
+	// (for example, "your name {{Your Name}}"), render only the answer value.
+	for (const field of fields) {
+		const answer = values[field.id]
+		if (!answer || !field.label.trim()) continue
+		const label = fieldLabelPattern(field.label)
+		const tokenKeys = [field.label, field.id].filter(Boolean)
+		for (const tokenKey of tokenKeys) {
+			const token = `\\{\\{\\s*${escapeRegExp(tokenKey)}\\s*\\}\\}`
+			output = output.replace(new RegExp(`${label}\\s*${token}`, 'gi'), answer)
+		}
+	}
+
+	return output.replace(/\{\{([^}]+)\}\}/g, (match, rawKey) => {
+		const key = String(rawKey).trim()
+		const field = findPipeField(key, fields)
+		if (field) return values[field.id] || match
+		return values[key] || match
 	})
 }
 

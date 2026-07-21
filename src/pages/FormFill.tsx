@@ -109,7 +109,7 @@ export function FormFill({ formId, navigate }: Props) {
 		// ignore
 	}
 
-	const themeVars = getThemeCSSVars(String(form?.theme || 'blue'))
+	const themeVars = getThemeCSSVars(String(form?.theme || 'red'))
 
 	// Compute visible fields based on conditional logic
 	const visibleFields = fields.filter(f => isFieldVisible(f, values))
