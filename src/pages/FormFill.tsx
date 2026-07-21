@@ -85,6 +85,7 @@ export function FormFill({ formId, navigate }: Props) {
 	const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(null)
 	const [isSubmitting, setIsSubmitting] = useState(false)
 	const [language, setLanguage] = useState<string | undefined>(undefined)
+	const startedAtRef = useRef<number>(0)
 
 	let fields: FormField[] = []
 	try {
@@ -262,6 +263,7 @@ export function FormFill({ formId, navigate }: Props) {
 		if (currentIndex === -1) {
 			setDirection('forward')
 			setCurrentIndex(0)
+			if (!startedAtRef.current) startedAtRef.current = Date.now()
 			return
 		}
 		if (!validateCurrent()) return
@@ -271,7 +273,17 @@ export function FormFill({ formId, navigate }: Props) {
 			setCurrentIndex(currentIndex + 1)
 		} else {
 			const realFormId = String(form?.id || formId)
-			const responseJson = JSON.stringify(values)
+			// Attach metadata for analytics
+			const ua = navigator.userAgent
+			const meta = {
+				startedAt: startedAtRef.current || Date.now(),
+				completedAt: Date.now(),
+				duration: startedAtRef.current ? Math.round((Date.now() - startedAtRef.current) / 1000) : 0,
+				ua,
+				screen: `${window.screen.width}x${window.screen.height}`,
+				lang: navigator.language,
+			}
+			const responseJson = JSON.stringify({ ...values, _meta: meta })
 
 			// Duplicate detection — warn if identical response submitted within 5 minutes
 			const dupKey = `koraforms-dup-${formId}`

@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from 'react'
 import { useQuery } from '@korajs/react'
 import { app } from '../kora'
 import { setPageMeta } from '../utils/meta'
-import { ArrowLeft, Download, FileSpreadsheet, ChevronDown, ChevronRight, BarChart3, Share2, ExternalLink, Clock, TrendingUp } from 'lucide-react'
+import { ArrowLeft, Download, FileSpreadsheet, ChevronDown, ChevronRight, BarChart3, Share2, ExternalLink, Clock, TrendingUp, FileText } from 'lucide-react'
 import type { FormField } from '../types'
 
 interface Props {
@@ -79,6 +79,122 @@ export function FormResponses({ formId, navigate }: Props) {
 		URL.revokeObjectURL(url)
 	}
 
+	const exportPdf = () => {
+		if (responses.length === 0) return
+
+		// Parse all response data for the report
+		const allData = responses.map((r) => {
+			try { return JSON.parse(String(r.data || '{}')) as Record<string, string> } catch { return {} }
+		})
+
+		// Compute per-field summaries
+		const fieldSummaries = fields
+			.filter(f => f.type !== 'section' && f.type !== 'statement')
+			.map(field => {
+				const vals = allData.map(d => d[field.id] ?? '').filter(v => v !== '')
+				const isCategorical = ['select', 'radio', 'checkbox', 'yesno'].includes(field.type)
+				const isNumeric = ['number', 'rating', 'scale'].includes(field.type)
+
+				if (isCategorical) {
+					const counts: Record<string, number> = {}
+					for (const v of vals) {
+						const parts = field.type === 'checkbox' ? v.split(',') : [v]
+						for (const p of parts) { const t = p.trim(); if (t) counts[t] = (counts[t] ?? 0) + 1 }
+					}
+					const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1])
+					return { label: field.label, type: 'categorical' as const, data: sorted, total: vals.length }
+				}
+				if (isNumeric) {
+					const nums = vals.map(Number).filter(n => !isNaN(n))
+					if (nums.length > 0) {
+						const sum = nums.reduce((a, b) => a + b, 0)
+						return { label: field.label, type: 'numeric' as const, avg: (sum / nums.length).toFixed(1), min: Math.min(...nums), max: Math.max(...nums), count: nums.length }
+					}
+				}
+				return { label: field.label, type: 'text' as const, total: vals.length, unique: new Set(vals).size }
+			})
+
+		// Compute avg completion time
+		const durations: number[] = []
+		for (const d of allData) {
+			const meta = (d as Record<string, unknown>)._meta as { duration?: number } | undefined
+			if (meta?.duration && meta.duration > 0 && meta.duration < 86400) durations.push(meta.duration)
+		}
+		const avgTime = durations.length > 0 ? formatDuration(Math.round(durations.reduce((a, b) => a + b, 0) / durations.length)) : 'N/A'
+
+		const title = String(form.title || 'Form')
+		const now = new Date().toLocaleDateString('en', { year: 'numeric', month: 'long', day: 'numeric' })
+
+		const html = `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>${title} — Report</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;padding:40px;color:#1a1a1a;max-width:800px;margin:0 auto;font-size:13px}
+h1{font-size:22px;margin-bottom:4px}
+.subtitle{color:#666;font-size:13px;margin-bottom:24px}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:28px}
+.stat{background:#f8f9fa;border-radius:8px;padding:14px}
+.stat-label{font-size:11px;color:#888;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px}
+.stat-value{font-size:20px;font-weight:700}
+h2{font-size:16px;margin:24px 0 12px;padding-top:16px;border-top:1px solid #eee}
+.field-card{background:#fafafa;border-radius:8px;padding:14px;margin-bottom:12px}
+.field-name{font-weight:600;margin-bottom:8px}
+.bar-row{display:flex;align-items:center;gap:8px;margin-bottom:4px}
+.bar-label{width:140px;text-align:right;font-size:12px;color:#555;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bar-track{flex:1;background:#eee;border-radius:4px;height:14px;overflow:hidden}
+.bar-fill{background:#e53e3e;border-radius:4px;height:100%}
+.bar-count{font-size:11px;color:#888;width:60px}
+.num-stats{display:flex;gap:20px;font-size:13px}
+.num-stats span{color:#888}
+.text-stats{font-size:13px;color:#555}
+.footer{text-align:center;color:#aaa;font-size:11px;margin-top:40px;padding-top:16px;border-top:1px solid #eee}
+table{width:100%;border-collapse:collapse;margin-top:12px;font-size:12px}
+th{text-align:left;padding:6px 8px;background:#f0f0f0;border-bottom:1px solid #ddd;font-weight:600;font-size:11px;text-transform:uppercase;color:#666}
+td{padding:6px 8px;border-bottom:1px solid #f0f0f0}
+tr:nth-child(even){background:#fafafa}
+@media print{body{padding:20px}h2{page-break-before:auto}.field-card{break-inside:avoid}}
+</style></head><body>
+<h1>${title}</h1>
+<p class="subtitle">Report generated on ${now} &bull; ${responses.length} response${responses.length !== 1 ? 's' : ''}</p>
+<div class="stats">
+<div class="stat"><div class="stat-label">Responses</div><div class="stat-value">${responses.length}</div></div>
+<div class="stat"><div class="stat-label">Fields</div><div class="stat-value">${fields.length}</div></div>
+<div class="stat"><div class="stat-label">Avg. Time</div><div class="stat-value">${avgTime}</div></div>
+<div class="stat"><div class="stat-label">Date Range</div><div class="stat-value" style="font-size:13px">${responses.length > 0 && responses.at(-1)?.submittedAt ? new Date(Number(responses.at(-1)!.submittedAt)).toLocaleDateString('en', { month: 'short', day: 'numeric' }) : '—'} — ${responses.length > 0 && responses[0]?.submittedAt ? new Date(Number(responses[0].submittedAt)).toLocaleDateString('en', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</div></div>
+</div>
+<h2>Field Summary</h2>
+${fieldSummaries.map(s => {
+			if (s.type === 'categorical') {
+				const maxC = s.data[0]?.[1] ?? 1
+				return `<div class="field-card"><div class="field-name">${s.label}</div>${s.data.slice(0, 10).map(([label, count]) =>
+					`<div class="bar-row"><div class="bar-label">${label}</div><div class="bar-track"><div class="bar-fill" style="width:${Math.round((count / maxC) * 100)}%"></div></div><div class="bar-count">${count} (${s.total > 0 ? Math.round((count / s.total) * 100) : 0}%)</div></div>`
+				).join('')}</div>`
+			}
+			if (s.type === 'numeric') {
+				return `<div class="field-card"><div class="field-name">${s.label}</div><div class="num-stats"><span>Average:</span> <strong>${s.avg}</strong> &nbsp; <span>Min:</span> <strong>${s.min}</strong> &nbsp; <span>Max:</span> <strong>${s.max}</strong> &nbsp; <span>Count:</span> <strong>${s.count}</strong></div></div>`
+			}
+			return `<div class="field-card"><div class="field-name">${s.label}</div><div class="text-stats">${s.total} responses, ${s.unique} unique values</div></div>`
+		}).join('\n')}
+<h2>All Responses</h2>
+<table><thead><tr><th>#</th><th>Date</th>${fields.slice(0, 8).map(f => `<th>${f.label || f.id}</th>`).join('')}</tr></thead><tbody>
+${responses.slice(0, 100).map((r, i) => {
+			const data = allData[i] ?? {}
+			const date = r.submittedAt ? new Date(Number(r.submittedAt)).toLocaleDateString() : ''
+			return `<tr><td>${responses.length - i}</td><td>${date}</td>${fields.slice(0, 8).map(f => `<td>${(data[f.id] || '—').slice(0, 60)}</td>`).join('')}</tr>`
+		}).join('\n')}
+</tbody></table>
+${responses.length > 100 ? `<p style="text-align:center;color:#888;margin-top:8px;font-size:12px">Showing first 100 of ${responses.length} responses</p>` : ''}
+<div class="footer">Generated by KoraForms &bull; forms.korajs.dev</div>
+</body></html>`
+
+		const w = window.open('', '_blank')
+		if (w) {
+			w.document.write(html)
+			w.document.close()
+			setTimeout(() => w.print(), 500)
+		}
+	}
+
 	const latestResponseTime = responses.length > 0 && responses[0]?.submittedAt
 		? formatTimeSince(Number(responses[0].submittedAt))
 		: null
@@ -124,13 +240,22 @@ export function FormResponses({ formId, navigate }: Props) {
 
 						<div className="flex items-center gap-2 shrink-0">
 							{responses.length > 0 && (
-								<button
-									onClick={exportCsv}
-									className="inline-flex items-center gap-1.5 rounded-xl bg-white/10 border border-white/20 px-4 py-2.5 text-sm font-medium text-white transition-smooth hover:bg-white/20 backdrop-blur-sm"
-								>
-									<Download className="h-3.5 w-3.5" />
-									Export CSV
-								</button>
+								<>
+									<button
+										onClick={exportPdf}
+										className="inline-flex items-center gap-1.5 rounded-xl bg-white/10 border border-white/20 px-4 py-2.5 text-sm font-medium text-white transition-smooth hover:bg-white/20 backdrop-blur-sm"
+									>
+										<FileText className="h-3.5 w-3.5" />
+										PDF Report
+									</button>
+									<button
+										onClick={exportCsv}
+										className="inline-flex items-center gap-1.5 rounded-xl bg-white/10 border border-white/20 px-4 py-2.5 text-sm font-medium text-white transition-smooth hover:bg-white/20 backdrop-blur-sm"
+									>
+										<Download className="h-3.5 w-3.5" />
+										Export CSV
+									</button>
+								</>
 							)}
 							<button
 								onClick={() => navigate(`fill/${formId}`)}
@@ -1084,6 +1209,117 @@ function FieldBreakdownCard({
 }
 
 // ---------------------------------------------------------------------------
+// UA parser — lightweight device/browser detection
+// ---------------------------------------------------------------------------
+
+function parseUA(ua: string): { browser: string; os: string; device: string } {
+	let browser = 'Other'
+	let os = 'Other'
+	let device = 'Desktop'
+
+	// Browser detection
+	if (/Edg\//i.test(ua)) browser = 'Edge'
+	else if (/OPR\//i.test(ua) || /Opera/i.test(ua)) browser = 'Opera'
+	else if (/Chrome\//i.test(ua) && !/Chromium/i.test(ua)) browser = 'Chrome'
+	else if (/Safari\//i.test(ua) && !/Chrome/i.test(ua)) browser = 'Safari'
+	else if (/Firefox\//i.test(ua)) browser = 'Firefox'
+
+	// OS detection
+	if (/Windows/i.test(ua)) os = 'Windows'
+	else if (/Mac OS|Macintosh/i.test(ua)) os = 'macOS'
+	else if (/Android/i.test(ua)) os = 'Android'
+	else if (/iPhone|iPad|iPod/i.test(ua)) os = 'iOS'
+	else if (/Linux/i.test(ua)) os = 'Linux'
+	else if (/CrOS/i.test(ua)) os = 'ChromeOS'
+
+	// Device
+	if (/Mobile|Android.*Mobile|iPhone/i.test(ua)) device = 'Mobile'
+	else if (/iPad|Android(?!.*Mobile)|Tablet/i.test(ua)) device = 'Tablet'
+
+	return { browser, os, device }
+}
+
+function formatDuration(seconds: number): string {
+	if (seconds < 60) return `${seconds}s`
+	const m = Math.floor(seconds / 60)
+	const s = seconds % 60
+	if (m < 60) return s > 0 ? `${m}m ${s}s` : `${m}m`
+	const h = Math.floor(m / 60)
+	return `${h}h ${m % 60}m`
+}
+
+// ---------------------------------------------------------------------------
+// Donut chart for device/browser breakdowns
+// ---------------------------------------------------------------------------
+
+function DonutChart({
+	data,
+	title,
+}: {
+	data: [string, number][]
+	title: string
+}) {
+	const total = data.reduce((s, d) => s + d[1], 0)
+	if (total === 0) return null
+
+	const colors = [
+		'stroke-brand-500', 'stroke-emerald-500', 'stroke-amber-500',
+		'stroke-purple-500', 'stroke-rose-500', 'stroke-cyan-500',
+	]
+	const bgColors = [
+		'bg-brand-500', 'bg-emerald-500', 'bg-amber-500',
+		'bg-purple-500', 'bg-rose-500', 'bg-cyan-500',
+	]
+
+	const radius = 40
+	const circumference = 2 * Math.PI * radius
+	let offset = 0
+
+	return (
+		<div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-surface-elevated-dark p-5">
+			<h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-4">{title}</h3>
+			<div className="flex items-center gap-6">
+				<svg width="100" height="100" viewBox="0 0 100 100" className="shrink-0">
+					{data.map(([label, count], i) => {
+						const pct = count / total
+						const dashLen = pct * circumference
+						const dashGap = circumference - dashLen
+						const currentOffset = offset
+						offset += dashLen
+						return (
+							<circle
+								key={label}
+								cx="50" cy="50" r={radius}
+								fill="none"
+								strokeWidth="12"
+								className={colors[i % colors.length]}
+								strokeDasharray={`${dashLen} ${dashGap}`}
+								strokeDashoffset={-currentOffset}
+								transform="rotate(-90 50 50)"
+							/>
+						)
+					})}
+					<text x="50" y="50" textAnchor="middle" dominantBaseline="central" className="fill-gray-900 dark:fill-gray-100 text-lg font-bold" fontSize="16">
+						{total}
+					</text>
+				</svg>
+				<div className="space-y-1.5 min-w-0">
+					{data.map(([label, count], i) => (
+						<div key={label} className="flex items-center gap-2 text-sm">
+							<div className={`w-2.5 h-2.5 rounded-full shrink-0 ${bgColors[i % bgColors.length]}`} />
+							<span className="text-gray-700 dark:text-gray-300 truncate">{label}</span>
+							<span className="text-xs text-gray-400 tabular-nums ml-auto shrink-0">
+								{count} ({Math.round((count / total) * 100)}%)
+							</span>
+						</div>
+					))}
+				</div>
+			</div>
+		</div>
+	)
+}
+
+// ---------------------------------------------------------------------------
 // Main AnalyticsView
 // ---------------------------------------------------------------------------
 
@@ -1390,6 +1626,39 @@ function AnalyticsView({
 		})
 	}, [allData, dailyCounts, fields, filtered])
 
+	// Average completion time (from _meta embedded in response data)
+	const avgCompletionTime = useMemo(() => {
+		const durations: number[] = []
+		for (const d of allData) {
+			const meta = (d as Record<string, unknown>)._meta as { duration?: number } | undefined
+			if (meta?.duration && meta.duration > 0 && meta.duration < 86400) {
+				durations.push(meta.duration)
+			}
+		}
+		if (durations.length === 0) return null
+		return Math.round(durations.reduce((a, b) => a + b, 0) / durations.length)
+	}, [allData])
+
+	// Device / browser / OS breakdown
+	const deviceBreakdown = useMemo(() => {
+		const browsers: Record<string, number> = {}
+		const devices: Record<string, number> = {}
+		const oses: Record<string, number> = {}
+		for (const d of allData) {
+			const meta = (d as Record<string, unknown>)._meta as { ua?: string } | undefined
+			if (meta?.ua) {
+				const parsed = parseUA(meta.ua)
+				browsers[parsed.browser] = (browsers[parsed.browser] ?? 0) + 1
+				devices[parsed.device] = (devices[parsed.device] ?? 0) + 1
+				oses[parsed.os] = (oses[parsed.os] ?? 0) + 1
+			}
+		}
+		const toSorted = (obj: Record<string, number>) =>
+			Object.entries(obj).sort((a, b) => b[1] - a[1]) as [string, number][]
+		const hasData = Object.keys(browsers).length > 0
+		return { browsers: toSorted(browsers), devices: toSorted(devices), oses: toSorted(oses), hasData }
+	}, [allData])
+
 	return (
 		<div className="space-y-5 animate-fade-in">
 			{/* Time range selector */}
@@ -1410,7 +1679,7 @@ function AnalyticsView({
 			</div>
 
 			{/* Summary cards */}
-			<div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+			<div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
 				<SummaryCard
 					label="Total Responses"
 					value={totalResponses.toLocaleString()}
@@ -1430,6 +1699,12 @@ function AnalyticsView({
 					sparkData={fillRateSparkline}
 				/>
 				<SummaryCard
+					label="Avg. Time"
+					value={avgCompletionTime !== null ? formatDuration(avgCompletionTime) : '—'}
+					trend={null}
+					sparkData={[]}
+				/>
+				<SummaryCard
 					label="Active Days"
 					value={String(activeDays)}
 					trend={trendPct(activeDays, prevActiveDays)}
@@ -1442,6 +1717,20 @@ function AnalyticsView({
 
 			{/* Calendar heatmap */}
 			<CalendarHeatmap responses={filtered} />
+
+			{/* Device & browser breakdown */}
+			{deviceBreakdown.hasData && (
+				<div>
+					<h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3">
+						Respondent Insights
+					</h3>
+					<div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+						<DonutChart data={deviceBreakdown.devices} title="Devices" />
+						<DonutChart data={deviceBreakdown.browsers} title="Browsers" />
+						<DonutChart data={deviceBreakdown.oses} title="Operating Systems" />
+					</div>
+				</div>
+			)}
 
 			{/* Per-field breakdown */}
 			{fieldAnalytics.length > 0 && (
