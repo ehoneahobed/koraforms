@@ -40,6 +40,8 @@ export function FormSettings({
 }: Props) {
 	const [slugInput, setSlugInput] = useState(slug)
 	const [copied, setCopied] = useState(false)
+	const [testingWebhook, setTestingWebhook] = useState<number | null>(null)
+	const [webhookResult, setWebhookResult] = useState<Record<number, 'ok' | 'fail'>>({})
 
 	const formUrl = slug ? `${window.location.origin}/f/${slug}` : ''
 
@@ -61,6 +63,31 @@ export function FormSettings({
 		copyToClipboard(formUrl)
 		setCopied(true)
 		setTimeout(() => setCopied(false), 2000)
+	}
+
+	const testWebhook = async (index: number) => {
+		const hook = (settings.webhooks || [])[index]
+		if (!hook?.url) return
+		setTestingWebhook(index)
+		setWebhookResult(prev => { const next = { ...prev }; delete next[index]; return next })
+		try {
+			await fetch(hook.url, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				mode: 'no-cors',
+				body: JSON.stringify({
+					event: 'test',
+					form: { title: 'Test Form', slug: slug },
+					response: { data: { name: 'Test User', email: 'test@example.com' }, submittedAt: Date.now() },
+				}),
+			})
+			// no-cors mode always succeeds
+			setWebhookResult(prev => ({ ...prev, [index]: 'ok' }))
+		} catch {
+			setWebhookResult(prev => ({ ...prev, [index]: 'fail' }))
+		} finally {
+			setTestingWebhook(null)
+		}
 	}
 
 	const updateSetting = <K extends keyof FormSettingsType>(key: K, value: FormSettingsType[K]) => {
@@ -403,27 +430,43 @@ export function FormSettings({
 							Send response data to external services (Zapier, Make, Slack, etc.)
 						</p>
 						{(settings.webhooks || []).map((hook, i) => (
-							<div key={i} className="flex items-center gap-2 mb-2">
-								<input
-									type="url"
-									value={hook.url}
-									onChange={(e) => {
-										const next = [...(settings.webhooks || [])]
-										next[i] = { ...next[i]!, url: e.target.value }
-										onSettingsChange({ ...settings, webhooks: next })
-									}}
-									placeholder="https://hooks.zapier.com/..."
-									className="flex-1 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2 text-sm outline-none focus:border-brand-400 dark:focus:border-brand-600 transition-smooth text-gray-700 dark:text-gray-300 placeholder-gray-400"
-								/>
-								<button
-									onClick={() => {
-										const next = (settings.webhooks || []).filter((_, j) => j !== i)
-										onSettingsChange({ ...settings, webhooks: next.length > 0 ? next : undefined })
-									}}
-									className="p-1.5 text-gray-400 hover:text-red-500 transition-smooth"
-								>
-									<Trash2 className="h-3.5 w-3.5" />
-								</button>
+							<div key={i} className="mb-2">
+								<div className="flex items-center gap-2">
+									<input
+										type="url"
+										value={hook.url}
+										onChange={(e) => {
+											const next = [...(settings.webhooks || [])]
+											next[i] = { ...next[i]!, url: e.target.value }
+											onSettingsChange({ ...settings, webhooks: next })
+										}}
+										placeholder="https://hooks.zapier.com/..."
+										className="flex-1 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2 text-sm outline-none focus:border-brand-400 dark:focus:border-brand-600 transition-smooth text-gray-700 dark:text-gray-300 placeholder-gray-400"
+									/>
+									<button
+										onClick={() => testWebhook(i)}
+										disabled={!hook.url || testingWebhook === i}
+										className="px-2 py-1.5 text-xs text-gray-500 hover:text-brand-600 dark:hover:text-brand-400 transition-smooth disabled:opacity-40 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800"
+										title="Send test webhook"
+									>
+										{testingWebhook === i ? '...' : 'Test'}
+									</button>
+									<button
+										onClick={() => {
+											const next = (settings.webhooks || []).filter((_, j) => j !== i)
+											onSettingsChange({ ...settings, webhooks: next.length > 0 ? next : undefined })
+										}}
+										className="p-1.5 text-gray-400 hover:text-red-500 transition-smooth"
+									>
+										<Trash2 className="h-3.5 w-3.5" />
+									</button>
+								</div>
+								{webhookResult[i] === 'ok' && (
+									<span className="text-[10px] text-emerald-500 ml-1">&#10003; Sent</span>
+								)}
+								{webhookResult[i] === 'fail' && (
+									<span className="text-[10px] text-red-500 ml-1">&#10007; Failed</span>
+								)}
 							</div>
 						))}
 						<button

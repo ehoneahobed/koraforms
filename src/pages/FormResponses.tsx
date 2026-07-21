@@ -35,6 +35,7 @@ export function FormResponses({ formId, navigate }: Props) {
 	const [sortCol, setSortCol] = useState<string>('_date')
 	const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
 	const [showShareModal, setShowShareModal] = useState(false)
+	const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
 
 	// Filter responses by search query
 	const filteredResponses = useMemo(() => {
@@ -79,6 +80,32 @@ export function FormResponses({ formId, navigate }: Props) {
 			setSortCol(col)
 			setSortDir('asc')
 		}
+	}
+
+	const toggleSelect = (id: string) => {
+		setSelectedIds(prev => {
+			const next = new Set(prev)
+			if (next.has(id)) next.delete(id)
+			else next.add(id)
+			return next
+		})
+	}
+
+	const selectAll = () => {
+		if (selectedIds.size === filteredResponses.length) {
+			setSelectedIds(new Set())
+		} else {
+			setSelectedIds(new Set(filteredResponses.map(r => r.id)))
+		}
+	}
+
+	const deleteSelected = () => {
+		if (selectedIds.size === 0) return
+		if (!window.confirm(`Delete ${selectedIds.size} response${selectedIds.size !== 1 ? 's' : ''}?`)) return
+		for (const id of selectedIds) {
+			app.responses.delete(id)
+		}
+		setSelectedIds(new Set())
 	}
 
 	if (!form) {
@@ -459,6 +486,13 @@ ${responses.length > 100 ? `<p style="text-align:center;color:#888;margin-top:8p
 								className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-surface-elevated-dark overflow-hidden transition-smooth"
 							>
 								<div className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-smooth">
+									<input
+										type="checkbox"
+										checked={selectedIds.has(response.id)}
+										onChange={() => toggleSelect(response.id)}
+										className="rounded border-gray-300 dark:border-gray-600 shrink-0"
+										onClick={(e) => e.stopPropagation()}
+									/>
 									<span className="w-7 h-7 rounded-lg bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-xs font-medium text-gray-500 shrink-0">
 										{filteredResponses.length - index}
 									</span>
@@ -541,6 +575,14 @@ ${responses.length > 100 ? `<p style="text-align:center;color:#888;margin-top:8p
 					<table className="w-full text-sm">
 						<thead>
 							<tr className="border-b border-gray-100 dark:border-gray-800">
+								<th className="px-4 py-3 w-10">
+									<input
+										type="checkbox"
+										checked={selectedIds.size === filteredResponses.length && filteredResponses.length > 0}
+										onChange={selectAll}
+										className="rounded border-gray-300 dark:border-gray-600"
+									/>
+								</th>
 								<th className="px-4 py-3 text-left text-[11px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">
 									#
 								</th>
@@ -593,6 +635,15 @@ ${responses.length > 100 ? `<p style="text-align:center;color:#888;margin-top:8p
 										onClick={() => setSelectedResponse(response.id)}
 										className="border-b border-gray-50 dark:border-gray-800/50 hover:bg-gray-50 dark:hover:bg-gray-800/30 transition-smooth cursor-pointer"
 									>
+										<td className="px-4 py-3">
+											<input
+												type="checkbox"
+												checked={selectedIds.has(response.id)}
+												onChange={() => toggleSelect(response.id)}
+												className="rounded border-gray-300 dark:border-gray-600"
+												onClick={(e) => e.stopPropagation()}
+											/>
+										</td>
 										<td className="px-4 py-3 text-gray-400 tabular-nums">
 											{filteredResponses.length - index}
 										</td>
@@ -622,6 +673,31 @@ ${responses.length > 100 ? `<p style="text-align:center;color:#888;margin-top:8p
 			{/* Analytics view */}
 			{responses.length > 0 && view === 'analytics' && (
 				<AnalyticsView fields={fields} responses={responses} />
+			)}
+
+			{/* Bulk action bar */}
+			{selectedIds.size > 0 && (
+				<div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 animate-scale-in">
+					<div className="flex items-center gap-3 bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 rounded-xl shadow-xl px-5 py-3">
+						<span className="text-sm font-medium">
+							{selectedIds.size} selected
+						</span>
+						<button
+							onClick={() => setSelectedIds(new Set())}
+							className="text-xs text-gray-400 dark:text-gray-600 hover:text-white dark:hover:text-gray-900 transition-smooth"
+						>
+							Clear
+						</button>
+						<div className="w-px h-5 bg-gray-700 dark:bg-gray-300" />
+						<button
+							onClick={deleteSelected}
+							className="inline-flex items-center gap-1.5 text-sm font-medium text-red-400 dark:text-red-600 hover:text-red-300 dark:hover:text-red-500 transition-smooth"
+						>
+							<Trash2 className="h-3.5 w-3.5" />
+							Delete
+						</button>
+					</div>
+				</div>
 			)}
 
 			{/* Response detail modal */}
