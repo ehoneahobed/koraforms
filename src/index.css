@@ -120,6 +120,28 @@
 	transform-origin: center center;
 }
 
+/* Confetti animation */
+@keyframes confettiFall {
+	0% { transform: translateY(0) translateX(0) rotate(0deg); opacity: 1; }
+	100% { transform: translateY(100vh) translateX(var(--confetti-drift, 0px)) rotate(720deg); opacity: 0; }
+}
+
+.animate-confetti-fall {
+	animation: confettiFall var(--duration, 2s) cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Bounce once (for checkmark) */
+@keyframes bounceOnce {
+	0% { transform: scale(0.3); opacity: 0; }
+	50% { transform: scale(1.1); }
+	70% { transform: scale(0.95); }
+	100% { transform: scale(1); opacity: 1; }
+}
+
+.animate-bounce-once {
+	animation: bounceOnce 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
 @media (prefers-reduced-motion: reduce) {
 	.animate-slide-up,
 	.animate-slide-down,
@@ -135,6 +157,13 @@
 	}
 	.animate-loader-orbit {
 		animation: none;
+	}
+	.animate-confetti-fall {
+		animation: none;
+		opacity: 0;
+	}
+	.animate-bounce-once {
+		animation: fadeIn 0.15s ease forwards;
 	}
 }
 

@@ -956,9 +956,12 @@ function SubmittedScreen({
 	}, [countdown, redirectUrl])
 
 	return (
-		<div className="flex items-center justify-center min-h-screen px-4" style={themeVars as React.CSSProperties}>
-			<div className="text-center animate-scale-in max-w-md">
-				<div className="w-16 h-16 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center mx-auto mb-6">
+		<div className="flex items-center justify-center min-h-screen px-4 overflow-hidden" style={themeVars as React.CSSProperties}>
+			{/* Confetti burst */}
+			<Confetti />
+
+			<div className="text-center animate-scale-in max-w-md relative z-10">
+				<div className="w-16 h-16 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center mx-auto mb-6 animate-bounce-once">
 					<Check className="h-8 w-8 text-emerald-500" strokeWidth={2.5} />
 				</div>
 				<h2 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-gray-100 mb-3">
@@ -1692,6 +1695,46 @@ function MatrixInput({
 					))}
 				</tbody>
 			</table>
+		</div>
+	)
+}
+
+// Lightweight confetti animation using CSS
+function Confetti() {
+	const [particles] = useState(() => {
+		const colors = ['#10B981', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#06B6D4']
+		return Array.from({ length: 40 }, (_, i) => ({
+			id: i,
+			color: colors[i % colors.length]!,
+			left: Math.random() * 100,
+			delay: Math.random() * 0.6,
+			duration: 1.5 + Math.random() * 1.5,
+			size: 4 + Math.random() * 6,
+			rotation: Math.random() * 360,
+			drift: (Math.random() - 0.5) * 60,
+		}))
+	})
+
+	return (
+		<div className="fixed inset-0 pointer-events-none z-50 overflow-hidden" aria-hidden="true">
+			{particles.map(p => (
+				<div
+					key={p.id}
+					className="absolute animate-confetti-fall"
+					style={{
+						left: `${p.left}%`,
+						top: '-10px',
+						width: `${p.size}px`,
+						height: `${p.size * 0.6}px`,
+						backgroundColor: p.color,
+						borderRadius: '2px',
+						animationDelay: `${p.delay}s`,
+						animationDuration: `${p.duration}s`,
+						transform: `rotate(${p.rotation}deg)`,
+						'--confetti-drift': `${p.drift}px`,
+					} as React.CSSProperties}
+				/>
+			))}
 		</div>
 	)
 }
