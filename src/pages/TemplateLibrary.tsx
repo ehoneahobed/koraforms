@@ -21,6 +21,7 @@ import {
 	getTemplateSearchText,
 } from '../templates'
 import { setPageMeta } from '../utils/meta'
+import { readJsonFromStorage, writeJsonToStorage } from '../utils/storage'
 
 interface TemplateLibraryProps {
 	navigate: (path: string) => void
@@ -43,11 +44,8 @@ export function TemplateLibrary({ navigate }: TemplateLibraryProps) {
 	const [page, setPage] = useState(1)
 	const [previewKey, setPreviewKey] = useState<string | null>(null)
 	const [favoriteKeys, setFavoriteKeys] = useState<string[]>(() => {
-		try {
-			return JSON.parse(localStorage.getItem('koraforms-template-favorites') || '[]') as string[]
-		} catch {
-			return []
-		}
+		const parsed = readJsonFromStorage<unknown>('koraforms-template-favorites', [])
+		return Array.isArray(parsed) ? parsed.map(String) : []
 	})
 
 	useEffect(() => {
@@ -58,7 +56,7 @@ export function TemplateLibrary({ navigate }: TemplateLibraryProps) {
 	}, [])
 
 	useEffect(() => {
-		localStorage.setItem('koraforms-template-favorites', JSON.stringify(favoriteKeys))
+		writeJsonToStorage('koraforms-template-favorites', favoriteKeys)
 	}, [favoriteKeys])
 
 	const normalizedQuery = query.trim().toLowerCase()

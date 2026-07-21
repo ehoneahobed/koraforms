@@ -4,6 +4,7 @@ import { FORM_TEMPLATES, getTemplateMetadata } from '../templates'
 import { setPageMeta } from '../utils/meta'
 import { useAuth } from '@korajs/auth/react'
 import { PoweredByBadge } from '../components/shared/PoweredByBadge'
+import { getInputFields } from '../domain/forms'
 
 interface TemplateDetailProps {
 	templateKey: string
@@ -87,7 +88,7 @@ export function TemplateDetail({ templateKey, navigate }: TemplateDetailProps) {
 		)
 	}
 
-	const inputFields = template.fields.filter(f => f.type !== 'section' && f.type !== 'statement')
+	const inputFields = getInputFields(template.fields)
 	const requiredCount = metadata?.requiredFieldCount || inputFields.filter(f => f.required).length
 	const templateHref = isAuthenticated ? `/forms/new/edit?template=${templateKey}` : `/signup?template=${templateKey}`
 

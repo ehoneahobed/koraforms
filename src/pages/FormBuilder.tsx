@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useQuery, useMutation } from '@korajs/react'
 import { app } from '../kora'
 import { setPageMeta } from '../utils/meta'
+import { downloadJsonFile } from '../utils/download'
 import {
 	GripVertical,
 	Plus,
@@ -41,6 +42,34 @@ import { getThemeById } from '../themes'
 import { useSlashCommand } from '../hooks/useSlashCommand'
 import { SlashCommandMenu } from '../components/editor/SlashCommandMenu'
 import { Copy } from 'lucide-react'
+import {
+	getInputFields,
+	getPipeableFields,
+	isDisplayOnlyField,
+	isPipeableField,
+	parseFormFields,
+	parseFormSettings,
+	serializeFormFields,
+	serializeFormSettings,
+} from '../domain/forms'
+import {
+	addFieldOfType as addBuilderFieldOfType,
+	buildFormExportData,
+	duplicateFieldAt,
+	filterFieldTypes,
+	formExportFilename,
+	moveFieldAt,
+	parseImportedFormFile,
+	removeFieldAt,
+	updateFieldAt,
+} from '../features/form-builder/fields'
+import {
+	fieldDisplayName,
+	parseTokenSegments,
+	serializeTokenSegments,
+	stripTrailingFieldLabel,
+	type TokenSegment,
+} from '../features/form-builder/tokens'
 
 const FIELD_ICONS: Record<FieldType, React.ReactNode> = {
 	text: <Type className="h-3.5 w-3.5" />,
@@ -104,22 +133,9 @@ export function FormBuilder({ formId, navigate, userId }: Props) {
 
 	// Slash command: add a field of a specific type
 	const addFieldOfType = useCallback((type: FieldType, afterIndex: number | null) => {
-		const newField: FormField = {
-			id: `field_${Date.now()}`,
-			type,
-			label: '',
-			required: false,
-			...((['select', 'radio', 'checkbox', 'ranking'].includes(type)) ? { options: 'Option 1, Option 2, Option 3' } : {}),
-			...(type === 'matrix' ? { matrixRows: 'Quality, Service, Price', matrixColumns: 'Poor, Fair, Good, Excellent' } : {}),
-		}
-		if (afterIndex !== null && afterIndex >= 0) {
-			const next = [...fields]
-			next.splice(afterIndex + 1, 0, newField)
-			setFields(next)
-		} else {
-			setFields([...fields, newField])
-		}
-		setActiveField(newField.id)
+		const result = addBuilderFieldOfType(fields, type, afterIndex)
+		setFields(result.fields)
+		setActiveField(result.field.id)
 		slashCommand.close()
 	}, [fields])
 
@@ -130,13 +146,7 @@ export function FormBuilder({ formId, navigate, userId }: Props) {
 	const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
 
 	const moveField = useCallback((from: number, to: number) => {
-		setFields(prev => {
-			if (to < 0 || to >= prev.length) return prev
-			const next = [...prev]
-			const [item] = next.splice(from, 1)
-			next.splice(to, 0, item!)
-			return next
-		})
+		setFields(prev => moveFieldAt(prev, from, to))
 	}, [])
 
 	const handleDragStart = useCallback((index: number) => {
@@ -166,16 +176,8 @@ export function FormBuilder({ formId, navigate, userId }: Props) {
 			setTitle(String(form.title || ''))
 			setDescription(String(form.description || ''))
 			setTheme(String(form.theme || 'red'))
-			try {
-				setFields(JSON.parse(String(form.fields || '[]')))
-			} catch {
-				setFields([])
-			}
-			try {
-				setSettings(JSON.parse(String(form.settings || '{}')))
-			} catch {
-				setSettings({})
-			}
+			setFields(parseFormFields(form.fields))
+			setSettings(parseFormSettings(form.settings))
 			setLoaded(true)
 		}
 	}, [form, loaded])
@@ -186,9 +188,9 @@ export function FormBuilder({ formId, navigate, userId }: Props) {
 		updateForm(formId, {
 			title: title || 'Untitled Form',
 			description,
-			fields: JSON.stringify(fields),
+			fields: serializeFormFields(fields),
 			theme,
-			settings: JSON.stringify(settings),
+			settings: serializeFormSettings(settings),
 			ownerId: userId,
 		})
 	}, [formId, title, description, fields, theme, settings, userId, updateForm])
@@ -202,49 +204,27 @@ export function FormBuilder({ formId, navigate, userId }: Props) {
 
 	// Field manipulation callbacks (must be before early returns to keep hook order stable)
 	const addField = useCallback((afterIndex?: number) => {
-		const newField: FormField = {
-			id: `field_${Date.now()}`,
-			type: 'text',
-			label: '',
-			required: false,
-		}
-		if (afterIndex !== undefined) {
-			setFields(prev => {
-				const next = [...prev]
-				next.splice(afterIndex + 1, 0, newField)
-				return next
-			})
-		} else {
-			setFields(prev => [...prev, newField])
-		}
-		setActiveField(newField.id)
-	}, [])
-
-	const updateField = useCallback((index: number, updates: Partial<FormField>) => {
 		setFields(prev => {
-			const next = [...prev]
-			next[index] = { ...next[index]!, ...updates }
-			return next
+			const result = addBuilderFieldOfType(prev, 'text', afterIndex)
+			setActiveField(result.field.id)
+			return result.fields
 		})
 	}, [])
 
+	const updateField = useCallback((index: number, updates: Partial<FormField>) => {
+		setFields(prev => updateFieldAt(prev, index, updates))
+	}, [])
+
 	const removeField = useCallback((index: number) => {
-		setFields(prev => prev.filter((_, i) => i !== index))
+		setFields(prev => removeFieldAt(prev, index))
 		setActiveField(null)
 	}, [])
 
 	const duplicateField = useCallback((index: number) => {
 		setFields(prev => {
-			const source = prev[index]!
-			const copy: FormField = {
-				...source,
-				id: `field_${Date.now()}`,
-				label: source.label ? `${source.label} (copy)` : '',
-			}
-			const next = [...prev]
-			next.splice(index + 1, 0, copy)
-			setActiveField(copy.id)
-			return next
+			const result = duplicateFieldAt(prev, index)
+			if (result.field) setActiveField(result.field.id)
+			return result.fields
 		})
 	}, [])
 
@@ -303,22 +283,8 @@ export function FormBuilder({ formId, navigate, userId }: Props) {
 	}
 
 	const exportFormJson = () => {
-		const data = {
-			koraforms: true,
-			version: 1,
-			title: title || 'Untitled Form',
-			description,
-			fields,
-			theme,
-			settings,
-		}
-		const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
-		const url = URL.createObjectURL(blob)
-		const a = document.createElement('a')
-		a.href = url
-		a.download = `${(title || 'form').replace(/[^a-z0-9]/gi, '-').toLowerCase()}.koraform.json`
-		a.click()
-		URL.revokeObjectURL(url)
+		const data = buildFormExportData(title, description, fields, theme, settings)
+		downloadJsonFile(data, formExportFilename(title))
 	}
 
 	const importFormJson = () => {
@@ -330,20 +296,16 @@ export function FormBuilder({ formId, navigate, userId }: Props) {
 			if (!file) return
 			const reader = new FileReader()
 			reader.onload = () => {
-				try {
-					const data = JSON.parse(reader.result as string)
-					if (!data.koraforms) {
-						alert('This doesn\'t appear to be a KoraForms file.')
-						return
-					}
-					if (data.title) setTitle(data.title)
-					if (data.description) setDescription(data.description)
-					if (Array.isArray(data.fields)) setFields(data.fields)
-					if (data.theme) setTheme(data.theme)
-					if (data.settings) setSettings(data.settings)
-				} catch {
+				const data = parseImportedFormFile(String(reader.result || ''))
+				if (!data) {
 					alert('Failed to parse the file. Make sure it\'s a valid KoraForms JSON file.')
+					return
 				}
+				if (data.title) setTitle(data.title)
+				if (data.description) setDescription(data.description)
+				if (data.fields) setFields(data.fields)
+				if (data.theme) setTheme(data.theme)
+				if (data.settings) setSettings(data.settings)
 			}
 			reader.readAsText(file)
 		}
@@ -351,12 +313,7 @@ export function FormBuilder({ formId, navigate, userId }: Props) {
 	}
 
 	// Filter field types for the left panel search
-	const filteredFieldTypes = fieldSearch
-		? FIELD_TYPES.filter(ft =>
-			ft.label.toLowerCase().includes(fieldSearch.toLowerCase()) ||
-			ft.value.toLowerCase().includes(fieldSearch.toLowerCase())
-		)
-		: FIELD_TYPES
+	const filteredFieldTypes = filterFieldTypes(fieldSearch)
 
 	// Get the active field data and index
 	const activeFieldIndex = activeField ? fields.findIndex(f => f.id === activeField) : -1
@@ -506,7 +463,7 @@ export function FormBuilder({ formId, navigate, userId }: Props) {
 								onDrop={() => handleDrop(index)}
 								onDragEnd={handleDragEnd}
 								onUpdate={(updates) => updateField(index, updates)}
-								pipeableFields={fields.slice(0, index).filter(f => f.type !== 'section' && f.type !== 'statement' && f.type !== 'hidden')}
+								pipeableFields={fields.slice(0, index).filter(isPipeableField)}
 								allFields={fields}
 							/>
 						))}
@@ -604,47 +561,6 @@ export function FormBuilder({ formId, navigate, userId }: Props) {
 /* ============================================================
    FieldPreviewCard -- simplified field card for center panel
    ============================================================ */
-
-type TokenSegment =
-	| { type: 'text'; value: string }
-	| { type: 'token'; value: string }
-
-function parseTokenSegments(value: string): TokenSegment[] {
-	const segments: TokenSegment[] = []
-	const regex = /\{\{([^}]+)\}\}/g
-	let cursor = 0
-	let match: RegExpExecArray | null
-	while ((match = regex.exec(value)) !== null) {
-		if (match.index > cursor) {
-			segments.push({ type: 'text', value: value.slice(cursor, match.index) })
-		}
-		segments.push({ type: 'token', value: match[1] || '' })
-		cursor = match.index + match[0].length
-	}
-	if (cursor < value.length || segments.length === 0 || segments[segments.length - 1]?.type === 'token') {
-		segments.push({ type: 'text', value: value.slice(cursor) })
-	}
-	return segments
-}
-
-function serializeTokenSegments(segments: TokenSegment[]): string {
-	return segments.map(segment => segment.type === 'token' ? `{{${segment.value}}}` : segment.value).join('')
-}
-
-function fieldDisplayName(field: FormField, allFields: FormField[]): string {
-	return field.label || `Question ${allFields.findIndex(f => f.id === field.id) + 1}`
-}
-
-function escapeRegExp(value: string): string {
-	return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
-
-function stripTrailingFieldLabel(text: string, label: string): string {
-	const trimmedLabel = label.trim()
-	if (!trimmedLabel) return text
-	const labelPattern = escapeRegExp(trimmedLabel).replace(/\s+/g, '\\s+')
-	return text.replace(new RegExp(`${labelPattern}\\s*$`, 'i'), '')
-}
 
 function LabelTokenEditor({
 	value,
@@ -1057,7 +973,7 @@ function FieldSettingsPanel({
 	const needsOptions = ['select', 'radio', 'checkbox', 'ranking'].includes(field.type)
 	const isMatrix = field.type === 'matrix'
 	const needsScaleLabels = field.type === 'scale'
-	const isDisplayOnly = field.type === 'section' || field.type === 'statement' || field.type === 'calculated' || field.type === 'hidden'
+	const isDisplayOnly = isDisplayOnlyField(field) || field.type === 'calculated'
 	const isSignature = field.type === 'signature'
 	const isFileUpload = field.type === 'file'
 	const isCalculated = field.type === 'calculated'
@@ -1070,12 +986,8 @@ function FieldSettingsPanel({
 	}, [field.id])
 
 	// Fields available as condition sources (only fields ABOVE the current one)
-	const availableFields = allFields.slice(0, index).filter(
-		f => f.type !== 'section' && f.type !== 'statement'
-	)
-	const pipeableFields = allFields.slice(0, index).filter(
-		f => f.type !== 'section' && f.type !== 'statement' && f.type !== 'hidden'
-	)
+	const availableFields = getInputFields(allFields.slice(0, index))
+	const pipeableFields = getPipeableFields(allFields.slice(0, index))
 	const hasConditions = field.conditions && field.conditions.length > 0
 
 	const addCondition = () => {

@@ -41,7 +41,6 @@ import {
 	QrCode,
 	Download,
 } from 'lucide-react'
-import QRCode from 'qrcode'
 import { Landing } from './pages/Landing'
 import { SignIn } from './pages/SignIn'
 import { SignUp } from './pages/SignUp'
@@ -60,8 +59,11 @@ const Terms = lazy(() => import('./pages/Terms').then(m => ({ default: m.Terms }
 import { ErrorBoundary } from './components/shared/ErrorBoundary'
 import { FORM_TEMPLATES, createFieldsFromTemplate } from './templates'
 import { copyToClipboard } from './utils/clipboard'
+import { createQrDataUrl } from './utils/qr'
+import { readStringFromStorage, writeStringToStorage } from './utils/storage'
 import { THEME_PRESETS } from './themes'
 import type { FormSettings as FormSettingsType } from './types'
+import { parseFormSettings, serializeFormSettings } from './domain/forms'
 
 // ---------------------------------------------------------------------------
 // Dark mode management
@@ -70,15 +72,16 @@ import type { FormSettings as FormSettingsType } from './types'
 function useDarkMode() {
 	const [dark, setDark] = useState(() => {
 		if (typeof window !== 'undefined') {
-			return localStorage.getItem('koraforms-theme') === 'dark' ||
-				(!localStorage.getItem('koraforms-theme') && window.matchMedia('(prefers-color-scheme: dark)').matches)
+			const storedTheme = readStringFromStorage('koraforms-theme')
+			return storedTheme === 'dark' ||
+				(!storedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches)
 		}
 		return false
 	})
 
 	useEffect(() => {
 		document.documentElement.classList.toggle('dark', dark)
-		localStorage.setItem('koraforms-theme', dark ? 'dark' : 'light')
+		writeStringToStorage('koraforms-theme', dark ? 'dark' : 'light')
 	}, [dark])
 
 	return { dark, setDark }
@@ -376,17 +379,13 @@ function FormPageShell({ navigate, userId }: { navigate: (path: string) => void;
 	const formTheme = form ? String(form.theme || 'red') : 'red'
 	const formSettings = useMemo<FormSettingsType>(() => {
 		if (!form) return {}
-		try {
-			return JSON.parse(String(form.settings || '{}')) as FormSettingsType
-		} catch {
-			return {}
-		}
+		return parseFormSettings(form.settings)
 	}, [form])
 	const formUrl = getPublicFormUrl(slug || formId || '')
 
 	const updateSettings = (next: FormSettingsType) => {
 		if (!formId) return
-		updateForm(formId, { settings: JSON.stringify(next) })
+		updateForm(formId, { settings: serializeFormSettings(next) })
 	}
 
 	// Determine active tab from URL
@@ -764,12 +763,9 @@ function FormSharePanel({
 	const baseUrl = typeof window === 'undefined' ? '' : window.location.origin
 
 	useEffect(() => {
-		QRCode.toDataURL(formUrl, {
-			width: 480,
-			margin: 2,
-			color: { dark: '#111827', light: '#ffffff' },
-			errorCorrectionLevel: 'M',
-		}).then(setQrDataUrl).catch(console.error)
+		createQrDataUrl(formUrl).then(dataUrl => {
+			if (dataUrl) setQrDataUrl(dataUrl)
+		})
 	}, [formUrl])
 
 	const getEmbedCode = (mode: 'inline' | 'popup' | 'slidein') => {

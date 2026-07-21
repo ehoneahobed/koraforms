@@ -9,6 +9,8 @@
     "dev:server": "node --import tsx --watch server.ts",
     "build": "vite build",
     "typecheck": "tsc --noEmit",
+    "test": "node scripts/run-tests.js",
+    "check": "pnpm run typecheck && pnpm run test && pnpm run build",
     "start": "node --import tsx server.ts",
     "preview": "vite build && node --import tsx server.ts",
     "doctor": "kora doctor",

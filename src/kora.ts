@@ -17,6 +17,7 @@ export const app = createApp({
 		autoConnect: true,
 	},
 	store: {
+		adapter: 'sqlite-wasm',
 		workerUrl: koraWorkerUrl,
 	},
 	devtools: import.meta.env.DEV,

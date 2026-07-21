@@ -5,6 +5,7 @@ import { getThemeCSSVars } from '../themes'
 import { setPageMeta } from '../utils/meta'
 import { InlineLoader } from '../components/shared/BrandLoader'
 import { PoweredByBadge } from '../components/shared/PoweredByBadge'
+import { getResponseFields, parseFormFields, parseResponseData } from '../domain/forms'
 
 interface Props {
 	slug: string
@@ -59,8 +60,7 @@ export function PublicResults({ slug, navigate }: Props) {
 		)
 	}
 
-	let fields: FormField[] = []
-	try { fields = JSON.parse(data.form.fields || '[]') } catch { /* ignore */ }
+	const fields: FormField[] = parseFormFields(data.form.fields)
 
 	const responses = data.responses
 	const themeVars = getThemeCSSVars(data.form.theme || 'blue')
@@ -91,9 +91,9 @@ export function PublicResults({ slug, navigate }: Props) {
 
 			{/* Results */}
 			<div className="max-w-3xl mx-auto px-4 py-8 space-y-6">
-				{fields.filter(f => f.type !== 'section' && f.type !== 'statement' && f.type !== 'hidden').map(field => {
+				{getResponseFields(fields).map(field => {
 					const allValues = responses.map(r => {
-						try { return JSON.parse(r.data || '{}')[field.id] || '' } catch { return '' }
+						return parseResponseData(r.data)[field.id] || ''
 					}).filter(Boolean)
 
 					return (

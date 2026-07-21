@@ -26,13 +26,31 @@ import {
 	FileText,
 	ChevronDown,
 } from 'lucide-react'
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import { FORM_TEMPLATES, TEMPLATE_CATEGORIES, createFieldsFromTemplate } from '../templates'
-import type { FormField } from '../types'
 import { ShareModal } from '../components/shared/ShareModal'
 import { Share2, Search } from 'lucide-react'
 import { getThemeById } from '../themes'
 import { copyToClipboard } from '../utils/clipboard'
+import { downloadJsonFile } from '../utils/download'
+import { parseFormFields } from '../domain/forms'
+import { readJsonFromStorage, writeJsonToStorage } from '../utils/storage'
+import {
+	buildDashboardResponseStats,
+	buildDuplicateFormPayload,
+	buildFormExportPayload,
+	buildLastSeenMap,
+	buildTemplateFormPayload,
+	filterDashboardForms,
+	formExportFilename,
+	groupDashboardForms,
+	isArchivedForm,
+	publicFormIdentifier,
+	serializeArchiveSettings,
+	type DashboardFilter,
+	type FormRecord,
+	type ResponseRecord,
+} from '../features/forms/dashboard'
 
 interface Props {
 	navigate: (path: string) => void
@@ -92,55 +110,30 @@ export function FormList({ navigate, userId }: Props) {
 	const [showTemplates, setShowTemplates] = useState(false)
 	const [copiedId, setCopiedId] = useState<string | null>(null)
 	const [shareForm, setShareForm] = useState<Record<string, unknown> | null>(null)
-	const [filter, setFilter] = useState<'all' | 'published' | 'draft' | 'archived'>('all')
+	const [filter, setFilter] = useState<DashboardFilter>('all')
 	const [searchQuery, setSearchQuery] = useState('')
 
 	const handleArchive = (form: Record<string, unknown>) => {
-		const settings = JSON.parse(String(form.settings || '{}'))
-		settings.archived = true
-		updateForm({ id: String(form.id), settings: JSON.stringify(settings) })
+		updateForm({ id: String(form.id), settings: serializeArchiveSettings(form.settings, true) })
 	}
 
 	const handleUnarchive = (form: Record<string, unknown>) => {
-		const settings = JSON.parse(String(form.settings || '{}'))
-		delete settings.archived
-		updateForm({ id: String(form.id), settings: JSON.stringify(settings) })
-	}
-
-	const isArchived = (form: Record<string, unknown>) => {
-		try {
-			return JSON.parse(String(form.settings || '{}')).archived === true
-		} catch { return false }
+		updateForm({ id: String(form.id), settings: serializeArchiveSettings(form.settings, false) })
 	}
 
 	const handleCreateFromTemplate = (key: string) => {
-		const template = FORM_TEMPLATES[key]
-		if (!template) return
-		createForm({
-			title: template.title || 'Untitled Form',
-			description: template.description,
-			fields: JSON.stringify(createFieldsFromTemplate(key)),
-			status: 'draft',
-			ownerId: userId,
-			theme: 'red',
-		})
+		const payload = buildTemplateFormPayload(key, userId)
+		if (!payload) return
+		createForm(payload)
 		setShowTemplates(false)
 	}
 
 	const handleDuplicate = (form: Record<string, unknown>) => {
-		duplicateForm({
-			title: `Copy of ${String(form.title || 'Untitled Form')}`,
-			description: String(form.description || ''),
-			fields: String(form.fields || '[]'),
-			status: 'draft',
-			ownerId: userId,
-			theme: String(form.theme || 'blue'),
-			settings: String(form.settings || '{}'),
-		})
+		duplicateForm(buildDuplicateFormPayload(form as FormRecord, userId))
 	}
 
 	const handleCopyLink = (form: Record<string, unknown>) => {
-		const identifier = form.slug ? String(form.slug) : String(form.id)
+		const identifier = publicFormIdentifier(form as FormRecord)
 		const link = `${window.location.origin}/f/${identifier}`
 		copyToClipboard(link)
 		setCopiedId(String(form.id))
@@ -148,81 +141,32 @@ export function FormList({ navigate, userId }: Props) {
 	}
 
 	const handleExportForm = (form: Record<string, unknown>) => {
-		let formFields: FormField[] = []
-		let formSettings = {}
-		try { formFields = JSON.parse(String(form.fields || '[]')) } catch {}
-		try { formSettings = JSON.parse(String(form.settings || '{}')) } catch {}
-
-		const data = {
-			koraforms: true,
-			version: 1,
-			title: String(form.title || 'Untitled Form'),
-			description: String(form.description || ''),
-			fields: formFields,
-			theme: String(form.theme || 'blue'),
-			settings: formSettings,
-		}
-		const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
-		const url = URL.createObjectURL(blob)
-		const a = document.createElement('a')
-		a.href = url
-		a.download = `${String(form.title || 'form').replace(/[^a-z0-9]/gi, '-').toLowerCase()}.koraform.json`
-		a.click()
-		URL.revokeObjectURL(url)
+		const data = buildFormExportPayload(form as FormRecord)
+		downloadJsonFile(data, formExportFilename(form.title))
 	}
 
-	const activeForms = allForms.filter(f => !isArchived(f))
-	const archivedForms = allForms.filter(f => isArchived(f))
-	const published = activeForms.filter((f) => String(f.status) === 'published')
-	const drafts = activeForms.filter((f) => String(f.status) !== 'published')
+	const formGroups = useMemo(() => groupDashboardForms(allForms), [allForms])
+	const { activeForms, archivedForms, published, drafts } = formGroups
 
-	// Only count responses for the current user's forms
-	const userFormIds = new Set(allForms.map((f) => String(f.id)))
-	const responseCountMap = new Map<string, number>()
-	const newResponseCountMap = new Map<string, number>()
-	let totalResponses = 0
-
-	// Track "last seen" per form for new response badges
 	const lastSeenKey = 'koraforms-last-seen'
-	const lastSeen: Record<string, number> = (() => {
-		try { return JSON.parse(localStorage.getItem(lastSeenKey) || '{}') } catch { return {} }
-	})()
-
-	for (const r of allResponses) {
-		const fid = String(r.formId)
-		if (!userFormIds.has(fid)) continue
-		responseCountMap.set(fid, (responseCountMap.get(fid) || 0) + 1)
-		totalResponses++
-		// Count responses newer than last seen
-		const ts = Number(r.submittedAt || 0)
-		if (ts > (lastSeen[fid] || 0)) {
-			newResponseCountMap.set(fid, (newResponseCountMap.get(fid) || 0) + 1)
-		}
-	}
+	const userFormIds = useMemo(() => allForms.map((form) => String(form.id)), [allForms])
+	const responseStats = useMemo(() => {
+		const lastSeen = readJsonFromStorage<Record<string, number>>(lastSeenKey, {})
+		return buildDashboardResponseStats(allForms, allResponses, lastSeen)
+	}, [allForms, allResponses])
 
 	// Update last seen timestamps when viewing dashboard
 	useEffect(() => {
-		const next: Record<string, number> = { ...lastSeen }
-		for (const fid of userFormIds) {
-			next[fid] = Date.now()
-		}
-		localStorage.setItem(lastSeenKey, JSON.stringify(next))
-	}, [allResponses.length]) // eslint-disable-line react-hooks/exhaustive-deps
+		if (userFormIds.length === 0) return
+		const lastSeen = readJsonFromStorage<Record<string, number>>(lastSeenKey, {})
+		const next = buildLastSeenMap(userFormIds, lastSeen, Date.now())
+		writeJsonToStorage(lastSeenKey, next)
+	}, [allResponses.length, userFormIds])
 
-	const filteredForms =
-		filter === 'published' ? published
-		: filter === 'draft' ? drafts
-		: filter === 'archived' ? archivedForms
-		: activeForms
-
-	// Apply search filter
-	const displayForms = searchQuery.trim()
-		? filteredForms.filter(f => {
-			const q = searchQuery.toLowerCase()
-			return String(f.title || '').toLowerCase().includes(q) ||
-				String(f.description || '').toLowerCase().includes(q)
-		})
-		: filteredForms
+	const displayForms = useMemo(
+		() => filterDashboardForms(formGroups, filter, searchQuery),
+		[filter, formGroups, searchQuery],
+	)
 
 	return (
 		<div className="mx-auto w-full max-w-[1220px] min-w-0 overflow-x-hidden">
@@ -292,7 +236,7 @@ export function FormList({ navigate, userId }: Props) {
 						</div>
 						<div>
 							<p className="text-[13px] font-medium text-slate-500 dark:text-gray-500">Responses</p>
-							<p className="text-[25px] leading-none font-bold text-slate-950 dark:text-gray-100 tracking-tight mt-1">{totalResponses}</p>
+							<p className="text-[25px] leading-none font-bold text-slate-950 dark:text-gray-100 tracking-tight mt-1">{responseStats.totalResponses}</p>
 							<p className="text-[12px] text-slate-500 dark:text-gray-500 mt-1.5">Total across all forms</p>
 						</div>
 					</div>
@@ -393,10 +337,10 @@ export function FormList({ navigate, userId }: Props) {
 							onExport={() => handleExportForm(form)}
 							onArchive={() => handleArchive(form)}
 							onUnarchive={() => handleUnarchive(form)}
-							isFormArchived={isArchived(form)}
+							isFormArchived={isArchivedForm(form)}
 							isCopied={copiedId === form.id}
-							responseCount={responseCountMap.get(String(form.id)) || 0}
-							newResponseCount={newResponseCountMap.get(String(form.id)) || 0}
+							responseCount={responseStats.responseCountMap.get(String(form.id)) || 0}
+							newResponseCount={responseStats.newResponseCountMap.get(String(form.id)) || 0}
 						/>
 					))}
 				</div>
@@ -465,7 +409,7 @@ function FormCard({
 
 	let fieldCount = 0
 	try {
-		fieldCount = JSON.parse(String(form.fields || '[]')).length
+		fieldCount = parseFormFields(form.fields).length
 	} catch {
 		// ignore
 	}

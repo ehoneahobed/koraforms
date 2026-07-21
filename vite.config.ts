@@ -66,6 +66,9 @@ export default defineConfig({
 	},
 	resolve: {
 		dedupe: ['yjs'],
+		alias: {
+			'@korajs/store/better-sqlite3': resolve(__dirname, 'src/shims/kora-better-sqlite3.browser.ts'),
+		},
 	},
 	build: {
 		rollupOptions: {

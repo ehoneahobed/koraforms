@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
 import { X, Copy, Check, Code, Link as LinkIcon, QrCode, Download } from 'lucide-react'
 import { copyToClipboard as copyText } from '../../utils/clipboard'
-import QRCode from 'qrcode'
+import { downloadDataUrl } from '../../utils/download'
+import { createQrDataUrl } from '../../utils/qr'
 
 interface Props {
 	slug: string
@@ -24,12 +25,9 @@ export function ShareModal({ slug, title, onClose }: Props) {
 	// Generate QR code
 	useEffect(() => {
 		if (tab === 'qr') {
-			QRCode.toDataURL(formUrl, {
-				width: 400,
-				margin: 2,
-				color: { dark: '#1a1a1a', light: '#ffffff' },
-				errorCorrectionLevel: 'M',
-			}).then(setQrDataUrl).catch(console.error)
+			createQrDataUrl(formUrl).then(dataUrl => {
+				if (dataUrl) setQrDataUrl(dataUrl)
+			})
 		}
 	}, [tab, formUrl])
 
@@ -54,10 +52,7 @@ export function ShareModal({ slug, title, onClose }: Props) {
 
 	const downloadQR = () => {
 		if (!qrDataUrl) return
-		const a = document.createElement('a')
-		a.href = qrDataUrl
-		a.download = `${slug}-qr-code.png`
-		a.click()
+		downloadDataUrl(qrDataUrl, `${slug}-qr-code.png`)
 	}
 
 	return (

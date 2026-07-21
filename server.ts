@@ -15,6 +15,7 @@ import { defineSchema, t, createOperation, HybridLogicalClock } from '@korajs/co
 import type { ServerStore } from '@korajs/server'
 import type { UserStore } from '@korajs/auth/server'
 import type { ProductionHttpRouteRequest, ProductionHttpRouteResponse } from '@korajs/server'
+import { parseFormFields, parseFormSettings, safeJsonParse, serializeFormSettings } from './src/domain/forms'
 
 // ---------------------------------------------------------------------------
 // KoraForms schema (shared between client and server for materialized tables)
@@ -33,7 +34,7 @@ const koraFormsSchema = defineSchema({
 					published: ['draft', 'closed'],
 					closed: [],
 				}),
-					theme: t.string().default('red'),
+				theme: t.string().default('red'),
 				responseCount: t.number().default(0).merge('counter'),
 				ownerId: t.string().default(''),
 				slug: t.string().default(''),
@@ -124,6 +125,12 @@ async function main(): Promise<void> {
 		return { ...response, headers: { ...response.headers, ...corsHeaders } }
 	}
 
+	function parseRequestBody<T extends Record<string, unknown>>(req: ProductionHttpRouteRequest): T | null {
+		const body = typeof req.body === 'string' ? safeJsonParse<unknown>(req.body, null) : req.body
+		if (!body || typeof body !== 'object' || Array.isArray(body)) return null
+		return body as T
+	}
+
 	// -----------------------------------------------------------------------
 	// Production server — handles static files, WebSocket sync, CORS, health
 	// check, metrics, admin dashboard, and backup endpoints automatically.
@@ -166,8 +173,11 @@ async function main(): Promise<void> {
 
 					if (req.method === 'POST') {
 						try {
-							const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body
-							const { formId, data, resumeId: existingId } = body as { formId: string; data: string; resumeId?: string }
+							const body = parseRequestBody<{ formId?: unknown; data?: unknown; resumeId?: unknown }>(req)
+							if (!body) return withCors({ status: 400, body: { error: 'Invalid JSON body' } })
+							const formId = typeof body.formId === 'string' ? body.formId : ''
+							const data = typeof body.data === 'string' ? body.data : ''
+							const existingId = typeof body.resumeId === 'string' ? body.resumeId : undefined
 							if (!formId || !data) return withCors({ status: 400, body: { error: 'formId and data required' } })
 
 							// Look up form by ID or slug
@@ -227,18 +237,19 @@ async function main(): Promise<void> {
 					// POST = password verification
 					if (req.method === 'POST') {
 						try {
-							const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body
-							const { password } = body as { password?: string }
+							const body = parseRequestBody<{ password?: unknown }>(req)
+							if (!body) return withCors({ status: 400, body: { error: 'Invalid JSON body' } })
+							const password = typeof body.password === 'string' ? body.password : undefined
 							const [form] = await store.queryCollection('forms', {
 								where: { slug, status: 'published' },
 								limit: 1,
 							})
 							if (!form) return withCors({ status: 404, body: { error: 'Form not found' } })
-							const formSettings = JSON.parse(String(form.settings || '{}'))
+							const formSettings = parseFormSettings(form.settings)
 							if (!formSettings.password || formSettings.password === password) {
 								// Strip password from settings before sending
 								delete formSettings.password
-								return withCors({ status: 200, body: { ...form, settings: JSON.stringify(formSettings) } })
+								return withCors({ status: 200, body: { ...form, settings: serializeFormSettings(formSettings) } })
 							}
 							return withCors({ status: 403, body: { error: 'Incorrect password' } })
 						} catch {
@@ -259,7 +270,7 @@ async function main(): Promise<void> {
 							return withCors({ status: 404, body: { error: 'Form not found' } })
 						}
 						// Check for password protection
-						const formSettings = JSON.parse(String(form.settings || '{}'))
+						const formSettings = parseFormSettings(form.settings)
 						if (formSettings.password) {
 							// Return only metadata — require POST with password for full form
 							return withCors({
@@ -297,7 +308,7 @@ async function main(): Promise<void> {
 						if (!form) {
 							return withCors({ status: 404, body: { error: 'Form not found' } })
 						}
-						const formSettings = JSON.parse(String(form.settings || '{}'))
+						const formSettings = parseFormSettings(form.settings)
 						if (!formSettings.publicResults) {
 							return withCors({ status: 403, body: { error: 'Results are not public for this form' } })
 						}
@@ -325,8 +336,10 @@ async function main(): Promise<void> {
 						return withCors({ status: 405, body: { error: 'Method not allowed' } })
 					}
 					try {
-						const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body
-						const { formId, data } = body as { formId: string; data: string }
+						const body = parseRequestBody<{ formId?: unknown; data?: unknown }>(req)
+						if (!body) return withCors({ status: 400, body: { error: 'Invalid JSON body' } })
+						const formId = typeof body.formId === 'string' ? body.formId : ''
+						const data = typeof body.data === 'string' ? body.data : ''
 						if (!formId || !data) {
 							return withCors({ status: 400, body: { error: 'formId and data are required' } })
 						}
@@ -346,7 +359,7 @@ async function main(): Promise<void> {
 						}
 						// Enforce response limits and scheduling
 						try {
-							const settings = JSON.parse(String(form.settings || '{}'))
+							const settings = parseFormSettings(form.settings)
 							if (settings.closesAt && Date.now() > settings.closesAt) {
 								return withCors({ status: 403, body: { error: settings.closedMessage || 'This form is no longer accepting responses.' } })
 							}
@@ -388,8 +401,8 @@ async function main(): Promise<void> {
 						await store.applyRemoteOperation(op)
 						// Fire webhooks and email notifications (fire-and-forget)
 						try {
-							const whSettings = JSON.parse(String(form.settings || '{}'))
-							const formFields = JSON.parse(String(form.fields || '[]'))
+							const whSettings = parseFormSettings(form.settings)
+							const formFields = parseFormFields(form.fields)
 							const fieldsMap: Record<string, { label: string; type: string }> = {}
 							for (const f of formFields) {
 								fieldsMap[f.id] = { label: f.label, type: f.type }
@@ -453,7 +466,7 @@ async function sendEmailNotification(
 	responseData: string,
 	fieldsMap: Record<string, { label: string; type: string }>,
 ): Promise<void> {
-	const data = JSON.parse(responseData)
+	const data = safeJsonParse<Record<string, unknown>>(responseData, {})
 	const baseUrl = process.env.PUBLIC_URL || 'https://forms.korajs.dev'
 
 	// Build a plain-text summary of the response
@@ -524,7 +537,7 @@ async function fireWebhooks(
 		form,
 		response: {
 			submittedAt: Date.now(),
-			data: JSON.parse(responseData),
+			data: safeJsonParse<Record<string, unknown>>(responseData, {}),
 			fields: fieldsMap,
 		},
 	}

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { ArrowLeft, ArrowRight, Check, Send, Star, X, RotateCcw, Upload, Trash2, Link, Copy, Bookmark } from 'lucide-react'
 import type { FormField, FormSettings } from '../types'
 import { isFieldVisible, pipeValues, getFieldText, isRtlLanguage, LANGUAGES } from '../types'
@@ -7,6 +7,29 @@ import { getThemeCSSVars } from '../themes'
 import { PoweredByBadge } from '../components/shared/PoweredByBadge'
 import { setPageMeta } from '../utils/meta'
 import { InlineLoader } from '../components/shared/BrandLoader'
+import { isDisplayOnlyField, parseFormFields, parseFormSettings, safeJsonParse } from '../domain/forms'
+import { readJsonFromStorage, removeStorageItem, writeJsonToStorage } from '../utils/storage'
+import {
+	buildPrefillValues,
+	buildResponseJson,
+	buildSubmissionMeta,
+	countInteractiveQuestions,
+	moveListItem,
+	normalizeSavedProgress,
+	optionForShortcutKey,
+	parseLabelList,
+	parseMatrixAnswers,
+	parseMatrixAxis,
+	parseOptionList,
+	parseRankingValue,
+	parseSelectedOptions,
+	progressForIndex,
+	questionNumberAtIndex,
+	resumeIndexForValues,
+	toggleSelectedOption,
+	validateField,
+	yesNoValueForKey,
+} from '../features/form-fill/flow'
 
 interface Props {
 	formId: string
@@ -94,29 +117,19 @@ export function FormFill({ formId, navigate }: Props) {
 	const [resumeUrl, setResumeUrl] = useState('')
 	const [isSaving, setIsSaving] = useState(false)
 
-	let fields: FormField[] = []
-	try {
-		fields = JSON.parse(String(form?.fields || '[]'))
-	} catch {
-		// ignore
-	}
+	const fields: FormField[] = useMemo(() => parseFormFields(form?.fields), [form?.fields])
+	const settings: FormSettings = useMemo(() => parseFormSettings(form?.settings), [form?.settings])
 
-	// Parse form settings
-	let settings: FormSettings = {}
-	try {
-		settings = JSON.parse(String(form?.settings || '{}'))
-	} catch {
-		// ignore
-	}
-
-	const themeVars = getThemeCSSVars(String(form?.theme || 'red'))
+	const themeVars = useMemo(() => getThemeCSSVars(String(form?.theme || 'red')), [form?.theme])
 
 	// Compute visible fields based on conditional logic
-	const visibleFields = fields.filter(f => isFieldVisible(f, values))
+	const visibleFields = useMemo(
+		() => fields.filter(f => isFieldVisible(f, values)),
+		[fields, values],
+	)
 
 	// Display-only / non-interactive field types
-	const isDisplayOnly = (type: string) => type === 'section' || type === 'statement' || type === 'hidden'
-	const totalQuestions = visibleFields.filter((f) => !isDisplayOnly(f.type)).length
+	const totalQuestions = countInteractiveQuestions(visibleFields)
 
 	// Auto-populate calculated and hidden field values
 	useEffect(() => {
@@ -136,54 +149,42 @@ export function FormFill({ formId, navigate }: Props) {
 			}
 		}
 		if (changed) setValues(next)
-	}, [values, fields]) // eslint-disable-line react-hooks/exhaustive-deps
+	}, [values, fields])
 	const questionNumber =
 		currentIndex >= 0 && currentIndex < visibleFields.length
-			? visibleFields.slice(0, currentIndex + 1).filter((f) => !isDisplayOnly(f.type)).length
+			? questionNumberAtIndex(visibleFields, currentIndex)
 			: 0
 
-	const progress = visibleFields.length > 0 ? Math.max(0, (currentIndex / visibleFields.length) * 100) : 0
+	const progress = progressForIndex(visibleFields, currentIndex)
 
 	// URL pre-fill — seed initial values from query params
 	useEffect(() => {
 		if (!form || fields.length === 0) return
 		const searchParams = new URLSearchParams(window.location.search)
 		if (searchParams.size === 0) return
-		const prefill: Record<string, string> = {}
-		for (const [key, val] of searchParams) {
-			if (key === 'embed') continue
-			// Try matching by field ID
-			if (fields.find(f => f.id === key)) {
-				prefill[key] = val
-			} else {
-				// Try matching by label (case-insensitive, spaces → underscores)
-				const match = fields.find(f =>
-					f.label.toLowerCase().replace(/\s+/g, '_') === key.toLowerCase()
-				)
-				if (match) prefill[match.id] = val
-			}
-		}
+		const prefill = buildPrefillValues(fields, searchParams)
 		if (Object.keys(prefill).length > 0) {
 			setValues(prev => ({ ...prefill, ...prev }))
 		}
-	}, [form?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+	}, [fields, form])
 
 	// Progress saving — check for saved progress on mount
 	useEffect(() => {
 		if (!form) return
 		try {
-			const raw = localStorage.getItem(progressKey(formId))
-			if (raw) {
-				const parsed = JSON.parse(raw)
-				if (parsed.values && Object.keys(parsed.values).length > 0) {
-					setSavedProgress(parsed)
-					setShowResumePrompt(true)
-				}
+			const parsed = readJsonFromStorage<{ values?: Record<string, string>; currentIndex?: number; savedAt?: number }>(
+				progressKey(formId),
+				{},
+			)
+			const progress = normalizeSavedProgress(parsed)
+			if (progress) {
+				setSavedProgress(progress)
+				setShowResumePrompt(true)
 			}
 		} catch {
 			// ignore
 		}
-	}, [form?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+	}, [form, formId])
 
 	// Check for resume URL parameter (save & continue later)
 	useEffect(() => {
@@ -196,18 +197,13 @@ export function FormFill({ formId, navigate }: Props) {
 			.then(res => res.ok ? res.json() : null)
 			.then(data => {
 				if (data?.data) {
-					const saved = JSON.parse(data.data)
+					const saved = safeJsonParse<Record<string, string>>(data.data, {})
 					setValues(saved)
-					// Find the first unanswered visible question to resume from
-					const visible = fields.filter(f => isFieldVisible(f, saved))
-					const lastIndex = visible.findIndex(f => !saved[f.id])
-					if (lastIndex > 0) setCurrentIndex(lastIndex)
-					else if (lastIndex === -1 && visible.length > 0) setCurrentIndex(visible.length - 1)
-					else setCurrentIndex(0)
+					setCurrentIndex(resumeIndexForValues(fields, saved))
 				}
 			})
 			.catch(() => {})
-	}, [form?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+	}, [fields, form])
 
 	// Save and continue later — POST current progress to server
 	const saveAndContinueLater = useCallback(async () => {
@@ -242,11 +238,11 @@ export function FormFill({ formId, navigate }: Props) {
 		if (!form || submitted || currentIndex < 0) return
 		if (Object.keys(values).length === 0) return
 		const timer = setTimeout(() => {
-			localStorage.setItem(progressKey(formId), JSON.stringify({
+			writeJsonToStorage(progressKey(formId), {
 				values,
 				currentIndex,
 				savedAt: Date.now(),
-			}))
+			})
 		}, 500)
 		return () => clearTimeout(timer)
 	}, [values, currentIndex, form, submitted, formId])
@@ -269,46 +265,9 @@ export function FormFill({ formId, navigate }: Props) {
 		if (currentIndex < 0 || currentIndex >= visibleFields.length) return true
 		const field = visibleFields[currentIndex]!
 		const value = values[field.id] || ''
-
-		// Section and statement are display-only, always valid
-		if (field.type === 'section' || field.type === 'statement') return true
-
-		if (field.required && !value.trim()) {
-			setErrors({ ...errors, [field.id]: 'This field is required' })
-			return false
-		}
-		if (field.type === 'email' && value && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
-			setErrors({ ...errors, [field.id]: 'Please enter a valid email address' })
-			return false
-		}
-		if (field.type === 'number' && value) {
-			if (!/^-?\d*\.?\d+$/.test(value)) {
-				setErrors({ ...errors, [field.id]: 'Please enter a valid number' })
-				return false
-			}
-		}
-		if (field.type === 'phone' && value) {
-			// Must have at least 7 digits
-			const digitsOnly = value.replace(/\D/g, '')
-			if (digitsOnly.length < 7) {
-				setErrors({ ...errors, [field.id]: 'Please enter a valid phone number (at least 7 digits)' })
-				return false
-			}
-		}
-		if (field.type === 'url' && value && !/^https?:\/\/.+\..+/.test(value)) {
-			setErrors({ ...errors, [field.id]: 'Please enter a valid URL (e.g. https://example.com)' })
-			return false
-		}
-		if ((field.type === 'select' || field.type === 'radio') && field.required && !value) {
-			setErrors({ ...errors, [field.id]: 'Please select an option' })
-			return false
-		}
-		if (field.type === 'checkbox' && field.required && !value) {
-			setErrors({ ...errors, [field.id]: 'Please select at least one option' })
-			return false
-		}
-		if (field.type === 'signature' && field.required && !value) {
-			setErrors({ ...errors, [field.id]: 'Please draw your signature' })
+		const result = validateField(field, value)
+		if (!result.valid) {
+			setErrors({ ...errors, [field.id]: result.error })
 			return false
 		}
 
@@ -332,29 +291,22 @@ export function FormFill({ formId, navigate }: Props) {
 			setCurrentIndex(currentIndex + 1)
 		} else {
 			const realFormId = String(form?.id || formId)
-			// Attach metadata for analytics
-			const ua = navigator.userAgent
-			const meta = {
-				startedAt: startedAtRef.current || Date.now(),
-				completedAt: Date.now(),
-				duration: startedAtRef.current ? Math.round((Date.now() - startedAtRef.current) / 1000) : 0,
-				ua,
+			const now = Date.now()
+			const meta = buildSubmissionMeta(startedAtRef.current, now, {
+				ua: navigator.userAgent,
 				screen: `${window.screen.width}x${window.screen.height}`,
 				lang: navigator.language,
-			}
-			const responseJson = JSON.stringify({ ...values, _meta: meta })
+			})
+			const responseJson = buildResponseJson(values, meta)
 
 			// Duplicate detection — warn if identical response submitted within 5 minutes
 			const dupKey = `koraforms-dup-${formId}`
 			try {
-				const lastSubmit = localStorage.getItem(dupKey)
-				if (lastSubmit) {
-					const { hash, time } = JSON.parse(lastSubmit)
-					const responseHash = simpleHash(responseJson)
-					if (hash === responseHash && Date.now() - time < 5 * 60 * 1000) {
-						const confirmed = window.confirm('It looks like you already submitted this exact response. Submit again?')
-						if (!confirmed) return
-					}
+				const { hash, time } = readJsonFromStorage<{ hash?: number; time?: number }>(dupKey, {})
+				const responseHash = simpleHash(responseJson)
+				if (hash === responseHash && typeof time === 'number' && Date.now() - time < 5 * 60 * 1000) {
+					const confirmed = window.confirm('It looks like you already submitted this exact response. Submit again?')
+					if (!confirmed) return
 				}
 			} catch { /* ignore */ }
 
@@ -364,16 +316,16 @@ export function FormFill({ formId, navigate }: Props) {
 				.then(() => {
 					setSubmitted(true)
 					// Clear saved progress on successful submission
-					localStorage.removeItem(progressKey(formId))
+					removeStorageItem(progressKey(formId))
 					// Store hash for duplicate detection
-					localStorage.setItem(dupKey, JSON.stringify({ hash: simpleHash(responseJson), time: Date.now() }))
+					writeJsonToStorage(dupKey, { hash: simpleHash(responseJson), time: Date.now() })
 				})
 				.catch((err) => setSubmitError(err.message || 'Failed to submit. Please try again.'))
 				.finally(() => setIsSubmitting(false))
 		}
 	}, [currentIndex, visibleFields.length, formId, values, form, validateCurrent, submitResponse])
 
-	const goBack = () => {
+	const goBack = useCallback(() => {
 		if (currentIndex > 0) {
 			setDirection('back')
 			setCurrentIndex(currentIndex - 1)
@@ -381,14 +333,15 @@ export function FormFill({ formId, navigate }: Props) {
 			setDirection('back')
 			setCurrentIndex(-1)
 		}
-	}
+	}, [currentIndex])
 
-	const setValue = (fieldId: string, value: string) => {
-		setValues({ ...values, [fieldId]: value })
-		if (errors[fieldId]) {
-			setErrors({ ...errors, [fieldId]: '' })
-		}
-	}
+	const setValue = useCallback((fieldId: string, value: string) => {
+		setValues(currentValues => ({ ...currentValues, [fieldId]: value }))
+		setErrors(currentErrors => {
+			if (!currentErrors[fieldId]) return currentErrors
+			return { ...currentErrors, [fieldId]: '' }
+		})
+	}, [])
 
 	// Enhanced keyboard navigation
 	useEffect(() => {
@@ -419,23 +372,16 @@ export function FormFill({ formId, navigate }: Props) {
 					const tag = (e.target as HTMLElement)?.tagName
 					if (tag === 'INPUT' || tag === 'TEXTAREA') return
 					if (['select', 'radio'].includes(field.type)) {
-						const options = (field.options || '').split(',').map(o => o.trim()).filter(Boolean)
-						const idx = parseInt(e.key) - 1
-						if (idx < options.length) {
+						const option = optionForShortcutKey(parseOptionList(field.options), e.key)
+						if (option) {
 							e.preventDefault()
-							setValue(field.id, options[idx]!)
+							setValue(field.id, option)
 						}
 					} else if (field.type === 'checkbox') {
-						const options = (field.options || '').split(',').map(o => o.trim()).filter(Boolean)
-						const idx = parseInt(e.key) - 1
-						if (idx < options.length) {
+						const option = optionForShortcutKey(parseOptionList(field.options), e.key)
+						if (option) {
 							e.preventDefault()
-							const opt = options[idx]!
-							const selected = values[field.id] ? values[field.id]!.split(',') : []
-							const next = selected.includes(opt)
-								? selected.filter(s => s !== opt)
-								: [...selected, opt]
-							setValue(field.id, next.join(','))
+							setValue(field.id, toggleSelectedOption(values[field.id] || '', option))
 						}
 					}
 				}
@@ -443,19 +389,17 @@ export function FormFill({ formId, navigate }: Props) {
 				if (field.type === 'yesno' && !e.ctrlKey && !e.metaKey && !e.altKey) {
 					const tag = (e.target as HTMLElement)?.tagName
 					if (tag === 'INPUT' || tag === 'TEXTAREA') return
-					if (e.key.toLowerCase() === 'y') {
+					const nextValue = yesNoValueForKey(e.key)
+					if (nextValue) {
 						e.preventDefault()
-						setValue(field.id, 'yes')
-					} else if (e.key.toLowerCase() === 'n') {
-						e.preventDefault()
-						setValue(field.id, 'no')
+						setValue(field.id, nextValue)
 					}
 				}
 			}
 		}
 		window.addEventListener('keydown', handler)
 		return () => window.removeEventListener('keydown', handler)
-	}, [goNext, currentIndex, visibleFields, values]) // eslint-disable-line react-hooks/exhaustive-deps
+	}, [currentIndex, goBack, goNext, navigate, setValue, values, visibleFields])
 
 	// Inject custom CSS if present
 	useEffect(() => {
@@ -599,7 +543,7 @@ export function FormFill({ formId, navigate }: Props) {
 						</button>
 						<button
 							onClick={() => {
-								localStorage.removeItem(progressKey(formId))
+								removeStorageItem(progressKey(formId))
 								setShowResumePrompt(false)
 							}}
 							className="inline-flex items-center gap-2 rounded-xl border-2 border-gray-200 dark:border-gray-700 px-6 py-3 text-sm font-medium text-gray-500 dark:text-gray-400 transition-smooth hover:border-gray-300 active:scale-[0.98]"
@@ -1150,7 +1094,7 @@ function QuestionInput({
 			)
 
 		case 'select': {
-			const options = (field.options || '').split(',').map((o) => o.trim()).filter(Boolean)
+			const options = parseOptionList(field.options)
 			return (
 				<div className="space-y-2">
 					{options.map((opt, i) => (
@@ -1175,7 +1119,7 @@ function QuestionInput({
 		}
 
 		case 'radio': {
-			const options = (field.options || '').split(',').map((o) => o.trim()).filter(Boolean)
+			const options = parseOptionList(field.options)
 			return (
 				<div className="space-y-2">
 					{options.map((opt, i) => (
@@ -1200,8 +1144,8 @@ function QuestionInput({
 		}
 
 		case 'checkbox': {
-			const options = (field.options || '').split(',').map((o) => o.trim()).filter(Boolean)
-			const selected = value ? value.split(',') : []
+			const options = parseOptionList(field.options)
+			const selected = parseSelectedOptions(value)
 			return (
 				<div className="space-y-2">
 					{options.map((opt, i) => {
@@ -1210,10 +1154,7 @@ function QuestionInput({
 							<button
 								key={opt}
 								onClick={() => {
-									const next = isSelected
-										? selected.filter((s) => s !== opt)
-										: [...selected, opt]
-									onChange(next.join(','))
+									onChange(toggleSelectedOption(value, opt))
 								}}
 								className={`w-full flex items-center gap-3 rounded-xl border-2 px-4 py-3 text-left text-base transition-smooth ${
 									isSelected
@@ -1322,7 +1263,7 @@ function QuestionInput({
 		}
 
 		case 'scale': {
-			const labels = (field.options || '').split(',').map((l) => l.trim())
+			const labels = parseLabelList(field.options)
 			const lowLabel = labels[0] || ''
 			const highLabel = labels[1] || ''
 			return (
@@ -1409,7 +1350,7 @@ function QuestionInput({
 			return <FileInput field={field} value={value} onChange={onChange} />
 
 		case 'ranking': {
-			const rankOptions = (field.options || '').split(',').map(o => o.trim()).filter(Boolean)
+			const rankOptions = parseOptionList(field.options)
 			return <RankingInput options={rankOptions} value={value} onChange={onChange} />
 		}
 
@@ -1676,21 +1617,11 @@ function RankingInput({
 	value: string
 	onChange: (value: string) => void
 }) {
-	const [items, setItems] = useState<string[]>(() => {
-		if (value) {
-			try {
-				const parsed = JSON.parse(value) as string[]
-				if (Array.isArray(parsed) && parsed.length > 0) return parsed
-			} catch { /* ignore */ }
-		}
-		return [...options]
-	})
+	const [items, setItems] = useState<string[]>(() => parseRankingValue(value, options))
 	const [dragIndex, setDragIndex] = useState<number | null>(null)
 
 	const moveItem = (from: number, to: number) => {
-		const next = [...items]
-		const [moved] = next.splice(from, 1)
-		next.splice(to, 0, moved!)
+		const next = moveListItem(items, from, to)
 		setItems(next)
 		onChange(JSON.stringify(next))
 	}
@@ -1748,11 +1679,10 @@ function MatrixInput({
 	value: string
 	onChange: (value: string) => void
 }) {
-	const rows = (field.matrixRows || '').split(',').map(r => r.trim()).filter(Boolean)
-	const columns = (field.matrixColumns || '').split(',').map(c => c.trim()).filter(Boolean)
+	const rows = parseMatrixAxis(field.matrixRows)
+	const columns = parseMatrixAxis(field.matrixColumns)
 
-	let answers: Record<string, string> = {}
-	try { if (value) answers = JSON.parse(value) } catch { /* ignore */ }
+	const answers = parseMatrixAnswers(value)
 
 	const setAnswer = (row: string, col: string) => {
 		const next = { ...answers, [row]: col }

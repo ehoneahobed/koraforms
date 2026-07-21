@@ -1,4 +1,5 @@
 import type { FormField, FormTemplate } from './types'
+import { createFieldId } from './domain/forms'
 
 export const FORM_TEMPLATES: Record<string, FormTemplate> = {
 	// -----------------------------------------------------------------------
@@ -560,7 +561,7 @@ export function getTemplateSearchText(templateKey: string): string {
 export function createFieldsFromTemplate(templateKey: string): FormField[] {
 	const template = FORM_TEMPLATES[templateKey]
 	if (!template) return []
-	const prefix = `field_${Date.now()}`
+	const prefix = createFieldId()
 	const idMap = new Map(template.fields.map((field, index) => [field.id, `${prefix}_${index}`]))
 
 	return template.fields.map((field) => {
