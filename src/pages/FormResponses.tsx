@@ -5,6 +5,7 @@ import { setPageMeta } from '../utils/meta'
 import { ArrowLeft, Download, FileSpreadsheet, ChevronDown, ChevronRight, ChevronLeft, ChevronUp as SortAsc, BarChart3, Share2, ExternalLink, Clock, TrendingUp, FileText, Search, Trash2, ArrowUpDown, Eye, X, Copy, Monitor, Smartphone, Globe, Timer } from 'lucide-react'
 import type { FormField } from '../types'
 import { computeCrossInsights } from '../utils/analytics'
+import { ShareModal } from '../components/shared/ShareModal'
 
 interface Props {
 	formId: string
@@ -33,6 +34,7 @@ export function FormResponses({ formId, navigate }: Props) {
 	const [search, setSearch] = useState('')
 	const [sortCol, setSortCol] = useState<string>('_date')
 	const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
+	const [showShareModal, setShowShareModal] = useState(false)
 
 	// Filter responses by search query
 	const filteredResponses = useMemo(() => {
@@ -328,6 +330,13 @@ ${responses.length > 100 ? `<p style="text-align:center;color:#888;margin-top:8p
 									</button>
 								</>
 							)}
+							<button
+								onClick={() => setShowShareModal(true)}
+								className="inline-flex items-center gap-1.5 rounded-xl bg-white/10 border border-white/20 px-4 py-2.5 text-sm font-medium text-white transition-smooth hover:bg-white/20 backdrop-blur-sm"
+							>
+								<Share2 className="h-3.5 w-3.5" />
+								Share
+							</button>
 							<button
 								onClick={() => navigate(`fill/${formId}`)}
 								className="inline-flex items-center gap-1.5 rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-emerald-700 transition-smooth hover:bg-emerald-50 shadow-sm"
@@ -627,6 +636,15 @@ ${responses.length > 100 ? `<p style="text-align:center;color:#888;margin-top:8p
 						app.responses.delete(id)
 						setSelectedResponse(null)
 					}}
+				/>
+			)}
+
+			{/* Share modal */}
+			{showShareModal && (
+				<ShareModal
+					slug={String(form.slug || formId)}
+					title={String(form.title || 'Form')}
+					onClose={() => setShowShareModal(false)}
 				/>
 			)}
 		</div>

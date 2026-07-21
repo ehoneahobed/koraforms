@@ -322,6 +322,93 @@ export const FORM_TEMPLATES: Record<string, FormTemplate> = {
 	},
 
 	// -----------------------------------------------------------------------
+	// Volunteer & Community
+	// -----------------------------------------------------------------------
+	'volunteer-signup': {
+		title: 'Volunteer Sign-Up',
+		description: 'Recruit and register volunteers for your organization.',
+		fields: [
+			{ id: 'full_name', type: 'text', label: 'Full Name', required: true },
+			{ id: 'email', type: 'email', label: 'Email Address', required: true },
+			{ id: 'phone', type: 'phone', label: 'Phone Number', required: true },
+			{ id: 'availability', type: 'checkbox', label: 'Availability', required: true, options: 'Weekday mornings,Weekday afternoons,Weekday evenings,Weekends' },
+			{ id: 'skills', type: 'checkbox', label: 'Skills & Interests', required: false, options: 'Teaching,Cooking,Driving,Admin,Tech support,Cleaning,Music,Photography' },
+			{ id: 'experience', type: 'textarea', label: 'Previous Volunteer Experience', required: false },
+			{ id: 'emergency_contact', type: 'text', label: 'Emergency Contact', required: true },
+			{ id: 'emergency_phone', type: 'phone', label: 'Emergency Contact Phone', required: true },
+		],
+	},
+
+	'donation-form': {
+		title: 'Donation Pledge',
+		description: 'Collect donation pledges and contributions.',
+		fields: [
+			{ id: 'donor_name', type: 'text', label: 'Your Name', required: true },
+			{ id: 'email', type: 'email', label: 'Email', required: true },
+			{ id: 'phone', type: 'phone', label: 'Phone', required: false },
+			{ id: 'amount', type: 'number', label: 'Donation Amount', required: true },
+			{ id: 'frequency', type: 'radio', label: 'Frequency', required: true, options: 'One-time,Monthly,Quarterly,Annually' },
+			{ id: 'purpose', type: 'select', label: 'Designated For', required: false, options: 'General Fund,Building Fund,Missions,Youth Programs,Education,Other' },
+			{ id: 'anonymous', type: 'yesno', label: 'Would you like to remain anonymous?', required: false },
+			{ id: 'notes', type: 'textarea', label: 'Additional Notes', required: false },
+		],
+	},
+
+	// -----------------------------------------------------------------------
+	// Quizzes & Assessments
+	// -----------------------------------------------------------------------
+	'quiz': {
+		title: 'Quick Quiz',
+		description: 'A simple quiz or knowledge check.',
+		fields: [
+			{ id: 'name', type: 'text', label: 'Your Name', required: true },
+			{ id: 'q1', type: 'radio', label: 'What is the capital of Ghana?', required: true, options: 'Lagos,Accra,Kumasi,Nairobi' },
+			{ id: 'q2', type: 'radio', label: 'Which planet is closest to the sun?', required: true, options: 'Venus,Mercury,Mars,Earth' },
+			{ id: 'q3', type: 'radio', label: 'What year did the internet become publicly available?', required: true, options: '1985,1991,1995,2000' },
+			{ id: 'q4', type: 'textarea', label: 'In your own words, what is machine learning?', required: false },
+			{ id: 'confidence', type: 'scale', label: 'How confident are you in your answers?', required: false, options: 'Not confident,Very confident' },
+		],
+	},
+
+	// -----------------------------------------------------------------------
+	// Travel & Hospitality
+	// -----------------------------------------------------------------------
+	'hotel-feedback': {
+		title: 'Hotel Guest Feedback',
+		description: 'Collect guest reviews and improvement suggestions.',
+		fields: [
+			{ id: 'name', type: 'text', label: 'Guest Name', required: false },
+			{ id: 'room', type: 'text', label: 'Room Number', required: false },
+			{ id: 'checkin', type: 'date', label: 'Check-in Date', required: true },
+			{ id: 'checkout', type: 'date', label: 'Check-out Date', required: true },
+			{ id: 'overall', type: 'rating', label: 'Overall Experience', required: true },
+			{ id: 'categories', type: 'matrix', label: 'Rate each area', required: true, matrixRows: 'Cleanliness,Comfort,Staff,Location,Value for Money', matrixColumns: 'Poor,Fair,Good,Excellent' },
+			{ id: 'best', type: 'textarea', label: 'What did you enjoy most?', required: false },
+			{ id: 'improve', type: 'textarea', label: 'What could we improve?', required: false },
+			{ id: 'recommend', type: 'scale', label: 'How likely are you to recommend us?', required: true, options: 'Not at all,Definitely' },
+		],
+	},
+
+	// -----------------------------------------------------------------------
+	// Inventory & Operations
+	// -----------------------------------------------------------------------
+	'inventory-check': {
+		title: 'Inventory Check',
+		description: 'Record stock levels and equipment status.',
+		fields: [
+			{ id: 'checker', type: 'text', label: 'Checked By', required: true },
+			{ id: 'date', type: 'date', label: 'Date', required: true },
+			{ id: 'location', type: 'select', label: 'Location / Warehouse', required: true, options: 'Main Store,Warehouse A,Warehouse B,Office,Other' },
+			{ id: 'item_name', type: 'text', label: 'Item Name', required: true },
+			{ id: 'category', type: 'select', label: 'Category', required: true, options: 'Electronics,Furniture,Supplies,Food,Equipment,Other' },
+			{ id: 'quantity', type: 'number', label: 'Quantity in Stock', required: true },
+			{ id: 'condition', type: 'radio', label: 'Condition', required: true, options: 'New,Good,Fair,Damaged,Expired' },
+			{ id: 'reorder', type: 'yesno', label: 'Needs Reorder?', required: true },
+			{ id: 'notes', type: 'textarea', label: 'Notes', required: false },
+		],
+	},
+
+	// -----------------------------------------------------------------------
 	// Blank
 	// -----------------------------------------------------------------------
 	blank: {
@@ -333,10 +420,10 @@ export const FORM_TEMPLATES: Record<string, FormTemplate> = {
 
 // Template categories for the gallery
 export const TEMPLATE_CATEGORIES: { label: string; keys: string[] }[] = [
-	{ label: 'Church & Religious', keys: ['church-members', 'church-attendance', 'church-offering'] },
-	{ label: 'Events & Registration', keys: ['event-registration', 'rsvp', 'workshop-signup'] },
-	{ label: 'Feedback & Surveys', keys: ['customer-satisfaction', 'nps-survey', 'product-feedback', 'survey', 'course-feedback'] },
+	{ label: 'Church & Religious', keys: ['church-members', 'church-attendance', 'church-offering', 'donation-form'] },
+	{ label: 'Events & Registration', keys: ['event-registration', 'rsvp', 'workshop-signup', 'volunteer-signup'] },
+	{ label: 'Feedback & Surveys', keys: ['customer-satisfaction', 'nps-survey', 'product-feedback', 'survey', 'course-feedback', 'hotel-feedback'] },
 	{ label: 'Business & HR', keys: ['contact-form', 'order-form', 'job-application', 'employee-onboarding'] },
-	{ label: 'Education', keys: ['student-enrollment', 'course-feedback', 'workshop-signup'] },
-	{ label: 'Data Collection', keys: ['bug-report', 'health-screening'] },
+	{ label: 'Education', keys: ['student-enrollment', 'course-feedback', 'quiz'] },
+	{ label: 'Data Collection', keys: ['bug-report', 'health-screening', 'inventory-check'] },
 ]

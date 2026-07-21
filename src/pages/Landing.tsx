@@ -144,7 +144,7 @@ export function Landing({ navigate }: Props) {
 							</div>
 							<div className="w-px h-10 bg-gray-200 dark:bg-gray-700" />
 							<div className="text-center">
-								<div className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-gray-100">17+</div>
+								<div className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-gray-100">21+</div>
 								<div className="text-xs sm:text-sm text-gray-400 dark:text-gray-500 mt-1">Templates</div>
 							</div>
 							<div className="w-px h-10 bg-gray-200 dark:bg-gray-700" />
@@ -190,7 +190,7 @@ export function Landing({ navigate }: Props) {
 							icon={<Zap className="h-5 w-5" />}
 							color="amber"
 							title="Instant Setup"
-							description="Start from 17+ templates or build from scratch. Church records, surveys, attendance — ready in minutes."
+							description="Start from 21+ templates or build from scratch. Church records, surveys, attendance — ready in minutes."
 						/>
 						<FeatureCard
 							icon={<BarChart3 className="h-5 w-5" />}
@@ -219,7 +219,7 @@ export function Landing({ navigate }: Props) {
 				<div className="mx-auto max-w-6xl px-4 sm:px-6">
 					<div className="text-center mb-10">
 						<h2 className="text-3xl sm:text-4xl font-bold text-gray-900 dark:text-gray-100 mb-4 tracking-tight">
-							17+ ready-made templates
+							21+ ready-made templates
 						</h2>
 						<p className="text-lg text-gray-500 dark:text-gray-400">
 							Start collecting data in seconds with our pre-built templates.
