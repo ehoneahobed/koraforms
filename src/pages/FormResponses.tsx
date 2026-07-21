@@ -1,6 +1,7 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useQuery } from '@korajs/react'
 import { app } from '../kora'
+import { setPageMeta } from '../utils/meta'
 import { ArrowLeft, Download, FileSpreadsheet, ChevronDown, ChevronRight, BarChart3, Share2, ExternalLink, Clock, TrendingUp } from 'lucide-react'
 import type { FormField } from '../types'
 
@@ -17,6 +18,14 @@ export function FormResponses({ formId, navigate }: Props) {
 
 	const form = allForms.find((f) => f.id === formId)
 	const responses = allResponses.filter((r) => String(r.formId) === formId)
+
+	useEffect(() => {
+		setPageMeta({
+			title: form ? `Responses: ${form.title}` : 'Responses',
+			description: 'View and export form responses.',
+		})
+	}, [form?.title])
+
 	const [view, setView] = useState<'cards' | 'table' | 'analytics'>('cards')
 	const [expandedId, setExpandedId] = useState<string | null>(null)
 
@@ -1093,7 +1102,8 @@ function AnalyticsView({
 		if (days === null) return responses
 		const cutoff = startOfDaysAgo(days)
 		return responses.filter((r) => {
-			if (!r.submittedAt) return false
+			// Include responses without a timestamp (legacy data)
+			if (!r.submittedAt) return true
 			return Number(r.submittedAt) >= cutoff
 		})
 	}, [responses, range])

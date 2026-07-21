@@ -4,7 +4,7 @@
   "description": "Build forms that work anywhere — even offline. Collect data in the field, at church, in school. Free and open source.",
   "start_url": "/",
   "display": "standalone",
-  "theme_color": "#2563EB",
+  "theme_color": "#DC2626",
   "background_color": "#ffffff",
   "orientation": "any",
   "categories": ["productivity", "business", "utilities"],

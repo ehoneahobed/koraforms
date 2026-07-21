@@ -25,6 +25,10 @@ import { FormResponses } from './pages/FormResponses'
 import { SignIn } from './pages/SignIn'
 import { SignUp } from './pages/SignUp'
 import { Templates } from './pages/Templates'
+import { HowItWorks } from './pages/HowItWorks'
+import { Help } from './pages/Help'
+import { Privacy } from './pages/Privacy'
+import { Terms } from './pages/Terms'
 import { ErrorBoundary } from './components/shared/ErrorBoundary'
 import { FORM_TEMPLATES } from './templates'
 
@@ -287,6 +291,26 @@ function SignUpPage() {
 	return <SignUp navigate={navigate} />
 }
 
+function HowItWorksPage() {
+	const navigate = useAppNavigate()
+	return <HowItWorks navigate={navigate} />
+}
+
+function HelpPage() {
+	const navigate = useAppNavigate()
+	return <Help navigate={navigate} />
+}
+
+function PrivacyPage() {
+	const navigate = useAppNavigate()
+	return <Privacy navigate={navigate} />
+}
+
+function TermsPage() {
+	const navigate = useAppNavigate()
+	return <Terms navigate={navigate} />
+}
+
 // ---------------------------------------------------------------------------
 // Root app with auth provider and router
 // ---------------------------------------------------------------------------
@@ -300,6 +324,10 @@ export function App() {
 					<Route path="/" element={<LandingPage />} />
 					<Route path="/signin" element={<SignInPage />} />
 					<Route path="/signup" element={<SignUpPage />} />
+					<Route path="/how-it-works" element={<HowItWorksPage />} />
+					<Route path="/help" element={<HelpPage />} />
+					<Route path="/privacy" element={<PrivacyPage />} />
+					<Route path="/terms" element={<TermsPage />} />
 
 					{/* Authenticated routes */}
 					<Route path="/*" element={

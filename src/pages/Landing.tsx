@@ -98,15 +98,13 @@ export function Landing({ navigate }: Props) {
 								{isAuthenticated ? 'Go to Dashboard' : 'Start building — it\'s free'}
 								<ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
 							</button>
-							<a
-								href="https://github.com/ehoneahobed/koraforms"
-								target="_blank"
-								rel="noopener noreferrer"
+							<button
+								onClick={() => navigate('/how-it-works')}
 								className="inline-flex items-center gap-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-7 py-3.5 text-base font-medium text-gray-700 dark:text-gray-300 transition-smooth hover:bg-gray-50 dark:hover:bg-gray-700 hover:border-gray-300 dark:hover:border-gray-600"
 							>
 								<Play className="h-4 w-4" />
 								See how it works
-							</a>
+							</button>
 						</div>
 
 						{/* Social proof */}
@@ -288,33 +286,31 @@ export function Landing({ navigate }: Props) {
 
 			{/* Footer */}
 			<footer className="border-t border-gray-100 dark:border-gray-800 py-10">
-				<div className="mx-auto max-w-6xl px-4 sm:px-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-gray-400">
-					<div className="flex items-center gap-2">
-						<img src="/logo-icon.png" alt="KoraForms" className="w-6 h-6 rounded-md" />
-						<span className="font-semibold text-gray-600 dark:text-gray-300">KoraForms</span>
-						<span className="text-gray-300 dark:text-gray-700">|</span>
-						<span className="text-xs">Forms that work anywhere</span>
+				<div className="mx-auto max-w-6xl px-4 sm:px-6">
+					<div className="flex flex-col sm:flex-row items-center justify-between gap-6 text-sm text-gray-400">
+						<div className="flex items-center gap-2">
+							<img src="/logo-icon.png" alt="KoraForms" className="w-6 h-6 rounded-md" />
+							<span className="font-semibold text-gray-600 dark:text-gray-300">KoraForms</span>
+							<span className="text-gray-300 dark:text-gray-700">|</span>
+							<span className="text-xs">Forms that work anywhere</span>
+						</div>
+						<div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2">
+							<button onClick={() => navigate('/how-it-works')} className="hover:text-gray-600 dark:hover:text-gray-200 transition-smooth">
+								How it works
+							</button>
+							<button onClick={() => navigate('/help')} className="hover:text-gray-600 dark:hover:text-gray-200 transition-smooth">
+								Help
+							</button>
+							<button onClick={() => navigate('/privacy')} className="hover:text-gray-600 dark:hover:text-gray-200 transition-smooth">
+								Privacy
+							</button>
+							<button onClick={() => navigate('/terms')} className="hover:text-gray-600 dark:hover:text-gray-200 transition-smooth">
+								Terms
+							</button>
+						</div>
 					</div>
-					<div className="flex items-center gap-6">
-						<a
-							href="https://github.com/ehoneahobed/koraforms"
-							target="_blank"
-							rel="noopener noreferrer"
-							className="hover:text-gray-600 dark:hover:text-gray-200 transition-smooth"
-						>
-							GitHub
-						</a>
-						<span>
-							Built with{' '}
-							<a
-								href="https://github.com/ehoneahobed/kora"
-								target="_blank"
-								rel="noopener noreferrer"
-								className="hover:text-gray-600 dark:hover:text-gray-200 transition-smooth font-medium"
-							>
-								Kora.js
-							</a>
-						</span>
+					<div className="mt-6 text-center text-xs text-gray-300 dark:text-gray-700">
+						&copy; {new Date().getFullYear()} KoraForms. All rights reserved.
 					</div>
 				</div>
 			</footer>

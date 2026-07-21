@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useQuery, useMutation } from '@korajs/react'
 import { app } from '../kora'
+import { setPageMeta } from '../utils/meta'
 import {
 	ArrowLeft,
 	GripVertical,
@@ -81,6 +82,13 @@ export function FormBuilder({ formId, navigate, userId }: Props) {
 	const [showThemePicker, setShowThemePicker] = useState(false)
 	const [showSettings, setShowSettings] = useState(false)
 	const [showShareModal, setShowShareModal] = useState(false)
+
+	useEffect(() => {
+		setPageMeta({
+			title: title ? `Edit: ${title}` : 'Form Builder',
+			description: 'Build and customize your form with KoraForms.',
+		})
+	}, [title])
 
 	// Slash command: add a field of a specific type
 	const addFieldOfType = useCallback((type: FieldType, afterIndex: number | null) => {

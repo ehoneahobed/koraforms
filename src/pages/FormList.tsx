@@ -3,7 +3,6 @@ import { app } from '../kora'
 import { setPageMeta } from '../utils/meta'
 import {
 	Plus,
-	FileText,
 	MoreHorizontal,
 	Trash2,
 	Eye,
@@ -267,7 +266,9 @@ function FormCard({
 	responseCount: number
 }) {
 	const [menuOpen, setMenuOpen] = useState(false)
+	const [menuAbove, setMenuAbove] = useState(false)
 	const menuRef = useRef<HTMLDivElement>(null)
+	const triggerRef = useRef<HTMLButtonElement>(null)
 	const isPublished = String(form.status) === 'published'
 	const themeColor = getThemeById(String(form.theme || 'blue')).preview
 
@@ -312,13 +313,21 @@ function FormCard({
 					)}
 					<div className="relative" ref={menuRef}>
 						<button
-							onClick={(e) => { e.stopPropagation(); setMenuOpen(!menuOpen) }}
+							ref={triggerRef}
+							onClick={(e) => {
+								e.stopPropagation()
+								if (!menuOpen) {
+									const rect = e.currentTarget.getBoundingClientRect()
+									setMenuAbove(window.innerHeight - rect.bottom < 280)
+								}
+								setMenuOpen(!menuOpen)
+							}}
 							className="p-1.5 -mr-1.5 rounded-lg text-gray-300 dark:text-gray-600 hover:text-gray-500 dark:hover:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 transition-all duration-200 opacity-0 group-hover:opacity-100"
 						>
 							<MoreHorizontal className="h-4 w-4" />
 						</button>
 						{menuOpen && (
-							<div className="absolute right-0 top-9 w-48 rounded-xl border border-gray-200/80 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-xl py-1 z-10 animate-scale-in">
+							<div className={`absolute right-0 w-48 rounded-xl border border-gray-200/80 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-xl py-1 z-10 animate-scale-in ${menuAbove ? 'bottom-9' : 'top-9'}`}>
 								<MenuButton icon={<Pencil className="h-3.5 w-3.5" />} label="Edit" onClick={() => { navigate(`build/${form.id}`); setMenuOpen(false) }} />
 								{isPublished && (
 									<MenuButton icon={<BarChart3 className="h-3.5 w-3.5" />} label="Responses" onClick={() => { navigate(`responses/${form.id}`); setMenuOpen(false) }} />

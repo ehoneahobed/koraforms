@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { FileText, Search, ArrowRight, ChevronLeft, Sparkles, Plus, LayoutTemplate } from 'lucide-react'
 import { FORM_TEMPLATES, TEMPLATE_CATEGORIES } from '../templates'
+import { setPageMeta } from '../utils/meta'
 
 interface TemplatesProps {
 	navigate: (path: string) => void
@@ -17,6 +18,13 @@ const CATEGORY_ICONS: Record<string, string> = {
 }
 
 export function Templates({ navigate, userId }: TemplatesProps) {
+	useEffect(() => {
+		setPageMeta({
+			title: 'Templates',
+			description: 'Browse form templates for churches, events, surveys, education, and more.',
+		})
+	}, [])
+
 	const [search, setSearch] = useState('')
 	const [activeCategory, setActiveCategory] = useState<string | null>(null)
 

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useAuth } from '@korajs/auth/react'
-import { FileText, Eye, EyeOff, ArrowRight, WifiOff, Zap, Shield } from 'lucide-react'
+import { Eye, EyeOff, ArrowRight, WifiOff, Zap, Shield } from 'lucide-react'
 
 interface Props {
 	navigate: (path: string) => void
@@ -34,9 +34,7 @@ export function SignIn({ navigate }: Props) {
 
 				<div className="relative flex flex-col justify-center px-12 xl:px-16">
 					<div className="flex items-center gap-3 mb-10">
-						<div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center backdrop-blur-sm">
-							<FileText className="h-5 w-5 text-white" />
-						</div>
+						<img src="/logo-icon.png" alt="KoraForms" className="w-10 h-10 rounded-xl" />
 						<span className="text-xl font-bold text-white tracking-tight">KoraForms</span>
 					</div>
 
@@ -73,9 +71,7 @@ export function SignIn({ navigate }: Props) {
 							onClick={() => navigate('')}
 							className="inline-flex items-center gap-2.5 hover:opacity-80 transition-smooth"
 						>
-							<div className="w-10 h-10 rounded-xl bg-brand-600 flex items-center justify-center">
-								<FileText className="h-5 w-5 text-white" />
-							</div>
+							<img src="/logo-icon.png" alt="KoraForms" className="w-10 h-10 rounded-xl" />
 							<span className="text-xl font-bold tracking-tight">KoraForms</span>
 						</button>
 						<h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 mt-6 mb-1">Welcome back</h2>

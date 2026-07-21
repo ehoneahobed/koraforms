@@ -210,6 +210,7 @@ async function main(): Promise<void> {
 								formId: String(form.id),
 								data,
 								submittedBy: '',
+								submittedAt: Date.now(),
 							},
 							previousData: null,
 							sequenceNumber: seqNum,

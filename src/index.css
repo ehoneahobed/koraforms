@@ -4,16 +4,16 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme {
-	--color-brand-50: #EFF6FF;
-	--color-brand-100: #DBEAFE;
-	--color-brand-200: #BFDBFE;
-	--color-brand-300: #93C5FD;
-	--color-brand-400: #60A5FA;
-	--color-brand-500: #3B82F6;
-	--color-brand-600: #2563EB;
-	--color-brand-700: #1D4ED8;
-	--color-brand-800: #1E40AF;
-	--color-brand-900: #1E3A8A;
+	--color-brand-50: #FEF2F2;
+	--color-brand-100: #FEE2E2;
+	--color-brand-200: #FECACA;
+	--color-brand-300: #FCA5A5;
+	--color-brand-400: #F87171;
+	--color-brand-500: #EF4444;
+	--color-brand-600: #DC2626;
+	--color-brand-700: #B91C1C;
+	--color-brand-800: #991B1B;
+	--color-brand-900: #7F1D1D;
 
 	--color-surface: #FAFAFA;
 	--color-surface-dark: #111111;
