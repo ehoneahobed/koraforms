@@ -21,11 +21,10 @@ import {
 	User,
 	FileText,
 	LayoutTemplate,
-	BarChart3,
-	Settings as SettingsIcon,
 	Menu,
 	X,
 	ChevronDown,
+	ChevronLeft,
 	ChevronsUpDown,
 	Eye,
 	Share2,
@@ -52,13 +51,14 @@ const FormList = lazy(() => import('./pages/FormList').then(m => ({ default: m.F
 const FormBuilder = lazy(() => import('./pages/FormBuilder').then(m => ({ default: m.FormBuilder })))
 const FormResponses = lazy(() => import('./pages/FormResponses').then(m => ({ default: m.FormResponses })))
 const Templates = lazy(() => import('./pages/Templates').then(m => ({ default: m.Templates })))
+const TemplateLibrary = lazy(() => import('./pages/TemplateLibrary').then(m => ({ default: m.TemplateLibrary })))
 const TemplateDetail = lazy(() => import('./pages/TemplateDetail').then(m => ({ default: m.TemplateDetail })))
 const HowItWorks = lazy(() => import('./pages/HowItWorks').then(m => ({ default: m.HowItWorks })))
 const Help = lazy(() => import('./pages/Help').then(m => ({ default: m.Help })))
 const Privacy = lazy(() => import('./pages/Privacy').then(m => ({ default: m.Privacy })))
 const Terms = lazy(() => import('./pages/Terms').then(m => ({ default: m.Terms })))
 import { ErrorBoundary } from './components/shared/ErrorBoundary'
-import { FORM_TEMPLATES } from './templates'
+import { FORM_TEMPLATES, createFieldsFromTemplate } from './templates'
 import { copyToClipboard } from './utils/clipboard'
 import { THEME_PRESETS } from './themes'
 import type { FormSettings as FormSettingsType } from './types'
@@ -139,16 +139,13 @@ function AuthenticatedLayout() {
 
 	const navItems = [
 		{ label: 'Forms', icon: FileText, path: '/dashboard' },
-		{ label: 'Templates', icon: LayoutTemplate, path: '/templates' },
-		{ label: 'Responses', icon: BarChart3, path: '/dashboard' },
-		{ label: 'Settings', icon: SettingsIcon, path: '/dashboard' },
+		{ label: 'Templates', icon: LayoutTemplate, path: '/dashboard/templates' },
 	]
 
 	const isActive = (path: string, label: string) => {
 		// For Forms, match /dashboard and /forms/*
 		if (label === 'Forms') return location.pathname === '/dashboard' || location.pathname.startsWith('/forms/')
-		// Templates is only active on exact /templates within authenticated context (unlikely but future-proof)
-		if (label === 'Templates') return location.pathname === '/templates'
+		if (label === 'Templates') return location.pathname === '/dashboard/templates'
 		return false
 	}
 
@@ -195,7 +192,7 @@ function AuthenticatedLayout() {
 					return (
 						<button
 							key={label}
-							onClick={() => { navigate(path === '/dashboard' ? 'dashboard' : path.slice(1)); setSidebarOpen(false) }}
+							onClick={() => { navigate(path); setSidebarOpen(false) }}
 							className={`
 								w-full flex items-center gap-3 px-4 py-3 rounded-lg text-[15px] font-medium transition-all duration-150
 								${active
@@ -338,6 +335,7 @@ function AuthenticatedRoutes() {
 		<Suspense fallback={<InlineLoader message="Loading..." />}>
 			<Routes>
 				<Route path="/dashboard" element={<FormList navigate={navigate} userId={user?.id || ''} />} />
+				<Route path="/dashboard/templates" element={<TemplateLibrary navigate={navigate} />} />
 				<Route path="/forms/new/edit" element={<FormBuilderPage navigate={navigate} userId={user?.id || ''} />} />
 				<Route path="/forms/:formId" element={<FormPageShell navigate={navigate} userId={user?.id || ''} />}>
 					<Route path="edit" element={<FormBuilderInner />} />
@@ -359,8 +357,8 @@ function FormPageShell({ navigate, userId }: { navigate: (path: string) => void;
 	const { formId } = useParams()
 	const location = useLocation()
 	const routerNav = useNavigate()
+	const [searchParams] = useSearchParams()
 	const syncStatus = useSyncStatus()
-	const [activePanel, setActivePanel] = useState<'url' | 'share' | 'settings' | null>(null)
 	const [showShareModal, setShowShareModal] = useState(false)
 	const [publishFeedback, setPublishFeedback] = useState<'idle' | 'saving' | 'saved'>('idle')
 
@@ -392,6 +390,9 @@ function FormPageShell({ navigate, userId }: { navigate: (path: string) => void;
 	}
 
 	// Determine active tab from URL
+	const panelParam = searchParams.get('panel')
+	const activePanel: 'url' | 'share' | 'settings' | null =
+		panelParam === 'url' || panelParam === 'share' || panelParam === 'settings' ? panelParam : null
 	const activeTab: FormShellTab = activePanel
 		? activePanel
 		: location.pathname.endsWith('/responses')
@@ -400,13 +401,11 @@ function FormPageShell({ navigate, userId }: { navigate: (path: string) => void;
 
 	const handleTabClick = (tab: FormShellTab) => {
 		if (tab === 'build') {
-			setActivePanel(null)
 			routerNav(`/forms/${formId}/edit`)
 		} else if (tab === 'responses') {
-			setActivePanel(null)
 			routerNav(`/forms/${formId}/responses`)
 		} else {
-			setActivePanel(tab)
+			routerNav(`/forms/${formId}/edit?panel=${tab}`)
 		}
 	}
 
@@ -476,7 +475,15 @@ function FormPageShell({ navigate, userId }: { navigate: (path: string) => void;
 		<div className="animate-fade-in">
 			{/* Breadcrumb bar */}
 			<div className="flex items-center justify-between mb-3">
-				<div className="flex items-center gap-1.5 text-sm">
+				<div className="flex min-w-0 items-center gap-3 text-sm">
+					<button
+						onClick={() => navigate('dashboard')}
+						className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition-colors hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100"
+						aria-label="Back to forms"
+						title="Back to forms"
+					>
+						<ChevronLeft className="h-4 w-4" />
+					</button>
 					<button
 						onClick={() => navigate('dashboard')}
 						className="text-slate-500 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 font-medium transition-colors duration-150"
@@ -680,8 +687,8 @@ function FormUrlPanel({
 	}
 
 	return (
-		<section className="py-8 animate-fade-in">
-			<div className="mx-auto max-w-4xl space-y-6">
+		<section className="animate-fade-in rounded-b-2xl border border-t-0 border-slate-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-surface-elevated-dark sm:p-6">
+			<div className="space-y-6">
 				<div>
 					<h2 className="text-[22px] font-semibold tracking-tight text-slate-950 dark:text-gray-100">Public URL</h2>
 					<p className="mt-1 text-[14px] text-slate-500 dark:text-gray-400">Choose the public address people use to open this form.</p>
@@ -790,8 +797,8 @@ function FormSharePanel({
 	}
 
 	return (
-		<section className="py-8 animate-fade-in">
-			<div className="mx-auto max-w-6xl space-y-6">
+		<section className="animate-fade-in rounded-b-2xl border border-t-0 border-slate-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-surface-elevated-dark sm:p-6">
+			<div className="space-y-6">
 				<div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
 					<div>
 						<h2 className="text-[22px] font-semibold tracking-tight text-slate-950 dark:text-gray-100">Share</h2>
@@ -954,8 +961,8 @@ function FormSettingsPanel({
 	}
 
 	return (
-		<section className="py-8 animate-fade-in">
-			<div className="mx-auto max-w-5xl space-y-6">
+		<section className="animate-fade-in rounded-b-2xl border border-t-0 border-slate-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-surface-elevated-dark sm:p-6">
+			<div className="space-y-6">
 				<div>
 					<h2 className="text-[22px] font-semibold tracking-tight text-slate-950 dark:text-gray-100">Settings</h2>
 					<p className="mt-1 text-[14px] text-slate-500 dark:text-gray-400">Control form behavior, access, and presentation.</p>
@@ -1176,7 +1183,7 @@ function FormBuilderPage({ navigate, userId }: { navigate: (path: string) => voi
 		const data = {
 			title: template?.title || 'Untitled Form',
 			description: template?.description || '',
-			fields: JSON.stringify(template?.fields || []),
+			fields: JSON.stringify(templateKey && template ? createFieldsFromTemplate(templateKey) : []),
 			status: 'draft',
 			ownerId: userId,
 			theme: 'red',
@@ -1222,12 +1229,17 @@ function SignInPage() {
 	const navigate = useAppNavigate()
 	const { isAuthenticated, isLoading } = useAuth()
 	const location = useLocation()
+	const [searchParams] = useSearchParams()
 
 	useEffect(() => {
 		setPageMeta({ title: 'Sign In', description: 'Sign in to your KoraForms account.' })
 	}, [])
 
 	if (!isLoading && isAuthenticated) {
+		const templateKey = searchParams.get('template')
+		if (templateKey && FORM_TEMPLATES[templateKey]) {
+			return <Navigate to={`/forms/new/edit?template=${templateKey}`} replace />
+		}
 		const from = (location.state as { from?: { pathname: string } })?.from?.pathname || '/dashboard'
 		return <Navigate to={from} replace />
 	}
@@ -1238,12 +1250,17 @@ function SignInPage() {
 function SignUpPage() {
 	const navigate = useAppNavigate()
 	const { isAuthenticated, isLoading } = useAuth()
+	const [searchParams] = useSearchParams()
 
 	useEffect(() => {
 		setPageMeta({ title: 'Sign Up', description: 'Create a free KoraForms account. Build forms that work offline.' })
 	}, [])
 
 	if (!isLoading && isAuthenticated) {
+		const templateKey = searchParams.get('template')
+		if (templateKey && FORM_TEMPLATES[templateKey]) {
+			return <Navigate to={`/forms/new/edit?template=${templateKey}`} replace />
+		}
 		return <Navigate to="/dashboard" replace />
 	}
 
@@ -1277,7 +1294,7 @@ function PublicTemplatesPage() {
 	return (
 		<div className={dark ? 'dark' : ''}>
 			<div className="min-h-screen bg-gray-50/50 dark:bg-surface-dark">
-				<div className="mx-auto max-w-5xl px-4 sm:px-6 py-8 sm:py-10">
+				<div className="mx-auto max-w-6xl px-4 sm:px-6 py-8 sm:py-10">
 					<Templates navigate={navigate} userId={isAuthenticated ? (user?.id || '') : undefined} isPublic />
 				</div>
 			</div>

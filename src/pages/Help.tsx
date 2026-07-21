@@ -103,7 +103,7 @@ export function Help({ navigate }: Props) {
 					</button>
 					<button
 						onClick={() => navigate('signup')}
-						className="px-4 py-2 text-sm font-medium text-white bg-brand-600 rounded-full hover:bg-brand-500 transition-all duration-200"
+						className="rounded-full bg-slate-950 px-4 py-2 text-sm font-medium text-white transition-all duration-200 hover:bg-slate-800 dark:bg-white dark:text-slate-950 dark:hover:bg-gray-200"
 					>
 						Get started free
 					</button>
@@ -137,7 +137,7 @@ export function Help({ navigate }: Props) {
 								<ol className="space-y-2">
 									{guide.steps.map((step, i) => (
 										<li key={i} className="flex gap-2.5 text-sm text-gray-500 dark:text-gray-400">
-											<span className="shrink-0 w-5 h-5 rounded-full bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 text-xs font-bold flex items-center justify-center mt-0.5">
+											<span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-950 text-xs font-bold text-white dark:bg-white dark:text-slate-950">
 												{i + 1}
 											</span>
 											<span className="leading-relaxed">{step}</span>

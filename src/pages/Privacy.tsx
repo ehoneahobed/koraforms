@@ -24,7 +24,7 @@ export function Privacy({ navigate }: Props) {
 					</button>
 					<button
 						onClick={() => navigate('signup')}
-						className="px-4 py-2 text-sm font-medium text-white bg-brand-600 rounded-full hover:bg-brand-500 transition-all duration-200"
+						className="rounded-full bg-slate-950 px-4 py-2 text-sm font-medium text-white transition-all duration-200 hover:bg-slate-800 dark:bg-white dark:text-slate-950 dark:hover:bg-gray-200"
 					>
 						Get started free
 					</button>

@@ -48,7 +48,7 @@ export function Landing({ navigate }: Props) {
 						{isAuthenticated ? (
 							<button
 								onClick={() => navigate('dashboard')}
-								className="px-4 py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-500 transition-smooth shadow-sm shadow-brand-600/25"
+								className="rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition-smooth hover:bg-slate-800 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-200"
 							>
 								Dashboard
 							</button>
@@ -62,7 +62,7 @@ export function Landing({ navigate }: Props) {
 								</button>
 								<button
 									onClick={() => navigate('signup')}
-									className="px-4 py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-500 transition-smooth shadow-sm shadow-brand-600/25"
+									className="rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition-smooth hover:bg-slate-800 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-200"
 								>
 									Get started
 								</button>
@@ -74,27 +74,19 @@ export function Landing({ navigate }: Props) {
 
 			{/* Hero */}
 			<section className="relative overflow-hidden">
-				{/* Background elements */}
-				<div className="absolute inset-0 bg-gradient-to-b from-brand-50/80 via-white to-white dark:from-brand-900/10 dark:via-surface-dark dark:to-surface-dark" />
-				<div className="absolute top-20 left-1/4 w-72 h-72 bg-brand-200/20 dark:bg-brand-800/10 rounded-full blur-3xl" />
-				<div className="absolute top-40 right-1/4 w-96 h-96 bg-violet-200/15 dark:bg-violet-800/10 rounded-full blur-3xl" />
+				<div className="absolute inset-x-0 top-0 h-px bg-slate-100 dark:bg-gray-800" />
 
 				<div className="relative mx-auto max-w-6xl px-4 sm:px-6 pt-20 sm:pt-32 pb-20 sm:pb-28">
 					<div className="text-center max-w-3xl mx-auto">
 						{/* Badge */}
-						<div className="inline-flex items-center gap-2 rounded-full bg-brand-100/80 dark:bg-brand-900/30 px-4 py-1.5 text-xs font-semibold text-brand-700 dark:text-brand-300 mb-8 backdrop-blur-sm border border-brand-200/50 dark:border-brand-800/30">
+						<div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-1.5 text-xs font-semibold text-slate-600 shadow-sm dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300 mb-8">
 							<WifiOff className="h-3.5 w-3.5" />
 							Works offline — no internet required
 						</div>
 
 						<h1 className="text-4xl sm:text-5xl lg:text-[3.5rem] font-extrabold tracking-tight text-gray-900 dark:text-gray-100 leading-[1.1] mb-6">
 							Build forms that work{' '}
-							<span className="relative">
-								<span className="text-brand-600 dark:text-brand-400">anywhere</span>
-								<svg className="absolute -bottom-1 left-0 w-full" viewBox="0 0 200 8" fill="none">
-									<path d="M2 6C50 2 150 2 198 6" stroke="currentColor" strokeWidth="3" strokeLinecap="round" className="text-brand-300 dark:text-brand-700" />
-								</svg>
-							</span>
+							<span className="text-brand-600 dark:text-brand-400">anywhere</span>
 						</h1>
 
 						<p className="text-lg sm:text-xl text-gray-500 dark:text-gray-400 leading-relaxed max-w-2xl mx-auto mb-10">
@@ -106,7 +98,7 @@ export function Landing({ navigate }: Props) {
 						<div className="flex flex-col sm:flex-row items-center justify-center gap-3">
 							<button
 								onClick={() => navigate(isAuthenticated ? 'dashboard' : 'signup')}
-								className="group inline-flex items-center gap-2.5 rounded-xl bg-brand-600 px-7 py-3.5 text-base font-semibold text-white shadow-lg shadow-brand-600/25 transition-smooth hover:bg-brand-500 hover:shadow-xl hover:shadow-brand-600/30 active:scale-[0.98]"
+								className="group inline-flex items-center gap-2.5 rounded-xl bg-slate-950 px-7 py-3.5 text-base font-semibold text-white transition-smooth hover:bg-slate-800 active:scale-[0.98] dark:bg-white dark:text-slate-950 dark:hover:bg-slate-200"
 							>
 								{isAuthenticated ? 'Go to Dashboard' : 'Start building — it\'s free'}
 								<ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
@@ -374,26 +366,22 @@ export function Landing({ navigate }: Props) {
 			{/* CTA */}
 			<section className="py-20 sm:py-28 border-t border-gray-100 dark:border-gray-800">
 				<div className="mx-auto max-w-3xl px-4 sm:px-6 text-center">
-					<div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-brand-600 via-brand-600 to-brand-700 p-10 sm:p-16 shadow-xl shadow-brand-600/15">
-						{/* Decorative */}
-						<div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/3" />
-						<div className="absolute bottom-0 left-0 w-48 h-48 bg-white/5 rounded-full translate-y-1/2 -translate-x-1/4" />
-
+					<div className="relative overflow-hidden rounded-3xl border border-slate-200 bg-slate-950 p-10 shadow-sm sm:p-16 dark:border-gray-800 dark:bg-white">
 						<div className="relative">
-							<div className="w-14 h-14 rounded-2xl bg-white/10 flex items-center justify-center mx-auto mb-6 backdrop-blur-sm">
-								<Database className="h-7 w-7 text-white" />
+							<div className="mx-auto mb-6 flex h-14 w-14 items-center justify-center rounded-2xl bg-white/10 dark:bg-slate-100">
+								<Database className="h-7 w-7 text-white dark:text-slate-500" />
 							</div>
-							<h2 className="text-2xl sm:text-3xl font-bold text-white mb-4 tracking-tight">
+							<h2 className="text-2xl sm:text-3xl font-bold text-white mb-4 tracking-tight dark:text-slate-950">
 								Ready to collect data anywhere?
 							</h2>
-							<p className="text-brand-200 mb-8 max-w-md mx-auto">
+							<p className="text-slate-300 mb-8 max-w-md mx-auto dark:text-slate-500">
 								Create your first form in under 2 minutes. Everything works
 								offline from the first click.
 							</p>
 							<div className="flex flex-col sm:flex-row items-center justify-center gap-3">
 								<button
 									onClick={() => navigate(isAuthenticated ? 'dashboard' : 'signup')}
-									className="inline-flex items-center gap-2 rounded-xl bg-white px-8 py-3.5 text-base font-semibold text-brand-700 shadow-sm transition-smooth hover:bg-brand-50 active:scale-[0.98]"
+									className="inline-flex items-center gap-2 rounded-xl bg-white px-8 py-3.5 text-base font-semibold text-slate-950 shadow-sm transition-smooth hover:bg-slate-100 active:scale-[0.98] dark:bg-slate-950 dark:text-white dark:hover:bg-slate-800"
 								>
 									{isAuthenticated ? 'Go to Dashboard' : 'Create your first form'}
 									<ArrowRight className="h-4 w-4" />

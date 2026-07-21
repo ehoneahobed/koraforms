@@ -67,7 +67,7 @@ export function SignUp({ navigate }: Props) {
 					<div className="space-y-4">
 						{[
 							{ icon: <WifiOff className="h-4 w-4" />, text: 'Works without internet' },
-							{ icon: <Zap className="h-4 w-4" />, text: '17+ ready-made templates' },
+							{ icon: <Zap className="h-4 w-4" />, text: '21+ ready-made templates' },
 							{ icon: <Shield className="h-4 w-4" />, text: 'Free forever, no credit card' },
 						].map((item) => (
 							<div key={item.text} className="flex items-center gap-3 text-brand-200">

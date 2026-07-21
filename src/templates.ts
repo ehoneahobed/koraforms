@@ -1,4 +1,4 @@
-import type { FormTemplate } from './types'
+import type { FormField, FormTemplate } from './types'
 
 export const FORM_TEMPLATES: Record<string, FormTemplate> = {
 	// -----------------------------------------------------------------------
@@ -427,3 +427,159 @@ export const TEMPLATE_CATEGORIES: { label: string; keys: string[] }[] = [
 	{ label: 'Education', keys: ['student-enrollment', 'course-feedback', 'quiz'] },
 	{ label: 'Data Collection', keys: ['bug-report', 'health-screening', 'inventory-check'] },
 ]
+
+export interface TemplateMetadata {
+	key: string
+	category: string
+	tags: string[]
+	audience: string
+	seoTitle: string
+	seoDescription: string
+	useCases: string[]
+	relatedKeys: string[]
+	inputFieldCount: number
+	requiredFieldCount: number
+	estimatedMinutes: number
+}
+
+const TEMPLATE_KEYWORDS: Record<string, { audience: string; tags: string[]; useCases: string[] }> = {
+	'church-members': {
+		audience: 'Church administrators and ministry teams',
+		tags: ['membership', 'church', 'records', 'family'],
+		useCases: ['Register first-time members', 'Update church records', 'Collect family and emergency details'],
+	},
+	'church-attendance': {
+		audience: 'Church operations teams',
+		tags: ['attendance', 'church', 'service', 'reporting'],
+		useCases: ['Track weekly attendance', 'Record service type counts', 'Prepare ministry reports'],
+	},
+	'church-offering': {
+		audience: 'Finance and stewardship teams',
+		tags: ['offering', 'tithe', 'finance', 'church'],
+		useCases: ['Record offerings', 'Track payment methods', 'Keep contribution notes'],
+	},
+	rsvp: {
+		audience: 'Event hosts and coordinators',
+		tags: ['rsvp', 'event', 'guests', 'attendance'],
+		useCases: ['Confirm event attendance', 'Collect guest counts', 'Capture dietary preferences'],
+	},
+	'event-registration': {
+		audience: 'Event organizers',
+		tags: ['registration', 'event', 'participants', 'program'],
+		useCases: ['Register attendees', 'Collect contact details', 'Plan capacity and support needs'],
+	},
+	'customer-satisfaction': {
+		audience: 'Customer success and product teams',
+		tags: ['feedback', 'survey', 'customers', 'satisfaction'],
+		useCases: ['Measure satisfaction', 'Collect improvement ideas', 'Spot customer experience issues'],
+	},
+	'nps-survey': {
+		audience: 'Growth and customer success teams',
+		tags: ['nps', 'loyalty', 'feedback', 'survey'],
+		useCases: ['Measure loyalty', 'Identify promoters', 'Follow up with detractors'],
+	},
+	'job-application': {
+		audience: 'Hiring teams',
+		tags: ['hiring', 'hr', 'application', 'recruiting'],
+		useCases: ['Collect applicant details', 'Screen candidates', 'Standardize hiring intake'],
+	},
+	'employee-onboarding': {
+		audience: 'People operations teams',
+		tags: ['onboarding', 'hr', 'employees', 'operations'],
+		useCases: ['Collect new hire details', 'Prepare first-day setup', 'Standardize onboarding'],
+	},
+}
+
+const NON_INPUT_FIELD_TYPES = new Set(['section', 'statement', 'hidden'])
+
+export function getTemplateCategory(templateKey: string): string {
+	return TEMPLATE_CATEGORIES.find(category => category.keys.includes(templateKey))?.label || 'General'
+}
+
+export function getTemplateKeys(): string[] {
+	const seen = new Set<string>()
+	return TEMPLATE_CATEGORIES.flatMap(category => category.keys).filter((key) => {
+		if (seen.has(key) || !FORM_TEMPLATES[key]) return false
+		seen.add(key)
+		return true
+	})
+}
+
+export function getTemplateMetadata(templateKey: string): TemplateMetadata | null {
+	const template = FORM_TEMPLATES[templateKey]
+	if (!template) return null
+	const category = getTemplateCategory(templateKey)
+	const inputFields = template.fields.filter(field => !NON_INPUT_FIELD_TYPES.has(field.type))
+	const requiredFieldCount = inputFields.filter(field => field.required).length
+	const custom = TEMPLATE_KEYWORDS[templateKey]
+	const titleKeyword = `${template.title.toLowerCase()} template`
+	const tags = Array.from(new Set([
+		...(custom?.tags || []),
+		...category.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean),
+		...template.title.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean),
+	]))
+
+	return {
+		key: templateKey,
+		category,
+		tags,
+		audience: custom?.audience || `${category} teams`,
+		seoTitle: `${template.title} Template - Free Online Form Template | KoraForms`,
+		seoDescription: `${template.description} Start with a free ${titleKeyword}, customize every field, and collect responses even when your connection drops.`,
+		useCases: custom?.useCases || [
+			`Create a ${template.title.toLowerCase()} quickly`,
+			'Customize fields for your workflow',
+			'Collect responses online or offline',
+		],
+		relatedKeys: getRelatedTemplateKeys(templateKey, category),
+		inputFieldCount: inputFields.length,
+		requiredFieldCount,
+		estimatedMinutes: Math.max(1, Math.round((inputFields.length * 20) / 60)),
+	}
+}
+
+export function getRelatedTemplateKeys(templateKey: string, category = getTemplateCategory(templateKey)): string[] {
+	const categoryKeys = TEMPLATE_CATEGORIES.find(item => item.label === category)?.keys || []
+	return categoryKeys.filter(key => key !== templateKey && FORM_TEMPLATES[key]).slice(0, 3)
+}
+
+export function getTemplateSearchText(templateKey: string): string {
+	const template = FORM_TEMPLATES[templateKey]
+	const metadata = getTemplateMetadata(templateKey)
+	if (!template || !metadata) return templateKey
+	return [
+		template.title,
+		template.description,
+		metadata.category,
+		metadata.audience,
+		metadata.tags.join(' '),
+		metadata.useCases.join(' '),
+	].join(' ').toLowerCase()
+}
+
+export function createFieldsFromTemplate(templateKey: string): FormField[] {
+	const template = FORM_TEMPLATES[templateKey]
+	if (!template) return []
+	const prefix = `field_${Date.now()}`
+	const idMap = new Map(template.fields.map((field, index) => [field.id, `${prefix}_${index}`]))
+
+	return template.fields.map((field) => {
+		const nextId = idMap.get(field.id) || field.id
+		const nextFormula = field.formula
+			? Array.from(idMap.entries()).reduce(
+				(formula, [oldId, newId]) => formula.replace(new RegExp(`\\{${oldId}\\}`, 'g'), `{${newId}}`),
+				field.formula,
+			)
+			: undefined
+
+		return {
+			...field,
+			id: nextId,
+			formula: nextFormula,
+			conditions: field.conditions?.map(rule => ({
+				...rule,
+				fieldId: idMap.get(rule.fieldId) || rule.fieldId,
+			})),
+		}
+	})
+}

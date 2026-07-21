@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { ArrowLeft, ArrowRight, Clock, FileText, Hash, Sparkles } from 'lucide-react'
-import { FORM_TEMPLATES } from '../templates'
+import { FORM_TEMPLATES, getTemplateMetadata } from '../templates'
 import { setPageMeta } from '../utils/meta'
 import { useAuth } from '@korajs/auth/react'
 import { PoweredByBadge } from '../components/shared/PoweredByBadge'
@@ -19,9 +19,9 @@ const FIELD_TYPE_LABELS: Record<string, { label: string; color: string }> = {
 	date: { label: 'Date', color: 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400' },
 	time: { label: 'Time', color: 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400' },
 	url: { label: 'URL', color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
-	select: { label: 'Dropdown', color: 'bg-brand-100 text-brand-700 dark:bg-brand-900/30 dark:text-brand-400' },
-	radio: { label: 'Multiple Choice', color: 'bg-brand-100 text-brand-700 dark:bg-brand-900/30 dark:text-brand-400' },
-	checkbox: { label: 'Checkboxes', color: 'bg-brand-100 text-brand-700 dark:bg-brand-900/30 dark:text-brand-400' },
+	select: { label: 'Dropdown', color: 'bg-slate-100 text-slate-700 dark:bg-gray-800 dark:text-gray-300' },
+	radio: { label: 'Multiple Choice', color: 'bg-slate-100 text-slate-700 dark:bg-gray-800 dark:text-gray-300' },
+	checkbox: { label: 'Checkboxes', color: 'bg-slate-100 text-slate-700 dark:bg-gray-800 dark:text-gray-300' },
 	rating: { label: 'Rating', color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' },
 	scale: { label: 'Scale', color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' },
 	yesno: { label: 'Yes/No', color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' },
@@ -44,12 +44,13 @@ function estimateCompletionTime(fieldCount: number): string {
 export function TemplateDetail({ templateKey, navigate }: TemplateDetailProps) {
 	const { isAuthenticated } = useAuth()
 	const template = FORM_TEMPLATES[templateKey]
+	const metadata = getTemplateMetadata(templateKey)
 
 	useEffect(() => {
 		if (template) {
 			setPageMeta({
-				title: `${template.title} — Free Form Template | KoraForms`,
-				description: `Create a ${template.title.toLowerCase()} in seconds. ${template.description} Free, offline-first form builder.`,
+				title: metadata?.seoTitle || `${template.title} — Free Form Template | KoraForms`,
+				description: metadata?.seoDescription || `Create a ${template.title.toLowerCase()} in seconds. ${template.description} Free, offline-first form builder.`,
 				url: `https://forms.korajs.dev/templates/${templateKey}`,
 			})
 		} else {
@@ -76,7 +77,7 @@ export function TemplateDetail({ templateKey, navigate }: TemplateDetailProps) {
 					</p>
 					<button
 						onClick={() => navigate('/templates')}
-						className="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-semibold bg-brand-600 text-white rounded-xl hover:bg-brand-500 transition-smooth shadow-sm shadow-brand-600/25 active:scale-[0.98]"
+						className="inline-flex items-center gap-2 rounded-xl bg-slate-950 px-5 py-2.5 text-sm font-semibold text-white transition-smooth hover:bg-slate-800 active:scale-[0.98] dark:bg-white dark:text-slate-950 dark:hover:bg-gray-200"
 					>
 						<ArrowLeft className="h-4 w-4" />
 						Browse all templates
@@ -87,7 +88,8 @@ export function TemplateDetail({ templateKey, navigate }: TemplateDetailProps) {
 	}
 
 	const inputFields = template.fields.filter(f => f.type !== 'section' && f.type !== 'statement')
-	const requiredCount = inputFields.filter(f => f.required).length
+	const requiredCount = metadata?.requiredFieldCount || inputFields.filter(f => f.required).length
+	const templateHref = isAuthenticated ? `/forms/new/edit?template=${templateKey}` : `/signup?template=${templateKey}`
 
 	return (
 		<div className="min-h-screen bg-white dark:bg-surface-dark">
@@ -96,9 +98,7 @@ export function TemplateDetail({ templateKey, navigate }: TemplateDetailProps) {
 
 			{/* Hero */}
 			<section className="relative overflow-hidden border-b border-gray-100 dark:border-gray-800">
-				<div className="absolute inset-0 bg-gradient-to-b from-brand-50/80 via-white to-white dark:from-brand-900/10 dark:via-surface-dark dark:to-surface-dark" />
-				<div className="absolute top-10 left-1/4 w-72 h-72 bg-brand-200/20 dark:bg-brand-800/10 rounded-full blur-3xl" />
-				<div className="absolute top-20 right-1/4 w-96 h-96 bg-violet-200/15 dark:bg-violet-800/10 rounded-full blur-3xl" />
+				<div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-slate-200 to-transparent dark:via-gray-800" />
 
 				<div className="relative mx-auto max-w-4xl px-4 sm:px-6 pt-12 sm:pt-16 pb-12 sm:pb-16">
 					<button
@@ -110,9 +110,9 @@ export function TemplateDetail({ templateKey, navigate }: TemplateDetailProps) {
 					</button>
 
 					<div className="flex items-center gap-2 mb-3">
-						<Sparkles className="h-4 w-4 text-brand-500 dark:text-brand-400" />
-						<span className="text-xs font-semibold text-brand-600 dark:text-brand-400 tracking-wide uppercase">
-							Free Template
+						<Sparkles className="h-4 w-4 text-slate-400 dark:text-gray-500" />
+						<span className="text-xs font-semibold text-slate-500 dark:text-gray-500 tracking-wide uppercase">
+							{metadata?.category || 'Free Template'}
 						</span>
 					</div>
 
@@ -122,10 +122,19 @@ export function TemplateDetail({ templateKey, navigate }: TemplateDetailProps) {
 					<p className="text-lg text-gray-500 dark:text-gray-400 leading-relaxed max-w-2xl mb-8">
 						{template.description}
 					</p>
+					{metadata && (
+						<div className="mb-8 flex flex-wrap gap-2">
+							{metadata.tags.slice(0, 5).map((tag) => (
+								<span key={tag} className="rounded-full border border-slate-200 bg-white/70 px-3 py-1 text-[12px] font-medium text-slate-500 dark:border-gray-800 dark:bg-gray-900/70 dark:text-gray-400">
+									{tag}
+								</span>
+							))}
+						</div>
+					)}
 
 					<button
-						onClick={() => navigate(isAuthenticated ? `/forms/new/edit?template=${templateKey}` : '/signup')}
-						className="group inline-flex items-center gap-2.5 rounded-xl bg-brand-600 px-7 py-3.5 text-base font-semibold text-white shadow-lg shadow-brand-600/25 transition-smooth hover:bg-brand-500 hover:shadow-xl hover:shadow-brand-600/30 active:scale-[0.98]"
+						onClick={() => navigate(templateHref)}
+						className="group inline-flex items-center gap-2.5 rounded-xl bg-slate-950 px-7 py-3.5 text-base font-semibold text-white shadow-sm transition-smooth hover:bg-slate-800 active:scale-[0.98] dark:bg-white dark:text-slate-950 dark:hover:bg-gray-200"
 					>
 						{isAuthenticated ? 'Use this template' : 'Get started with this template'}
 						<ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
@@ -223,9 +232,17 @@ export function TemplateDetail({ templateKey, navigate }: TemplateDetailProps) {
 									</span>
 								</div>
 								<div className="px-5 py-4 space-y-4">
+									{metadata && (
+										<div>
+											<p className="text-xs text-gray-400 dark:text-gray-500">Built for</p>
+											<p className="text-sm font-semibold text-gray-900 dark:text-white">
+												{metadata.audience}
+											</p>
+										</div>
+									)}
 									<div className="flex items-center gap-3">
-										<div className="w-9 h-9 rounded-xl bg-brand-50 dark:bg-brand-900/20 flex items-center justify-center flex-shrink-0">
-											<Hash className="h-4 w-4 text-brand-600 dark:text-brand-400" />
+										<div className="w-9 h-9 rounded-xl bg-slate-100 dark:bg-gray-800 flex items-center justify-center flex-shrink-0">
+											<Hash className="h-4 w-4 text-slate-500 dark:text-gray-400" />
 										</div>
 										<div>
 											<p className="text-xs text-gray-400 dark:text-gray-500">Total Fields</p>
@@ -252,7 +269,7 @@ export function TemplateDetail({ templateKey, navigate }: TemplateDetailProps) {
 										<div>
 											<p className="text-xs text-gray-400 dark:text-gray-500">Est. Completion</p>
 											<p className="text-sm font-semibold text-gray-900 dark:text-white">
-												{estimateCompletionTime(inputFields.length)}
+												{metadata ? `~${metadata.estimatedMinutes} minute${metadata.estimatedMinutes !== 1 ? 's' : ''}` : estimateCompletionTime(inputFields.length)}
 											</p>
 										</div>
 									</div>
@@ -260,21 +277,20 @@ export function TemplateDetail({ templateKey, navigate }: TemplateDetailProps) {
 							</div>
 
 							{/* CTA card */}
-							<div className="rounded-2xl bg-gradient-to-br from-brand-600 to-brand-700 p-6 shadow-lg shadow-brand-600/10 overflow-hidden relative">
-								<div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/3" />
-								<div className="relative">
-									<h3 className="text-base font-bold text-white mb-2">
+							<div className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-950 p-6 shadow-sm dark:border-gray-800 dark:bg-white">
+								<div>
+									<h3 className="text-base font-bold text-white mb-2 dark:text-slate-950">
 										Ready to use this template?
 									</h3>
-									<p className="text-sm text-brand-200 mb-5 leading-relaxed">
+									<p className="text-sm text-slate-300 mb-5 leading-relaxed dark:text-slate-500">
 										{isAuthenticated
 											? 'Start collecting responses in minutes. Fully customizable.'
 											: 'Sign up for free and start collecting responses in minutes.'
 										}
 									</p>
 									<button
-										onClick={() => navigate(isAuthenticated ? `/forms/new/edit?template=${templateKey}` : '/signup')}
-										className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-white px-5 py-3 text-sm font-semibold text-brand-700 shadow-sm transition-smooth hover:bg-brand-50 active:scale-[0.98]"
+										onClick={() => navigate(templateHref)}
+										className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-white px-5 py-3 text-sm font-semibold text-slate-950 shadow-sm transition-smooth hover:bg-slate-100 active:scale-[0.98] dark:bg-slate-950 dark:text-white dark:hover:bg-slate-800"
 									>
 										{isAuthenticated ? 'Use this template' : 'Get started free'}
 										<ArrowRight className="h-4 w-4" />
@@ -285,6 +301,18 @@ export function TemplateDetail({ templateKey, navigate }: TemplateDetailProps) {
 					</div>
 				</div>
 			</section>
+
+			{metadata && (
+				<section className="mx-auto max-w-4xl px-4 sm:px-6 pb-12">
+					<div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+						{metadata.useCases.map((useCase) => (
+							<div key={useCase} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-950">
+								<p className="text-[13px] font-semibold leading-5 text-slate-800 dark:text-gray-200">{useCase}</p>
+							</div>
+						))}
+					</div>
+				</section>
+			)}
 
 			{/* Bottom CTA */}
 			<section className="border-t border-gray-100 dark:border-gray-800 py-16 sm:py-20">
@@ -297,8 +325,8 @@ export function TemplateDetail({ templateKey, navigate }: TemplateDetailProps) {
 					</p>
 					<div className="flex flex-col sm:flex-row items-center justify-center gap-3">
 						<button
-							onClick={() => navigate(isAuthenticated ? `/forms/new/edit?template=${templateKey}` : '/signup')}
-							className="group inline-flex items-center gap-2.5 rounded-xl bg-brand-600 px-7 py-3.5 text-base font-semibold text-white shadow-lg shadow-brand-600/25 transition-smooth hover:bg-brand-500 hover:shadow-xl hover:shadow-brand-600/30 active:scale-[0.98]"
+							onClick={() => navigate(templateHref)}
+							className="group inline-flex items-center gap-2.5 rounded-xl bg-slate-950 px-7 py-3.5 text-base font-semibold text-white shadow-sm transition-smooth hover:bg-slate-800 active:scale-[0.98] dark:bg-white dark:text-slate-950 dark:hover:bg-gray-200"
 						>
 							{isAuthenticated ? 'Use this template' : 'Get started free'}
 							<ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
@@ -312,6 +340,34 @@ export function TemplateDetail({ templateKey, navigate }: TemplateDetailProps) {
 					</div>
 				</div>
 			</section>
+
+			{metadata && metadata.relatedKeys.length > 0 && (
+				<section className="mx-auto max-w-4xl px-4 sm:px-6 pb-16">
+					<div className="mb-4 flex items-center justify-between">
+						<h2 className="text-xl font-bold tracking-tight text-gray-900 dark:text-gray-100">Related templates</h2>
+						<button onClick={() => navigate('/templates')} className="text-sm font-semibold text-slate-500 transition-smooth hover:text-slate-900 dark:text-gray-400 dark:hover:text-gray-100">
+							View all
+						</button>
+					</div>
+					<div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+						{metadata.relatedKeys.map((key) => {
+							const related = FORM_TEMPLATES[key]
+							if (!related) return null
+							return (
+								<button
+									key={key}
+									onClick={() => navigate(`/templates/${key}`)}
+									className="rounded-2xl border border-slate-200 bg-white p-5 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-lg hover:shadow-slate-200/60 dark:border-gray-800 dark:bg-gray-950 dark:hover:border-gray-700 dark:hover:shadow-none"
+								>
+									<FileText className="mb-4 h-5 w-5 text-slate-400" />
+									<h3 className="text-[15px] font-semibold text-slate-950 dark:text-white">{related.title}</h3>
+									<p className="mt-1 line-clamp-2 text-[13px] leading-5 text-slate-500 dark:text-gray-400">{related.description}</p>
+								</button>
+							)
+						})}
+					</div>
+				</section>
+			)}
 
 			{/* Footer */}
 			<footer className="border-t border-gray-100 dark:border-gray-800 py-10">
@@ -369,7 +425,7 @@ function NavBar({ navigate, isAuthenticated }: { navigate: (path: string) => voi
 					{isAuthenticated ? (
 						<button
 							onClick={() => navigate('/dashboard')}
-							className="px-4 py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-500 transition-smooth shadow-sm shadow-brand-600/25"
+							className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-medium text-white transition-smooth hover:bg-slate-800 dark:bg-white dark:text-slate-950 dark:hover:bg-gray-200"
 						>
 							Dashboard
 						</button>
@@ -383,7 +439,7 @@ function NavBar({ navigate, isAuthenticated }: { navigate: (path: string) => voi
 							</button>
 							<button
 								onClick={() => navigate('/signup')}
-								className="px-4 py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-500 transition-smooth shadow-sm shadow-brand-600/25"
+								className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-medium text-white transition-smooth hover:bg-slate-800 dark:bg-white dark:text-slate-950 dark:hover:bg-gray-200"
 							>
 								Get started
 							</button>

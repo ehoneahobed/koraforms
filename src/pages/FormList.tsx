@@ -27,7 +27,7 @@ import {
 	ChevronDown,
 } from 'lucide-react'
 import { useState, useRef, useEffect } from 'react'
-import { FORM_TEMPLATES, TEMPLATE_CATEGORIES } from '../templates'
+import { FORM_TEMPLATES, TEMPLATE_CATEGORIES, createFieldsFromTemplate } from '../templates'
 import type { FormField } from '../types'
 import { ShareModal } from '../components/shared/ShareModal'
 import { Share2, Search } from 'lucide-react'
@@ -119,7 +119,7 @@ export function FormList({ navigate, userId }: Props) {
 		createForm({
 			title: template.title || 'Untitled Form',
 			description: template.description,
-			fields: JSON.stringify(template.fields),
+			fields: JSON.stringify(createFieldsFromTemplate(key)),
 			status: 'draft',
 			ownerId: userId,
 			theme: 'red',
@@ -345,7 +345,7 @@ export function FormList({ navigate, userId }: Props) {
 
 						{/* Templates button */}
 						<button
-							onClick={() => navigate('templates')}
+							onClick={() => navigate('/dashboard/templates')}
 							className="inline-flex items-center gap-2 kf-control px-4 py-3 text-[13px] font-semibold text-brand-600 whitespace-nowrap"
 						>
 							<LayoutTemplate className="h-4 w-4" />
@@ -360,7 +360,7 @@ export function FormList({ navigate, userId }: Props) {
 				<TemplatePicker
 					onSelect={handleCreateFromTemplate}
 					onClose={() => setShowTemplates(false)}
-					onBrowseAll={() => { setShowTemplates(false); navigate('templates') }}
+					onBrowseAll={() => { setShowTemplates(false); navigate('/dashboard/templates') }}
 				/>
 			)}
 
@@ -412,7 +412,7 @@ export function FormList({ navigate, userId }: Props) {
 			) : null}
 
 			{/* Empty state */}
-			{allForms.length === 0 && <EmptyState onCreateClick={() => setShowTemplates(true)} onBrowseTemplates={() => navigate('templates')} />}
+			{allForms.length === 0 && <EmptyState onCreateClick={() => setShowTemplates(true)} onBrowseTemplates={() => navigate('/dashboard/templates')} />}
 
 			{/* Share modal */}
 			{shareForm && (
@@ -678,7 +678,7 @@ function EmptyState({ onCreateClick, onBrowseTemplates }: { onCreateClick: () =>
 			<div className="flex items-center gap-8 mt-14 text-center">
 				{[
 					{ icon: <Zap className="h-4 w-4" />, label: 'Works offline' },
-					{ icon: <Sparkles className="h-4 w-4" />, label: '17+ templates' },
+					{ icon: <Sparkles className="h-4 w-4" />, label: '21+ templates' },
 					{ icon: <TrendingUp className="h-4 w-4" />, label: 'Built-in analytics' },
 				].map((feat) => (
 					<div key={feat.label} className="flex items-center gap-2 text-xs text-gray-400 dark:text-gray-500">

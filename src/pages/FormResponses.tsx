@@ -25,7 +25,6 @@ interface Props {
 
 type SubTab = 'all' | 'analytics' | 'insights' | 'todo'
 type ExportFormat = 'csv' | 'json'
-type ExportRange = 'all' | 'date' | 'custom'
 type TimeRange = '7d' | '14d' | '30d' | '90d' | 'all'
 
 const SUB_TABS: { key: SubTab; label: string; icon: typeof Inbox }[] = [
@@ -34,6 +33,8 @@ const SUB_TABS: { key: SubTab; label: string; icon: typeof Inbox }[] = [
 	{ key: 'insights', label: 'Field insights', icon: Lightbulb },
 	{ key: 'todo', label: 'To do', icon: ListChecks },
 ]
+
+const SUB_TAB_KEYS = new Set<SubTab>(SUB_TABS.map(tab => tab.key))
 
 const TIME_RANGE_OPTIONS: { value: TimeRange; label: string }[] = [
 	{ value: '7d', label: '7d' },
@@ -106,6 +107,20 @@ function formatTimeSince(timestamp: number): string {
 	return new Date(timestamp).toLocaleDateString('en', { month: 'short', day: 'numeric' })
 }
 
+function getResponsesSubTabFromUrl(): SubTab {
+	if (typeof window === 'undefined') return 'all'
+	const value = new URLSearchParams(window.location.search).get('tab') as SubTab | null
+	return value && SUB_TAB_KEYS.has(value) ? value : 'all'
+}
+
+function setResponsesSubTabInUrl(tab: SubTab) {
+	if (typeof window === 'undefined') return
+	const url = new URL(window.location.href)
+	if (tab === 'all') url.searchParams.delete('tab')
+	else url.searchParams.set('tab', tab)
+	window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`)
+}
+
 function parseUA(ua: string): { browser: string; os: string; device: string } {
 	let browser = 'Other'
 	let os = 'Other'
@@ -134,9 +149,59 @@ function responseFields(fields: FormField[]): FormField[] {
 	return fields.filter(isResponseField)
 }
 
+function parseResponseData(response: Record<string, unknown>): Record<string, string> {
+	try {
+		const parsed = JSON.parse(String(response.data || '{}')) as Record<string, unknown>
+		return Object.fromEntries(
+			Object.entries(parsed)
+				.filter(([key]) => key !== '_meta')
+				.map(([key, value]) => [key, value == null ? '' : String(value)]),
+		)
+	} catch {
+		return {}
+	}
+}
+
+function parseResponseMeta(response: Record<string, unknown>): { duration?: number; ua?: string; screen?: string; startedAt?: number } | undefined {
+	try {
+		const parsed = JSON.parse(String(response.data || '{}')) as { _meta?: { duration?: number; ua?: string; screen?: string; startedAt?: number } }
+		return parsed._meta
+	} catch {
+		return undefined
+	}
+}
+
+function isFilledValue(value: unknown): boolean {
+	return value !== undefined && value !== null && String(value).trim() !== ''
+}
+
+function responseCompletionPct(fields: FormField[], data: Record<string, string>): number {
+	const requiredFields = responseFields(fields).filter(field => field.required)
+	if (requiredFields.length === 0) return 100
+	const filled = requiredFields.filter(field => isFilledValue(data[field.id])).length
+	return Math.round((filled / requiredFields.length) * 100)
+}
+
 function fieldLabel(field: FormField, data: Record<string, unknown>, fields: FormField[]): string {
 	const stringData = Object.fromEntries(Object.entries(data).map(([key, value]) => [key, value == null ? '' : String(value)]))
 	return pipeValues(field.label || field.id, stringData, fields)
+}
+
+function escapeRegExp(value: string): string {
+	return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function staticFieldLabel(field: FormField): string {
+	const label = field.label || field.id
+	return label
+		.replace(/([A-Za-z0-9][A-Za-z0-9\s'/-]*?)\s*\{\{([^}]+)\}\}/g, (match, before, token) => {
+			const tokenLabel = String(token).trim()
+			const strippedPrefix = String(before).replace(new RegExp(`${escapeRegExp(tokenLabel)}\\s*$`, 'i'), '').trimEnd()
+			return `${strippedPrefix} ${tokenLabel}`.trim()
+		})
+		.replace(/\{\{([^}]+)\}\}/g, (_, token) => String(token).trim())
+		.replace(/\s+/g, ' ')
+		.trim()
 }
 
 function formatResponseValue(field: FormField, value: unknown): { kind: 'empty' | 'text' | 'list'; values: string[] } {
@@ -175,7 +240,7 @@ export function FormResponses({ formId, navigate }: Props) {
 	}, [form?.title])
 
 	// --- State ---
-	const [subTab, setSubTab] = useState<SubTab>('all')
+	const [subTab, setSubTab] = useState<SubTab>(() => getResponsesSubTabFromUrl())
 	const [expandedId, setExpandedId] = useState<string | null>(null)
 	const [selectedResponse, setSelectedResponse] = useState<string | null>(null)
 	const [search, setSearch] = useState('')
@@ -185,6 +250,17 @@ export function FormResponses({ formId, navigate }: Props) {
 	const [showExportModal, setShowExportModal] = useState(false)
 	const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
 	const [currentPage, setCurrentPage] = useState(1)
+
+	const switchSubTab = (tab: SubTab) => {
+		setSubTab(tab)
+		setResponsesSubTabInUrl(tab)
+	}
+
+	useEffect(() => {
+		const handlePopState = () => setSubTab(getResponsesSubTabFromUrl())
+		window.addEventListener('popstate', handlePopState)
+		return () => window.removeEventListener('popstate', handlePopState)
+	}, [])
 
 	// --- Derived data ---
 	let fields: FormField[] = []
@@ -197,10 +273,9 @@ export function FormResponses({ formId, navigate }: Props) {
 		if (search.trim()) {
 			const q = search.toLowerCase()
 			result = result.filter(r => {
-				try {
-					const data = JSON.parse(String(r.data || '{}')) as Record<string, string>
-					return Object.values(data).some(v => String(v).toLowerCase().includes(q))
-				} catch { return false }
+				const data = parseResponseData(r)
+				const submittedAt = r.submittedAt ? new Date(Number(r.submittedAt)).toLocaleString().toLowerCase() : ''
+				return submittedAt.includes(q) || Object.values(data).some(v => String(v).toLowerCase().includes(q))
 			})
 		}
 		if (sortCol) {
@@ -210,14 +285,8 @@ export function FormResponses({ formId, navigate }: Props) {
 					va = String(a.submittedAt || 0)
 					vb = String(b.submittedAt || 0)
 				} else {
-					try {
-						const da = JSON.parse(String(a.data || '{}'))
-						va = String(da[sortCol] || '')
-					} catch { va = '' }
-					try {
-						const db = JSON.parse(String(b.data || '{}'))
-						vb = String(db[sortCol] || '')
-					} catch { vb = '' }
+					va = String(parseResponseData(a)[sortCol] || '')
+					vb = String(parseResponseData(b)[sortCol] || '')
 				}
 				const cmp = va.localeCompare(vb, undefined, { numeric: true })
 				return sortDir === 'asc' ? cmp : -cmp
@@ -241,19 +310,15 @@ export function FormResponses({ formId, navigate }: Props) {
 
 	// --- Stat computations ---
 	const completionStats = useMemo(() => {
-		const requiredFields = fields.filter(f => f.required)
+		const requiredFields = responseFields(fields).filter(f => f.required)
 		let complete = 0
 		let partial = 0
 		for (const r of responses) {
-			let data: Record<string, string> = {}
-			try { data = JSON.parse(String(r.data || '{}')) } catch { /* ignore */ }
+			const data = parseResponseData(r)
 			if (requiredFields.length === 0) {
 				complete++
 			} else {
-				const allFilled = requiredFields.every(f => {
-					const v = data[f.id]
-					return v !== undefined && v !== null && v !== ''
-				})
+				const allFilled = requiredFields.every(f => isFilledValue(data[f.id]))
 				if (allFilled) complete++
 				else partial++
 			}
@@ -261,6 +326,53 @@ export function FormResponses({ formId, navigate }: Props) {
 		const rate = responses.length > 0 ? Math.round((complete / responses.length) * 100) : 0
 		return { complete, partial, rate, dropOff: partial }
 	}, [responses, fields])
+
+	const responseOverview = useMemo(() => {
+		const dataFields = responseFields(fields)
+		const parsed = responses.map(response => ({ response, data: parseResponseData(response), meta: parseResponseMeta(response) }))
+		const durations = parsed
+			.map(item => item.meta?.duration)
+			.filter((value): value is number => typeof value === 'number' && value > 0 && value < 86400)
+		const devices = parsed.map(item => item.meta?.ua ? parseUA(item.meta.ua).device : null).filter(Boolean)
+		const mobileCount = devices.filter(device => device === 'Mobile').length
+		const fillByField = dataFields.map(field => {
+			const filled = parsed.filter(item => isFilledValue(item.data[field.id])).length
+			return {
+				field,
+				filled,
+				missing: Math.max(0, responses.length - filled),
+				pct: responses.length > 0 ? Math.round((filled / responses.length) * 100) : 0,
+			}
+		})
+		const lowFillFields = fillByField.filter(item => item.pct < 80).sort((a, b) => a.pct - b.pct)
+		const requiredGaps = responseFields(fields)
+			.filter(field => field.required)
+			.map(field => ({
+				field,
+				missing: parsed.filter(item => !isFilledValue(item.data[field.id])).length,
+			}))
+			.filter(item => item.missing > 0)
+			.sort((a, b) => b.missing - a.missing)
+
+		return {
+			lastResponseAt: responses[0]?.submittedAt ? Number(responses[0].submittedAt) : null,
+			avgDuration: durations.length > 0 ? Math.round(durations.reduce((sum, value) => sum + value, 0) / durations.length) : null,
+			medianDuration: durations.length > 0 ? Math.round(median(durations)) : null,
+			mobilePct: devices.length > 0 ? Math.round((mobileCount / devices.length) * 100) : null,
+			lowFillFields,
+			requiredGaps,
+			topField: fillByField.sort((a, b) => b.pct - a.pct)[0] || null,
+		}
+	}, [responses, fields])
+
+	useEffect(() => {
+		setSelectedIds(prev => {
+			if (prev.size === 0) return prev
+			const visibleIds = new Set(filteredResponses.map(response => String(response.id)))
+			const next = new Set(Array.from(prev).filter(id => visibleIds.has(id)))
+			return next.size === prev.size ? prev : next
+		})
+	}, [filteredResponses])
 
 	// --- Actions ---
 	const toggleSort = (col: string) => {
@@ -309,17 +421,16 @@ export function FormResponses({ formId, navigate }: Props) {
 		URL.revokeObjectURL(url)
 	}
 
-	const exportCsv = (selectedFieldIds?: string[]) => {
-		if (responses.length === 0) return
+	const exportCsv = (selectedFieldIds?: string[], sourceResponses: Record<string, unknown>[] = responses, includeMetadata = true) => {
+		if (sourceResponses.length === 0) return
 		const exportFields = selectedFieldIds
 			? responseFields(fields).filter(f => selectedFieldIds.includes(f.id))
 			: responseFields(fields)
-		const headers = ['#', 'Submitted At', ...exportFields.map(f => f.label || f.id)]
-		const rows = responses.map((r, i) => {
-			let data: Record<string, string> = {}
-			try { data = JSON.parse(String(r.data || '{}')) } catch { /* ignore */ }
+		const headers = [...(includeMetadata ? ['#', 'Submitted At'] : []), ...exportFields.map(f => f.label || f.id)]
+		const rows = sourceResponses.map((r, i) => {
+			const data = parseResponseData(r)
 			const submittedAt = r.submittedAt ? new Date(Number(r.submittedAt)).toLocaleString() : ''
-			return [String(i + 1), submittedAt, ...exportFields.map(f => data[f.id] || '')]
+			return [...(includeMetadata ? [String(i + 1), submittedAt] : []), ...exportFields.map(f => data[f.id] || '')]
 		})
 		const csvContent = [headers, ...rows]
 			.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
@@ -327,25 +438,26 @@ export function FormResponses({ formId, navigate }: Props) {
 		downloadFile(csvContent, `${String(form?.title || 'form')}-responses.csv`, 'text/csv')
 	}
 
-	const exportJson = (selectedFieldIds?: string[]) => {
-		if (responses.length === 0) return
+	const exportJson = (selectedFieldIds?: string[], sourceResponses: Record<string, unknown>[] = responses, includeMetadata = true) => {
+		if (sourceResponses.length === 0) return
 		const exportFields = selectedFieldIds
 			? responseFields(fields).filter(f => selectedFieldIds.includes(f.id))
 			: responseFields(fields)
-		const exported = responses.map((r, i) => {
-			let data: Record<string, string> = {}
-			try { data = JSON.parse(String(r.data || '{}')) } catch { /* ignore */ }
+		const exported = sourceResponses.map((r, i) => {
+			const data = parseResponseData(r)
 			const labeled: Record<string, string> = {}
 			for (const field of exportFields) {
 				if (data[field.id] !== undefined) {
 					labeled[field.label || field.id] = data[field.id]!
 				}
 			}
-			return {
-				responseNumber: i + 1,
-				submittedAt: r.submittedAt ? new Date(Number(r.submittedAt)).toISOString() : null,
-				data: labeled,
-			}
+			return includeMetadata
+				? {
+					responseNumber: i + 1,
+					submittedAt: r.submittedAt ? new Date(Number(r.submittedAt)).toISOString() : null,
+					data: labeled,
+				}
+				: labeled
 		})
 		downloadFile(JSON.stringify(exported, null, 2), `${String(form?.title || 'form')}-responses.json`, 'application/json')
 	}
@@ -368,16 +480,16 @@ export function FormResponses({ formId, navigate }: Props) {
 						for (const p of parts) { const t = p.trim(); if (t) counts[t] = (counts[t] ?? 0) + 1 }
 					}
 					const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1])
-					return { label: field.label, type: 'categorical' as const, data: sorted, total: vals.length }
+					return { label: staticFieldLabel(field), type: 'categorical' as const, data: sorted, total: vals.length }
 				}
 				if (isNumeric) {
 					const nums = vals.map(Number).filter(n => !isNaN(n))
 					if (nums.length > 0) {
 						const sum = nums.reduce((a, b) => a + b, 0)
-						return { label: field.label, type: 'numeric' as const, avg: (sum / nums.length).toFixed(1), min: Math.min(...nums), max: Math.max(...nums), count: nums.length }
+						return { label: staticFieldLabel(field), type: 'numeric' as const, avg: (sum / nums.length).toFixed(1), min: Math.min(...nums), max: Math.max(...nums), count: nums.length }
 					}
 				}
-				return { label: field.label, type: 'text' as const, total: vals.length, unique: new Set(vals).size }
+				return { label: staticFieldLabel(field), type: 'text' as const, total: vals.length, unique: new Set(vals).size }
 			})
 		const durations: number[] = []
 		for (const d of allData) {
@@ -487,15 +599,15 @@ ${responses.length > 100 ? `<p style="text-align:center;color:#888;margin-top:8p
 	// RENDER
 	// ========================================================================
 	return (
-		<div className="animate-fade-in kf-panel rounded-t-none border-t-0 p-5 sm:p-6">
+		<div className="animate-fade-in rounded-b-2xl border border-t-0 border-slate-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-surface-elevated-dark sm:p-6">
 			{/* ---------------------------------------------------------------- */}
 			{/* Sub-tabs                                                         */}
 			{/* ---------------------------------------------------------------- */}
-			<div className="border-b border-slate-200 dark:border-gray-800 mb-6 -mx-5 sm:-mx-6 px-5 sm:px-6">
+			<div className="border-b border-slate-100 dark:border-gray-800 mb-5 -mx-5 sm:-mx-6 px-5 sm:px-6">
 				<div className="flex items-center justify-between gap-4">
 					<div>
-						<h2 className="text-2xl font-bold text-slate-950 dark:text-gray-100 tracking-[-0.01em]">Responses</h2>
-						<p className="text-[15px] text-slate-500 dark:text-gray-400 mt-2">Review, organise and understand every submission.</p>
+						<h2 className="text-[24px] font-bold text-slate-950 dark:text-gray-100 tracking-[-0.01em]">Responses</h2>
+						<p className="text-[14px] text-slate-500 dark:text-gray-400 mt-1.5">Review, organise and understand every submission.</p>
 					</div>
 					<button
 						onClick={() => setShowExportModal(true)}
@@ -506,23 +618,25 @@ ${responses.length > 100 ? `<p style="text-align:center;color:#888;margin-top:8p
 						Export
 					</button>
 				</div>
-				<nav className="flex gap-8 mt-5" aria-label="Response tabs">
-					{SUB_TABS.map(tab => (
-						<button
-							key={tab.key}
-							onClick={() => setSubTab(tab.key)}
-							className={`relative pb-3 text-[15px] font-medium transition-colors duration-200 ${
+				<nav className="flex gap-2 mt-5 overflow-x-auto pb-1" aria-label="Response tabs">
+					{SUB_TABS.map(tab => {
+						const Icon = tab.icon
+						return (
+							<button
+								key={tab.key}
+								onClick={() => switchSubTab(tab.key)}
+							className={`relative inline-flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-[13px] font-semibold transition-colors duration-200 ${
 								subTab === tab.key
-									? 'text-brand-600 dark:text-brand-400'
-									: 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300'
-							}`}
-						>
-							{tab.label}
-							{subTab === tab.key && (
-								<span className="absolute bottom-0 left-0 right-0 h-0.5 bg-brand-600 rounded-full" />
-							)}
-						</button>
-					))}
+									? 'bg-brand-50 text-brand-700 dark:bg-brand-900/25 dark:text-brand-300'
+										: 'text-gray-400 dark:text-gray-500 hover:bg-slate-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300'
+								}`}
+							>
+								<Icon className="h-4 w-4" />
+								{tab.label}
+								{tab.key === 'all' && responses.length > 0 && <span className="rounded-full bg-white px-1.5 py-0.5 text-[10px] text-slate-500 ring-1 ring-slate-200 dark:bg-gray-900 dark:text-gray-400 dark:ring-gray-800">{responses.length}</span>}
+							</button>
+						)
+					})}
 				</nav>
 			</div>
 
@@ -535,31 +649,12 @@ ${responses.length > 100 ? `<p style="text-align:center;color:#888;margin-top:8p
 						<EmptyState formId={formId} navigate={navigate} form={form} />
 					) : (
 						<>
-							{/* Stat cards */}
-							<div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-								<StatCard
-									icon={<BarChart3 className="h-4.5 w-4.5" />}
-									iconBg="bg-blue-50 dark:bg-blue-900/20"
-									iconColor="text-blue-600 dark:text-blue-400"
-									label="Total responses"
-									value={String(responses.length)}
-								/>
-								<StatCard
-									icon={<CheckCircle2 className="h-4.5 w-4.5" />}
-									iconBg="bg-emerald-50 dark:bg-emerald-900/20"
-									iconColor="text-emerald-600 dark:text-emerald-400"
-									label="Completion rate"
-									value={`${completionStats.rate}%`}
-									trend={completionStats.rate >= 80 ? 'up' : completionStats.rate >= 50 ? 'flat' : 'down'}
-								/>
-								<StatCard
-									icon={<AlertTriangle className="h-4.5 w-4.5" />}
-									iconBg="bg-amber-50 dark:bg-amber-900/20"
-									iconColor="text-amber-600 dark:text-amber-400"
-									label="Drop-off"
-									value={String(completionStats.dropOff)}
-								/>
-							</div>
+							<ResponseOverview
+								totalResponses={responses.length}
+								completionRate={completionStats.rate}
+								dropOff={completionStats.dropOff}
+								overview={responseOverview}
+							/>
 
 							{/* Controls bar */}
 							<div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 mb-4">
@@ -570,7 +665,7 @@ ${responses.length > 100 ? `<p style="text-align:center;color:#888;margin-top:8p
 										value={search}
 										onChange={e => setSearch(e.target.value)}
 										placeholder="Search responses..."
-										className="w-full rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-surface-elevated-dark pl-10 pr-4 py-2 text-sm outline-none focus:border-brand-400 dark:focus:border-brand-600 focus:ring-1 focus:ring-brand-400/20 transition-all text-gray-700 dark:text-gray-300 placeholder-gray-400"
+										className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-4 py-2 text-sm outline-none transition-all placeholder-gray-400 focus:border-brand-300 focus:bg-white focus:ring-2 focus:ring-brand-500/10 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:focus:bg-surface-elevated-dark"
 									/>
 								</div>
 								<div className="flex items-center gap-2 flex-wrap">
@@ -587,18 +682,11 @@ ${responses.length > 100 ? `<p style="text-align:center;color:#888;margin-top:8p
 										<ArrowUpDown className="h-3.5 w-3.5" />
 										{sortDir === 'desc' ? 'Newest first' : 'Oldest first'}
 									</button>
-									<button
-										onClick={() => setShowExportModal(true)}
-										className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-500 dark:text-gray-400 bg-white dark:bg-surface-elevated-dark rounded-lg px-3 py-2 border border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-									>
-										<Download className="h-3.5 w-3.5" />
-										Export
-									</button>
 								</div>
 							</div>
 
 							{/* Response table */}
-							<div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-surface-elevated-dark overflow-hidden shadow-sm">
+							<div className="overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-gray-800 dark:bg-surface-elevated-dark">
 								<div className="overflow-x-auto">
 									<table className="w-full text-sm">
 										<thead>
@@ -634,7 +722,7 @@ ${responses.length > 100 ? `<p style="text-align:center;color:#888;margin-top:8p
 														className="px-4 py-3 text-left text-[11px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider whitespace-nowrap cursor-pointer hover:text-gray-600 dark:hover:text-gray-300 select-none"
 													>
 														<span className="inline-flex items-center gap-1">
-															{field.label || field.id}
+											{staticFieldLabel(field)}
 															{sortCol === field.id ? (
 																<span className="text-brand-500">{sortDir === 'asc' ? '↑' : '↓'}</span>
 															) : (
@@ -653,22 +741,13 @@ ${responses.length > 100 ? `<p style="text-align:center;color:#888;margin-top:8p
 										</thead>
 										<tbody className="divide-y divide-gray-50 dark:divide-gray-800/50">
 											{paginatedResponses.map((response, index) => {
-												let data: Record<string, string> = {}
-												try { data = JSON.parse(String(response.data || '{}')) } catch { /* ignore */ }
+												const data = parseResponseData(response)
 												const submittedAt = response.submittedAt
 													? new Date(Number(response.submittedAt)).toLocaleDateString('en', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 													: ''
 												const globalIndex = (currentPage - 1) * ITEMS_PER_PAGE + index
 												const responseNum = filteredResponses.length - globalIndex
-												const requiredFields = responseFields(fields).filter(f => f.required)
-												let completionPct = 100
-												if (requiredFields.length > 0) {
-													const filled = requiredFields.filter(f => {
-														const v = data[f.id]
-														return v !== undefined && v !== null && v !== ''
-													}).length
-													completionPct = Math.round((filled / requiredFields.length) * 100)
-												}
+												const completionPct = responseCompletionPct(fields, data)
 												const isComplete = completionPct === 100
 
 												return (
@@ -812,15 +891,16 @@ ${responses.length > 100 ? `<p style="text-align:center;color:#888;margin-top:8p
 			{/* TO DO TAB                                                        */}
 			{/* ---------------------------------------------------------------- */}
 			{subTab === 'todo' && (
-				<div className="flex flex-col items-center justify-center py-20">
-					<div className="w-16 h-16 rounded-2xl bg-gray-50 dark:bg-gray-800/50 flex items-center justify-center mb-5">
-						<ListChecks className="h-8 w-8 text-gray-300 dark:text-gray-600" />
-					</div>
-					<h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Coming soon</h2>
-					<p className="text-sm text-gray-400 dark:text-gray-500 text-center max-w-sm">
-						Task management for form responses is on the way. You will be able to flag, assign, and track follow-ups here.
-					</p>
-				</div>
+				<FollowUpView
+					fields={fields}
+					responses={responses}
+					onOpenResponse={setSelectedResponse}
+					onInspectField={(fieldId) => {
+						void fieldId
+						switchSubTab('insights')
+						setSearch('')
+					}}
+				/>
 			)}
 
 			{/* ---------------------------------------------------------------- */}
@@ -835,6 +915,14 @@ ${responses.length > 100 ? `<p style="text-align:center;color:#888;margin-top:8p
 							className="text-xs text-gray-400 dark:text-gray-600 hover:text-white dark:hover:text-gray-900 transition-colors"
 						>
 							Clear
+						</button>
+						<div className="w-px h-5 bg-gray-700 dark:bg-gray-300" />
+						<button
+							onClick={() => exportCsv(undefined, responses.filter(response => selectedIds.has(String(response.id))))}
+							className="inline-flex items-center gap-1.5 text-sm font-medium text-gray-200 dark:text-gray-700 hover:text-white dark:hover:text-gray-900 transition-colors"
+						>
+							<Download className="h-3.5 w-3.5" />
+							Export
 						</button>
 						<div className="w-px h-5 bg-gray-700 dark:bg-gray-300" />
 						<button
@@ -898,6 +986,69 @@ ${responses.length > 100 ? `<p style="text-align:center;color:#888;margin-top:8p
 // StatCard Component
 // ============================================================================
 
+interface ResponseOverviewData {
+	lastResponseAt: number | null
+	avgDuration: number | null
+	medianDuration: number | null
+	mobilePct: number | null
+	lowFillFields: { field: FormField; filled: number; missing: number; pct: number }[]
+	requiredGaps: { field: FormField; missing: number }[]
+	topField: { field: FormField; filled: number; missing: number; pct: number } | null
+}
+
+function ResponseOverview({
+	totalResponses,
+	completionRate,
+	dropOff,
+	overview,
+}: {
+	totalResponses: number
+	completionRate: number
+	dropOff: number
+	overview: ResponseOverviewData
+}) {
+	const health = completionRate >= 85 ? 'Strong' : completionRate >= 60 ? 'Watch' : 'Needs review'
+	const healthClass = completionRate >= 85
+		? 'text-emerald-700 dark:text-emerald-300'
+		: completionRate >= 60
+			? 'text-amber-700 dark:text-amber-300'
+			: 'text-red-600 dark:text-red-300'
+	const primarySignal = overview.requiredGaps[0]
+		? `${staticFieldLabel(overview.requiredGaps[0].field)} missing in ${overview.requiredGaps[0].missing}`
+		: overview.lowFillFields[0]
+			? `${staticFieldLabel(overview.lowFillFields[0].field)} at ${overview.lowFillFields[0].pct}% fill`
+			: 'No urgent review signals'
+
+	return (
+		<section className="mb-5 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-gray-800 dark:bg-surface-elevated-dark">
+			<div className="grid grid-cols-2 gap-y-4 md:grid-cols-[1.1fr_repeat(4,0.7fr)] md:items-center">
+				<div className="col-span-2 min-w-0 md:col-span-1">
+					<p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 dark:text-gray-500">Health</p>
+					<div className="mt-0.5 flex items-center gap-2">
+						<span className={`text-[15px] font-semibold ${healthClass}`}>{health}</span>
+						<span className="text-[12px] text-slate-400 dark:text-gray-500">{primarySignal}</span>
+					</div>
+				</div>
+				<ResponseMetric label="Responses" value={totalResponses.toLocaleString()} helper={overview.lastResponseAt ? formatTimeSince(overview.lastResponseAt) : 'No activity'} />
+				<ResponseMetric label="Complete" value={`${completionRate}%`} helper={`${dropOff} partial`} tone={dropOff > 0 ? 'warn' : 'good'} />
+				<ResponseMetric label="Median" value={overview.medianDuration ? formatDuration(overview.medianDuration) : '—'} helper="Completion time" />
+				<ResponseMetric label="Mobile" value={overview.mobilePct == null ? '—' : `${overview.mobilePct}%`} helper="Respondents" />
+			</div>
+		</section>
+	)
+}
+
+function ResponseMetric({ label, value, helper, tone = 'neutral' }: { label: string; value: string; helper: string; tone?: 'neutral' | 'good' | 'warn' }) {
+	const valueClass = tone === 'good' ? 'text-emerald-700 dark:text-emerald-300' : tone === 'warn' ? 'text-amber-700 dark:text-amber-300' : 'text-slate-950 dark:text-gray-100'
+	return (
+		<div className="min-w-0 md:border-l md:border-slate-100 md:pl-4 md:dark:border-gray-800">
+			<p className="text-[11px] font-medium text-slate-400 dark:text-gray-500">{label}</p>
+			<p className={`mt-0.5 text-[18px] font-semibold tabular-nums tracking-tight ${valueClass}`}>{value}</p>
+			<p className="truncate text-[11px] text-slate-400 dark:text-gray-600">{helper}</p>
+		</div>
+	)
+}
+
 function StatCard({
 	icon,
 	iconBg,
@@ -938,6 +1089,244 @@ function StatCard({
 // ============================================================================
 // Empty State
 // ============================================================================
+
+function FollowUpView({
+	fields,
+	responses,
+	onOpenResponse,
+	onInspectField,
+}: {
+	fields: FormField[]
+	responses: Record<string, unknown>[]
+	onOpenResponse: (id: string) => void
+	onInspectField: (fieldId: string) => void
+}) {
+	const review = useMemo(() => {
+		const dataFields = responseFields(fields)
+		const requiredFields = dataFields.filter(field => field.required)
+		const parsed = responses.map(response => ({
+			response,
+			data: parseResponseData(response),
+			meta: parseResponseMeta(response),
+			completion: responseCompletionPct(fields, parseResponseData(response)),
+		}))
+		const incomplete = parsed
+			.map(item => ({
+				...item,
+				missingFields: requiredFields.filter(field => !isFilledValue(item.data[field.id])),
+			}))
+			.filter(item => item.missingFields.length > 0)
+			.slice(0, 8)
+
+		const durations = parsed
+			.map(item => item.meta?.duration)
+			.filter((value): value is number => typeof value === 'number' && value > 0 && value < 86400)
+		const slowThreshold = durations.length > 0 ? Math.max(300, median(durations) * 1.75) : 300
+		const slow = parsed
+			.filter(item => typeof item.meta?.duration === 'number' && item.meta.duration > slowThreshold)
+			.sort((a, b) => (Number(b.meta?.duration) || 0) - (Number(a.meta?.duration) || 0))
+			.slice(0, 6)
+
+		const lowFillFields = dataFields
+			.map(field => {
+				const filled = parsed.filter(item => isFilledValue(item.data[field.id])).length
+				return {
+					field,
+					filled,
+					missing: Math.max(0, responses.length - filled),
+					pct: responses.length > 0 ? Math.round((filled / responses.length) * 100) : 0,
+				}
+			})
+			.filter(item => item.pct < 75)
+			.sort((a, b) => a.pct - b.pct)
+			.slice(0, 6)
+
+		const identityFields = dataFields.filter(field => ['email', 'phone'].includes(field.type) || /email|phone|name/i.test(field.label))
+		const duplicateGroups = identityFields.flatMap(field => {
+			const counts = new Map<string, Record<string, unknown>[]>()
+			for (const item of parsed) {
+				const value = item.data[field.id]?.trim().toLowerCase()
+				if (!value) continue
+				counts.set(value, [...(counts.get(value) || []), item.response])
+			}
+			return Array.from(counts.entries())
+				.filter(([, items]) => items.length > 1)
+				.map(([value, items]) => ({ field, value, responses: items }))
+		}).slice(0, 6)
+
+		return { incomplete, slow, lowFillFields, duplicateGroups, slowThreshold }
+	}, [fields, responses])
+
+	const hasWork = review.incomplete.length > 0 || review.slow.length > 0 || review.lowFillFields.length > 0 || review.duplicateGroups.length > 0
+
+	if (responses.length === 0) {
+		return (
+			<div className="py-16 text-center">
+				<ListChecks className="mx-auto h-8 w-8 text-slate-300 dark:text-gray-700" />
+				<h2 className="mt-3 text-lg font-semibold text-slate-950 dark:text-gray-100">Nothing to review yet</h2>
+				<p className="mt-1 text-sm text-slate-400 dark:text-gray-500">Follow-up suggestions appear after submissions arrive.</p>
+			</div>
+		)
+	}
+
+	return (
+		<div className="space-y-5 animate-fade-in">
+			<div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-surface-elevated-dark">
+				<div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+					<div>
+						<p className="text-[12px] font-semibold uppercase tracking-wide text-slate-400 dark:text-gray-500">Review queue</p>
+						<h2 className="mt-1 text-[24px] font-bold tracking-tight text-slate-950 dark:text-gray-100">
+							{hasWork ? 'Suggested follow-ups' : 'Everything looks clean'}
+						</h2>
+						<p className="mt-1 text-[14px] text-slate-500 dark:text-gray-400">
+							KoraForms scans required gaps, slow submissions, low-fill fields, and duplicate-looking respondents.
+						</p>
+					</div>
+					<div className="grid grid-cols-4 gap-2 text-center">
+						<QueueCount label="Incomplete" value={review.incomplete.length} />
+						<QueueCount label="Slow" value={review.slow.length} />
+						<QueueCount label="Fields" value={review.lowFillFields.length} />
+						<QueueCount label="Dupes" value={review.duplicateGroups.length} />
+					</div>
+				</div>
+			</div>
+
+			<div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+				<ReviewSection
+					title="Incomplete required answers"
+					description="Responses missing one or more required fields."
+					empty="No required gaps found."
+				>
+					{review.incomplete.map(item => (
+						<ReviewResponseRow
+							key={String(item.response.id)}
+							response={item.response}
+							title={`${item.missingFields.length} missing required field${item.missingFields.length !== 1 ? 's' : ''}`}
+							detail={item.missingFields.map(staticFieldLabel).join(', ')}
+							badge={`${item.completion}%`}
+							onOpen={() => onOpenResponse(String(item.response.id))}
+						/>
+					))}
+				</ReviewSection>
+
+				<ReviewSection
+					title="Slow submissions"
+					description={`Responses that took longer than ${formatDuration(Math.round(review.slowThreshold))}.`}
+					empty="No unusually slow submissions."
+				>
+					{review.slow.map(item => (
+						<ReviewResponseRow
+							key={String(item.response.id)}
+							response={item.response}
+							title="Long completion time"
+							detail="This may indicate confusing wording or too many fields."
+							badge={formatDuration(Math.round(Number(item.meta?.duration) || 0))}
+							onOpen={() => onOpenResponse(String(item.response.id))}
+						/>
+					))}
+				</ReviewSection>
+
+				<ReviewSection
+					title="Low-fill fields"
+					description="Fields with fill rates below 75%."
+					empty="No low-fill fields detected."
+				>
+					{review.lowFillFields.map(item => (
+						<button
+							key={item.field.id}
+							onClick={() => onInspectField(item.field.id)}
+							className="flex w-full items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 text-left transition-colors hover:border-brand-200 hover:bg-brand-50/30 dark:border-gray-800 dark:bg-gray-900/60 dark:hover:border-brand-800"
+						>
+							<div className="min-w-0">
+								<p className="truncate text-[14px] font-semibold text-slate-800 dark:text-gray-200">{staticFieldLabel(item.field)}</p>
+								<p className="mt-0.5 text-[12px] text-slate-400 dark:text-gray-500">{item.missing} blank response{item.missing !== 1 ? 's' : ''}</p>
+							</div>
+							<span className="rounded-full bg-amber-50 px-2.5 py-1 text-[12px] font-semibold text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">{item.pct}%</span>
+						</button>
+					))}
+				</ReviewSection>
+
+				<ReviewSection
+					title="Possible duplicates"
+					description="Repeated names, emails, or phone numbers."
+					empty="No duplicate-looking respondents."
+				>
+					{review.duplicateGroups.map(group => (
+						<button
+							key={`${group.field.id}-${group.value}`}
+							onClick={() => onOpenResponse(String(group.responses[0]?.id))}
+							className="flex w-full items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 text-left transition-colors hover:border-brand-200 hover:bg-brand-50/30 dark:border-gray-800 dark:bg-gray-900/60 dark:hover:border-brand-800"
+						>
+							<div className="min-w-0">
+								<p className="truncate text-[14px] font-semibold text-slate-800 dark:text-gray-200">{group.value}</p>
+								<p className="mt-0.5 text-[12px] text-slate-400 dark:text-gray-500">{staticFieldLabel(group.field)}</p>
+							</div>
+							<span className="rounded-full bg-slate-100 px-2.5 py-1 text-[12px] font-semibold text-slate-600 dark:bg-gray-800 dark:text-gray-300">{group.responses.length}x</span>
+						</button>
+					))}
+				</ReviewSection>
+			</div>
+		</div>
+	)
+}
+
+function QueueCount({ label, value }: { label: string; value: number }) {
+	return (
+		<div className="rounded-xl bg-slate-50 px-3 py-2 dark:bg-gray-900/60">
+			<p className="text-[18px] font-bold tabular-nums text-slate-950 dark:text-gray-100">{value}</p>
+			<p className="text-[10px] font-medium text-slate-400 dark:text-gray-500">{label}</p>
+		</div>
+	)
+}
+
+function ReviewSection({ title, description, empty, children }: { title: string; description: string; empty: string; children: React.ReactNode }) {
+	const hasChildren = Array.isArray(children) ? children.length > 0 : !!children
+	return (
+		<section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-surface-elevated-dark">
+			<div className="mb-4">
+				<h3 className="text-[15px] font-semibold text-slate-950 dark:text-gray-100">{title}</h3>
+				<p className="mt-1 text-[12px] text-slate-400 dark:text-gray-500">{description}</p>
+			</div>
+			<div className="space-y-2">
+				{hasChildren ? children : (
+					<div className="rounded-xl border border-dashed border-slate-200 py-6 text-center text-[13px] text-slate-400 dark:border-gray-800 dark:text-gray-600">
+						{empty}
+					</div>
+				)}
+			</div>
+		</section>
+	)
+}
+
+function ReviewResponseRow({
+	response,
+	title,
+	detail,
+	badge,
+	onOpen,
+}: {
+	response: Record<string, unknown>
+	title: string
+	detail: string
+	badge: string
+	onOpen: () => void
+}) {
+	return (
+		<button
+			onClick={onOpen}
+			className="flex w-full items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 text-left transition-colors hover:border-brand-200 hover:bg-brand-50/30 dark:border-gray-800 dark:bg-gray-900/60 dark:hover:border-brand-800"
+		>
+			<div className="min-w-0">
+				<p className="truncate text-[14px] font-semibold text-slate-800 dark:text-gray-200">{title}</p>
+				<p className="mt-0.5 truncate text-[12px] text-slate-400 dark:text-gray-500">{detail}</p>
+					{response.submittedAt ? (
+						<p className="mt-1 text-[11px] text-slate-400 dark:text-gray-600">{formatTimeSince(Number(response.submittedAt))}</p>
+					) : null}
+			</div>
+			<span className="shrink-0 rounded-full bg-amber-50 px-2.5 py-1 text-[12px] font-semibold text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">{badge}</span>
+		</button>
+	)
+}
 
 function EmptyState({
 	formId,
@@ -1047,13 +1436,12 @@ function ExportModal({
 	fields: FormField[]
 	responseCount: number
 	formTitle: string
-	onExportCsv: (fieldIds?: string[]) => void
-	onExportJson: (fieldIds?: string[]) => void
+	onExportCsv: (fieldIds?: string[], sourceResponses?: Record<string, unknown>[], includeMetadata?: boolean) => void
+	onExportJson: (fieldIds?: string[], sourceResponses?: Record<string, unknown>[], includeMetadata?: boolean) => void
 	onExportPdf: () => void
 	onClose: () => void
 }) {
 	const [format, setFormat] = useState<ExportFormat>('csv')
-	const [exportRange, setExportRange] = useState<ExportRange>('all')
 	const [selectedFieldIds, setSelectedFieldIds] = useState<Set<string>>(
 		new Set(responseFields(fields).map(f => f.id))
 	)
@@ -1072,8 +1460,8 @@ function ExportModal({
 
 	const handleExport = () => {
 		const ids = Array.from(selectedFieldIds)
-		if (format === 'csv') onExportCsv(ids)
-		else onExportJson(ids)
+		if (format === 'csv') onExportCsv(ids, undefined, includeMetadata)
+		else onExportJson(ids, undefined, includeMetadata)
 		onClose()
 	}
 
@@ -1110,27 +1498,6 @@ function ExportModal({
 										<span className="inline-flex items-center gap-1.5"><FileJson className="h-3.5 w-3.5" />JSON</span>
 									)}
 								</button>
-							))}
-						</div>
-					</div>
-
-					{/* Range */}
-					<div>
-						<label className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 block">Responses</label>
-						<div className="space-y-2">
-							{(['all', 'date', 'custom'] as const).map(r => (
-								<label key={r} className="flex items-center gap-2 cursor-pointer">
-									<input
-										type="radio"
-										name="exportRange"
-										checked={exportRange === r}
-										onChange={() => setExportRange(r)}
-										className="text-brand-500 focus:ring-brand-500/20"
-									/>
-									<span className="text-sm text-gray-700 dark:text-gray-300">
-										{r === 'all' ? 'All responses' : r === 'date' ? 'Primary date' : 'Custom range'}
-									</span>
-								</label>
 							))}
 						</div>
 					</div>
@@ -1488,11 +1855,12 @@ function ResponsesBarChart({ data }: { data: { date: Date; count: number; label:
 	const chartHeight = 200; const chartPadLeft = 40; const chartPadRight = 12; const chartPadTop = 8; const chartPadBottom = 28
 	const innerH = chartHeight - chartPadTop - chartPadBottom; const barGap = 2
 	const xLabelStep = Math.max(1, Math.ceil(data.length / 8))
+	const chartRef = 'responses-over-time-chart'
 
 	return (
 		<div className="rounded-2xl border border-gray-100 dark:border-gray-800 bg-white dark:bg-surface-elevated-dark p-5 relative shadow-sm">
 			<h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-4">Responses Over Time</h3>
-			<div className="relative" style={{ height: chartHeight }}>
+			<div className="relative" data-chart={chartRef} style={{ height: chartHeight }}>
 				<ChartTooltip tooltip={tooltip} />
 				<svg width="100%" height={chartHeight} viewBox={`0 0 100 ${chartHeight}`} preserveAspectRatio="none" className="overflow-visible" style={{ width: '100%' }}>
 					{yTicks.map(tick => {
@@ -1511,10 +1879,16 @@ function ResponsesBarChart({ data }: { data: { date: Date; count: number; label:
 							const pct = maxCount > 0 ? (d.count / maxCount) * 100 : 0
 							return (
 								<div key={d.label} className="flex-1 flex flex-col items-center justify-end h-full relative group"
-									onMouseEnter={e => {
+									onMouseMove={e => {
 										const rect = e.currentTarget.getBoundingClientRect()
-										const parentRect = e.currentTarget.closest('.relative')?.getBoundingClientRect()
-										if (parentRect) setTooltip({ x: rect.left + rect.width / 2 - parentRect.left, y: rect.top - parentRect.top + (innerH - (pct / 100) * innerH), content: `${shortDate(d.date)}: ${d.count} response${d.count !== 1 ? 's' : ''}` })
+										const parentRect = e.currentTarget.closest(`[data-chart="${chartRef}"]`)?.getBoundingClientRect()
+										if (parentRect) {
+											setTooltip({
+												x: rect.left + rect.width / 2 - parentRect.left,
+												y: chartPadTop + innerH - (pct / 100) * innerH,
+												content: `${shortDate(d.date)}: ${d.count} response${d.count !== 1 ? 's' : ''}`,
+											})
+										}
 									}}
 									onMouseLeave={() => setTooltip(null)}
 								>
@@ -1542,7 +1916,7 @@ function CalendarHeatmap({ responses }: { responses: Record<string, unknown>[] }
 			if (r.submittedAt) { const key = dateKey(new Date(Number(r.submittedAt))); counts[key] = (counts[key] ?? 0) + 1 }
 		}
 		const today = new Date(); today.setHours(0, 0, 0, 0)
-		const totalWeeks = 12; const totalDays = totalWeeks * 7
+		const totalWeeks = 52; const totalDays = totalWeeks * 7
 		const endDay = new Date(today); const startDay = new Date(today)
 		startDay.setDate(startDay.getDate() - totalDays + 1)
 		const startDow = startDay.getDay(); startDay.setDate(startDay.getDate() - startDow)
@@ -1566,7 +1940,7 @@ function CalendarHeatmap({ responses }: { responses: Record<string, unknown>[] }
 		return { weeks: weeksArr, maxCount: max, monthLabels: months }
 	}, [responses])
 
-	const cellSize = 13; const cellGap = 2; const dayLabelWidth = 28; const topPad = 18
+	const cellSize = 11; const cellGap = 3; const dayLabelWidth = 30; const topPad = 20
 	const gridWidth = dayLabelWidth + weeks.length * (cellSize + cellGap) + cellSize
 	const gridHeight = topPad + 7 * (cellSize + cellGap)
 
@@ -1584,15 +1958,21 @@ function CalendarHeatmap({ responses }: { responses: Record<string, unknown>[] }
 
 	return (
 		<div className="rounded-2xl border border-gray-100 dark:border-gray-800 bg-white dark:bg-surface-elevated-dark p-5 relative shadow-sm">
-			<h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-4">Activity</h3>
-			<div className="overflow-x-auto relative">
+			<div className="mb-4 flex items-center justify-between">
+				<div>
+					<h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Activity</h3>
+					<p className="text-[11px] text-gray-400 dark:text-gray-500">Last year</p>
+				</div>
+				<span className="text-[11px] text-gray-400 dark:text-gray-500">{responses.length} total</span>
+			</div>
+			<div className="relative overflow-x-auto rounded-xl border border-slate-100 px-4 py-3 dark:border-gray-800">
 				<ChartTooltip tooltip={tooltip} />
-				<svg width="100%" viewBox={`0 0 ${gridWidth} ${gridHeight}`} preserveAspectRatio="xMinYMid meet" className="overflow-visible">
+				<svg viewBox={`0 0 ${gridWidth} ${gridHeight}`} className="block w-full min-w-[760px] overflow-visible">
 					{monthLabels.map(m => <text key={`${m.label}-${m.weekIndex}`} x={dayLabelWidth + m.weekIndex * (cellSize + cellGap)} y={10} className="fill-gray-400 dark:fill-gray-500 text-[9px]" fontSize="9">{m.label}</text>)}
-					{dayLabels.map(({ dow, label }) => <text key={dow} x={0} y={topPad + dow * (cellSize + cellGap) + cellSize - 2} className="fill-gray-400 dark:fill-gray-500 text-[9px]" fontSize="9">{label}</text>)}
+					{dayLabels.filter(({ dow }) => dow % 2 === 1).map(({ dow, label }) => <text key={dow} x={0} y={topPad + dow * (cellSize + cellGap) + cellSize - 1} className="fill-gray-400 dark:fill-gray-500 text-[9px]" fontSize="9">{label}</text>)}
 					{weeks.map((week, wi) => week.map(day => (
-						<rect key={day.key} x={dayLabelWidth + wi * (cellSize + cellGap)} y={topPad + day.dow * (cellSize + cellGap)} width={cellSize} height={cellSize} rx={2} className={`${heatColor(day.count)} transition-colors duration-200 cursor-default`}
-							onMouseEnter={e => { const rect = e.currentTarget.getBoundingClientRect(); const parentRect = e.currentTarget.closest('.relative')?.getBoundingClientRect(); if (parentRect) setTooltip({ x: rect.left + rect.width / 2 - parentRect.left, y: rect.top - parentRect.top, content: `${shortDate(day.date)}: ${day.count} response${day.count !== 1 ? 's' : ''}` }) }}
+						<rect key={day.key} x={dayLabelWidth + wi * (cellSize + cellGap)} y={topPad + day.dow * (cellSize + cellGap)} width={cellSize} height={cellSize} rx={2.5} className={`${heatColor(day.count)} transition-colors duration-200 cursor-default`}
+							onMouseMove={e => { const rect = e.currentTarget.getBoundingClientRect(); const parentRect = e.currentTarget.closest('.relative')?.getBoundingClientRect(); if (parentRect) setTooltip({ x: rect.left + rect.width / 2 - parentRect.left, y: rect.top - parentRect.top, content: `${shortDate(day.date)}: ${day.count} response${day.count !== 1 ? 's' : ''}` }) }}
 							onMouseLeave={() => setTooltip(null)}
 						/>
 					)))}
@@ -1688,11 +2068,15 @@ interface NumericAnalysis { field: FormField; type: 'numeric'; sum: number; avg:
 interface TextAnalysis { field: FormField; type: 'text'; total: number; fillRate: number; uniqueCount: number; topValues: [string, number][] }
 type FieldAnalysis = CategoricalAnalysis | NumericAnalysis | TextAnalysis
 
+function filledCountForAnalysis(analysis: FieldAnalysis): number {
+	return analysis.type === 'numeric' ? analysis.count : analysis.total
+}
+
 function FieldBreakdownCard({ analysis, totalResponses }: { analysis: FieldAnalysis; totalResponses: number }) {
 	return (
 		<div className="rounded-2xl border border-gray-100 dark:border-gray-800 bg-white dark:bg-surface-elevated-dark p-5 shadow-sm">
 			<div className="flex items-center justify-between mb-4">
-				<h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate mr-2">{analysis.field.label || analysis.field.id}</h3>
+				<h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate mr-2">{staticFieldLabel(analysis.field)}</h3>
 				<span className="text-xs text-gray-400 dark:text-gray-500 tabular-nums shrink-0">{analysis.fillRate}% fill rate</span>
 			</div>
 			{analysis.type === 'categorical' && <CategoricalBarChart counts={analysis.counts} total={totalResponses} />}
@@ -1810,28 +2194,58 @@ function NpsGauge({ nps, promoters, passives, detractors, total, fieldLabel }: {
 
 function DropoffFunnel({ data }: { data: { label: string; filled: number; pct: number }[] }) {
 	if (data.length === 0) return null
-	const maxFilled = data[0]?.filled ?? 1
+	const weakest = [...data].sort((a, b) => a.pct - b.pct)[0]
+	const reviewCount = data.filter(d => d.pct < 75).length
+	const watchCount = data.filter(d => d.pct >= 75 && d.pct < 90).length
 	return (
 		<div className="rounded-2xl border border-gray-100 dark:border-gray-800 bg-white dark:bg-surface-elevated-dark p-5 shadow-sm">
-			<h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-1">Field Completion Funnel</h3>
-			<p className="text-[10px] text-gray-400 dark:text-gray-500 mb-4">See where respondents drop off — lower fill rates indicate friction points.</p>
-			<div className="space-y-1.5">
+			<div className="mb-4 flex items-start justify-between gap-4">
+				<div>
+					<h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Field completion</h3>
+					<p className="mt-1 text-[11px] text-gray-400 dark:text-gray-500">Spot where respondents slow down or skip questions.</p>
+				</div>
+				{weakest && reviewCount === 0 && watchCount === 0 && (
+					<span className="shrink-0 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300">
+						All healthy
+					</span>
+				)}
+				{(reviewCount > 0 || watchCount > 0) && (
+					<span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${reviewCount > 0 ? 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-300' : 'bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300'}`}>
+						{reviewCount > 0 ? `${reviewCount} review` : `${watchCount} watch`}
+					</span>
+				)}
+			</div>
+			<div className="overflow-hidden rounded-2xl border border-slate-100 bg-slate-50/60 dark:border-gray-800 dark:bg-gray-900/35">
 				{data.map((d, i) => {
-					const widthPct = maxFilled > 0 ? (d.filled / maxFilled) * 100 : 0
 					const isDropoff = i > 0 && d.pct < (data[i - 1]?.pct ?? 100) - 10
+					const status = d.pct >= 90 ? 'Healthy' : d.pct >= 75 ? 'Watch' : 'Review'
+					const statusClass = d.pct >= 90
+						? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300'
+						: d.pct >= 75
+							? 'bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300'
+							: 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-300'
+					const barClass = d.pct >= 90
+						? 'bg-emerald-400 dark:bg-emerald-500'
+						: d.pct >= 75
+							? 'bg-amber-400 dark:bg-amber-500'
+							: 'bg-brand-500 dark:bg-brand-400'
 					return (
-						<div key={`${d.label}-${i}`} className="group">
-							<div className="flex items-center gap-2">
-								<span className="text-[10px] text-gray-400 w-5 text-right tabular-nums shrink-0">{i + 1}</span>
-								<div className="flex-1 min-w-0">
-									<div className="flex items-center gap-2 mb-0.5">
-										<span className={`text-xs truncate ${isDropoff ? 'text-red-600 dark:text-red-400 font-medium' : 'text-gray-700 dark:text-gray-300'}`}>{d.label}</span>
-										<span className={`text-[10px] tabular-nums shrink-0 ${isDropoff ? 'text-red-500' : 'text-gray-400'}`}>{d.pct}%</span>
+						<div key={`${d.label}-${i}`} className="border-b border-slate-100 px-4 py-3 last:border-b-0 dark:border-gray-800">
+							<div className="grid grid-cols-[1fr_auto] gap-3">
+								<div className="min-w-0 pr-2">
+									<div className="flex min-w-0 items-center gap-2">
+										<span className="w-5 text-[11px] text-gray-400 tabular-nums">{String(i + 1).padStart(2, '0')}</span>
+										<span className={`truncate text-[13px] font-semibold ${isDropoff ? 'text-brand-700 dark:text-brand-300' : 'text-gray-800 dark:text-gray-200'}`}>{d.label}</span>
 									</div>
-									<div className="h-1.5 rounded-full bg-gray-100 dark:bg-gray-800 overflow-hidden">
-										<div className={`h-full rounded-full transition-all duration-500 ${isDropoff ? 'bg-red-400' : 'bg-brand-500/70'}`} style={{ width: `${widthPct}%` }} />
-									</div>
+									<p className="mt-0.5 pl-7 text-[11px] text-gray-400 dark:text-gray-500">{d.filled} filled · {Math.max(0, data[0]!.filled - d.filled)} fewer than first field</p>
 								</div>
+								<div className="flex shrink-0 items-center gap-2">
+									<span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${statusClass}`}>{status}</span>
+									<span className="w-9 text-right text-[12px] font-semibold tabular-nums text-gray-500 dark:text-gray-400">{d.pct}%</span>
+								</div>
+							</div>
+							<div className="mt-2 ml-7 h-1.5 overflow-hidden rounded-full bg-white dark:bg-gray-800">
+								<div className={`h-full rounded-full transition-all duration-500 ${barClass}`} style={{ width: `${d.pct}%` }} />
 							</div>
 						</div>
 					)
@@ -1946,13 +2360,13 @@ function AnalyticsView({ fields, responses }: { fields: FormField[]; responses: 
 		if (scores.length === 0) return null
 		const promoters = scores.filter(s => s >= 9).length; const passives = scores.filter(s => s >= 7 && s <= 8).length; const detractors = scores.filter(s => s <= 6).length
 		const nps = Math.round(((promoters - detractors) / scores.length) * 100)
-		return { nps, promoters, passives, detractors, total: scores.length, fieldLabel: field.label }
+		return { nps, promoters, passives, detractors, total: scores.length, fieldLabel: staticFieldLabel(field) }
 	}, [allData, fields])
 
 	const funnelData = useMemo(() => {
 		const dataFields = responseFields(fields)
 		if (dataFields.length === 0 || totalResponses === 0) return []
-		return dataFields.map(field => { const filled = allData.filter(d => { const v = d[field.id]; return v !== undefined && v !== null && v !== '' }).length; return { label: field.label, filled, pct: Math.round((filled / totalResponses) * 100) } })
+		return dataFields.map(field => { const filled = allData.filter(d => { const v = d[field.id]; return v !== undefined && v !== null && v !== '' }).length; return { label: staticFieldLabel(field), filled, pct: Math.round((filled / totalResponses) * 100) } })
 	}, [allData, fields, totalResponses])
 
 	const deviceBreakdown = useMemo(() => {
@@ -2023,10 +2437,12 @@ function AnalyticsView({ fields, responses }: { fields: FormField[]; responses: 
 			<ResponsesBarChart data={dailyCounts} />
 			<CalendarHeatmap responses={filtered} />
 
-			{(npsData || funnelData.length > 0) && (
-				<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-					{npsData && <NpsGauge nps={npsData.nps} promoters={npsData.promoters} passives={npsData.passives} detractors={npsData.detractors} total={npsData.total} fieldLabel={npsData.fieldLabel} />}
+			{(funnelData.length > 0 || npsData) && (
+				<div className={`grid grid-cols-1 gap-4 ${npsData ? 'xl:grid-cols-[1.1fr_0.9fr]' : ''}`}>
 					{funnelData.length > 0 && <DropoffFunnel data={funnelData} />}
+					{npsData && (
+					<NpsGauge nps={npsData.nps} promoters={npsData.promoters} passives={npsData.passives} detractors={npsData.detractors} total={npsData.total} fieldLabel={npsData.fieldLabel} />
+					)}
 				</div>
 			)}
 
@@ -2068,10 +2484,10 @@ function AnalyticsView({ fields, responses }: { fields: FormField[]; responses: 
 // ============================================================================
 
 function FieldInsightsView({ fields, responses }: { fields: FormField[]; responses: Record<string, unknown>[] }) {
+	const [query, setQuery] = useState('')
+	const [selectedFieldId, setSelectedFieldId] = useState<string | null>(null)
 	const allData = useMemo(() => {
-		return responses.map(r => {
-			try { return JSON.parse(String(r.data || '{}')) as Record<string, string> } catch { return {} as Record<string, string> }
-		})
+		return responses.map(parseResponseData)
 	}, [responses])
 
 	const totalResponses = responses.length
@@ -2110,6 +2526,16 @@ function FieldInsightsView({ fields, responses }: { fields: FormField[]; respons
 		})
 	}, [allData, fields, totalResponses])
 
+	useEffect(() => {
+		if (fieldAnalytics.length === 0) {
+			if (selectedFieldId !== null) setSelectedFieldId(null)
+			return
+		}
+		if (!selectedFieldId || !fieldAnalytics.some(analysis => analysis.field.id === selectedFieldId)) {
+			setSelectedFieldId(fieldAnalytics[0]!.field.id)
+		}
+	}, [fieldAnalytics, selectedFieldId])
+
 	if (fieldAnalytics.length === 0) {
 		return (
 			<div className="text-center py-16">
@@ -2118,25 +2544,162 @@ function FieldInsightsView({ fields, responses }: { fields: FormField[]; respons
 		)
 	}
 
+	const sortedAnalytics = fieldAnalytics
+		.map((analysis, index) => ({ analysis, index }))
+		.sort((a, b) => a.analysis.fillRate - b.analysis.fillRate || a.index - b.index)
+		.map(item => item.analysis)
+
+	const filteredAnalytics = sortedAnalytics.filter(analysis => {
+		const label = staticFieldLabel(analysis.field).toLowerCase()
+		return label.includes(query.trim().toLowerCase())
+	})
+
+	const selectedAnalysis =
+		fieldAnalytics.find(analysis => analysis.field.id === selectedFieldId) ||
+		filteredAnalytics[0] ||
+		sortedAnalytics[0]!
+	const avgFillRate = Math.round(fieldAnalytics.reduce((sum, analysis) => sum + analysis.fillRate, 0) / fieldAnalytics.length)
+	const reviewCount = fieldAnalytics.filter(analysis => analysis.fillRate < 75).length
+	const watchCount = fieldAnalytics.filter(analysis => analysis.fillRate >= 75 && analysis.fillRate < 90).length
+	const strongest = [...fieldAnalytics].sort((a, b) => b.fillRate - a.fillRate)[0]!
+	const weakest = sortedAnalytics[0]!
+
 	return (
 		<div className="space-y-5 animate-fade-in">
-			<div className="flex items-center justify-between">
-				<h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-					Per-Field Analysis
-				</h3>
-				<span className="text-xs text-gray-400 dark:text-gray-500 tabular-nums">
-					{fieldAnalytics.length} fields · {totalResponses} responses
-				</span>
+			<div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+				<div>
+					<h3 className="text-[18px] font-bold tracking-[-0.01em] text-slate-950 dark:text-gray-100">Field insights</h3>
+					<p className="mt-1 text-[13px] text-slate-500 dark:text-gray-400">Understand every question without scanning every response manually.</p>
+				</div>
+				<span className="text-xs text-gray-400 dark:text-gray-500 tabular-nums">{fieldAnalytics.length} fields · {totalResponses} responses</span>
 			</div>
-			<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-				{fieldAnalytics.map(analysis => (
-					<FieldBreakdownCard
-						key={analysis.field.id}
-						analysis={analysis}
-						totalResponses={totalResponses}
-					/>
-				))}
+
+			<div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+				<FieldInsightMetric label="Average fill" value={`${avgFillRate}%`} tone={avgFillRate >= 90 ? 'good' : avgFillRate >= 75 ? 'watch' : 'review'} detail="Across answer fields" />
+				<FieldInsightMetric label="Needs review" value={String(reviewCount)} tone={reviewCount > 0 ? 'review' : 'good'} detail={watchCount > 0 ? `${watchCount} watch` : 'No weak fields'} />
+				<FieldInsightMetric label="Strongest field" value={`${strongest.fillRate}%`} tone="good" detail={staticFieldLabel(strongest.field)} />
+				<FieldInsightMetric label="Lowest field" value={`${weakest.fillRate}%`} tone={weakest.fillRate >= 90 ? 'good' : weakest.fillRate >= 75 ? 'watch' : 'review'} detail={staticFieldLabel(weakest.field)} />
+			</div>
+
+			<div className="grid grid-cols-1 gap-4 xl:grid-cols-[360px_1fr]">
+				<aside className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-surface-elevated-dark">
+					<div className="relative mb-3">
+						<Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+						<input
+							value={query}
+							onChange={event => setQuery(event.target.value)}
+							placeholder="Search fields..."
+							className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-3 text-[13px] outline-none transition-all placeholder:text-slate-400 focus:border-brand-300 focus:bg-white focus:ring-2 focus:ring-brand-500/10 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-200 dark:focus:bg-surface-elevated-dark"
+						/>
+					</div>
+					<div className="max-h-[640px] space-y-2 overflow-y-auto pr-1">
+						{filteredAnalytics.length === 0 ? (
+							<div className="rounded-xl border border-dashed border-slate-200 py-8 text-center text-[13px] text-slate-400 dark:border-gray-800">
+								No matching fields.
+							</div>
+						) : filteredAnalytics.map((analysis, index) => (
+							<FieldInsightRow
+								key={analysis.field.id}
+								analysis={analysis}
+								index={index}
+								selected={selectedAnalysis.field.id === analysis.field.id}
+								onSelect={() => setSelectedFieldId(analysis.field.id)}
+							/>
+						))}
+					</div>
+				</aside>
+
+				<section className="space-y-4">
+					<div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-surface-elevated-dark">
+						<div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+							<div className="min-w-0">
+								<p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 dark:text-gray-500">Selected field</p>
+								<h4 className="mt-1 text-[20px] font-bold tracking-[-0.01em] text-slate-950 dark:text-gray-100">{staticFieldLabel(selectedAnalysis.field)}</h4>
+								<p className="mt-1 text-[13px] text-slate-500 dark:text-gray-400">{filledCountForAnalysis(selectedAnalysis)} filled responses from {totalResponses} submissions.</p>
+							</div>
+							<div className="flex items-center gap-3">
+								<FieldStatusBadge fillRate={selectedAnalysis.fillRate} />
+								<span className="text-[24px] font-bold tabular-nums text-slate-950 dark:text-gray-100">{selectedAnalysis.fillRate}%</span>
+							</div>
+						</div>
+						<div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-gray-800">
+							<div className={`h-full rounded-full ${fieldHealthBarClass(selectedAnalysis.fillRate)}`} style={{ width: `${selectedAnalysis.fillRate}%` }} />
+						</div>
+					</div>
+
+					<FieldBreakdownCard analysis={selectedAnalysis} totalResponses={totalResponses} />
+				</section>
 			</div>
 		</div>
+	)
+}
+
+function fieldInsightTone(fillRate: number): 'good' | 'watch' | 'review' {
+	if (fillRate >= 90) return 'good'
+	if (fillRate >= 75) return 'watch'
+	return 'review'
+}
+
+function fieldHealthBarClass(fillRate: number): string {
+	const tone = fieldInsightTone(fillRate)
+	if (tone === 'good') return 'bg-emerald-400 dark:bg-emerald-500'
+	if (tone === 'watch') return 'bg-amber-400 dark:bg-amber-500'
+	return 'bg-brand-500 dark:bg-brand-400'
+}
+
+function FieldStatusBadge({ fillRate }: { fillRate: number }) {
+	const tone = fieldInsightTone(fillRate)
+	const label = tone === 'good' ? 'Healthy' : tone === 'watch' ? 'Watch' : 'Review'
+	const className = tone === 'good'
+		? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300'
+		: tone === 'watch'
+			? 'bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300'
+			: 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-300'
+	return <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${className}`}>{label}</span>
+}
+
+function FieldInsightMetric({ label, value, detail, tone }: { label: string; value: string; detail: string; tone: 'good' | 'watch' | 'review' }) {
+	const toneClass = tone === 'good'
+		? 'text-emerald-600 dark:text-emerald-400'
+		: tone === 'watch'
+			? 'text-amber-600 dark:text-amber-400'
+			: 'text-brand-600 dark:text-brand-400'
+	return (
+		<div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-surface-elevated-dark">
+			<p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 dark:text-gray-500">{label}</p>
+			<p className={`mt-2 text-[24px] font-bold tracking-[-0.01em] tabular-nums ${toneClass}`}>{value}</p>
+			<p className="mt-1 truncate text-[12px] text-slate-500 dark:text-gray-400">{detail}</p>
+		</div>
+	)
+}
+
+function FieldInsightRow({ analysis, index, selected, onSelect }: { analysis: FieldAnalysis; index: number; selected: boolean; onSelect: () => void }) {
+	const label = staticFieldLabel(analysis.field)
+	return (
+		<button
+			onClick={onSelect}
+			className={`w-full rounded-xl border px-3.5 py-3 text-left transition-all ${
+				selected
+					? 'border-brand-200 bg-brand-50/70 shadow-sm dark:border-brand-800 dark:bg-brand-900/15'
+					: 'border-slate-100 bg-slate-50/70 hover:border-slate-200 hover:bg-white dark:border-gray-800 dark:bg-gray-900/45 dark:hover:bg-gray-900'
+			}`}
+		>
+			<div className="flex items-start justify-between gap-3">
+				<div className="min-w-0">
+					<div className="flex min-w-0 items-center gap-2">
+						<span className="text-[11px] text-slate-400 tabular-nums">{String(index + 1).padStart(2, '0')}</span>
+						<span className="truncate text-[13px] font-semibold text-slate-800 dark:text-gray-200">{label}</span>
+					</div>
+					<p className="mt-1 text-[11px] text-slate-400 dark:text-gray-500">{filledCountForAnalysis(analysis)} filled · {analysis.type}</p>
+				</div>
+				<div className="flex shrink-0 items-center gap-2">
+					<FieldStatusBadge fillRate={analysis.fillRate} />
+					<span className="w-9 text-right text-[12px] font-semibold tabular-nums text-slate-500 dark:text-gray-400">{analysis.fillRate}%</span>
+				</div>
+			</div>
+			<div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white dark:bg-gray-800">
+				<div className={`h-full rounded-full ${fieldHealthBarClass(analysis.fillRate)}`} style={{ width: `${analysis.fillRate}%` }} />
+			</div>
+		</button>
 	)
 }

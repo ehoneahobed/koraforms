@@ -35,7 +35,7 @@ export function HowItWorks({ navigate }: Props) {
 					</button>
 					<button
 						onClick={() => navigate('signup')}
-						className="px-4 py-2 text-sm font-medium text-white bg-brand-600 rounded-full hover:bg-brand-500 transition-all duration-200"
+						className="rounded-full bg-slate-950 px-4 py-2 text-sm font-medium text-white transition-all duration-200 hover:bg-slate-800 dark:bg-white dark:text-slate-950 dark:hover:bg-gray-200"
 					>
 						Get started free
 					</button>
@@ -59,7 +59,7 @@ export function HowItWorks({ navigate }: Props) {
 					<Step
 						number={1}
 						title="Create your form"
-						description="Start from one of our 17+ templates or build from scratch. Add text fields, multiple choice, ratings, signatures, and more. Customize the look with your brand colors."
+						description="Start from one of our 21+ templates or build from scratch. Add text fields, multiple choice, ratings, signatures, and more. Customize the look with your brand colors."
 						features={[
 							{ icon: <FileText className="h-4 w-4" />, text: 'Drag-and-drop form builder' },
 							{ icon: <Smartphone className="h-4 w-4" />, text: 'Mobile-optimized one-question-at-a-time layout' },
@@ -107,7 +107,7 @@ export function HowItWorks({ navigate }: Props) {
 					</p>
 					<button
 						onClick={() => navigate('signup')}
-						className="inline-flex items-center gap-2 rounded-full bg-brand-600 pl-6 pr-7 py-3 text-sm font-semibold text-white shadow-sm transition-all duration-200 hover:bg-brand-500 hover:shadow-md active:scale-[0.97]"
+						className="inline-flex items-center gap-2 rounded-full bg-slate-950 pl-6 pr-7 py-3 text-sm font-semibold text-white shadow-sm transition-all duration-200 hover:bg-slate-800 hover:shadow-md active:scale-[0.97] dark:bg-white dark:text-slate-950 dark:hover:bg-gray-200"
 					>
 						Create your first form
 						<ArrowRight className="h-4 w-4" />
@@ -132,7 +132,7 @@ function Step({
 	return (
 		<div className="flex gap-6 sm:gap-10">
 			<div className="shrink-0 pt-1">
-				<div className="w-10 h-10 rounded-full bg-brand-50 dark:bg-brand-900/20 flex items-center justify-center text-brand-600 dark:text-brand-400 text-sm font-bold">
+				<div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-950 text-sm font-bold text-white dark:bg-white dark:text-slate-950">
 					{number}
 				</div>
 			</div>
@@ -146,7 +146,7 @@ function Step({
 				<div className="flex flex-col sm:flex-row gap-3">
 					{features.map((f) => (
 						<div key={f.text} className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
-							<span className="text-brand-500">{f.icon}</span>
+							<span className="text-slate-400">{f.icon}</span>
 							{f.text}
 						</div>
 					))}
