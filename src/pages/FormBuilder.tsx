@@ -3,11 +3,9 @@ import { useQuery, useMutation } from '@korajs/react'
 import { app } from '../kora'
 import { setPageMeta } from '../utils/meta'
 import {
-	ArrowLeft,
 	GripVertical,
 	Plus,
 	Check,
-	Send,
 	Trash2,
 	ChevronUp,
 	ChevronDown,
@@ -20,7 +18,6 @@ import {
 	List,
 	CircleDot,
 	CheckSquare,
-	Eye,
 	Star,
 	ToggleLeft,
 	Clock,
@@ -39,12 +36,10 @@ import {
 } from 'lucide-react'
 import { FIELD_TYPES, CONDITION_OPERATORS, LANGUAGES, type FormField, type FormSettings as FormSettingsType, type FieldType, type ConditionalRule } from '../types'
 import { THEME_PRESETS, getThemeById } from '../themes'
-import { generateSlug } from '../utils/slug'
 import { useSlashCommand } from '../hooks/useSlashCommand'
 import { SlashCommandMenu } from '../components/editor/SlashCommandMenu'
-import { ShareModal } from '../components/shared/ShareModal'
 import { FormSettings } from '../components/editor/FormSettings'
-import { Share2, Copy, Keyboard } from 'lucide-react'
+import { Copy } from 'lucide-react'
 
 const FIELD_ICONS: Record<FieldType, React.ReactNode> = {
 	text: <Type className="h-3.5 w-3.5" />,
@@ -95,7 +90,7 @@ export function FormBuilder({ formId, navigate, userId }: Props) {
 	const [activeField, setActiveField] = useState<string | null>(null)
 	const [showThemePicker, setShowThemePicker] = useState(false)
 	const [showSettings, setShowSettings] = useState(false)
-	const [showShareModal, setShowShareModal] = useState(false)
+	// Share modal is now handled by FormPageShell
 
 	useEffect(() => {
 		setPageMeta({
@@ -225,28 +220,6 @@ export function FormBuilder({ formId, navigate, userId }: Props) {
 		)
 	}
 
-	const publish = () => {
-		const formTitle = title || 'Untitled Form'
-		const existingSlug = form ? String(form.slug || '') : ''
-		const slug = existingSlug || generateSlug(formTitle)
-		updateForm(formId, {
-			title: formTitle,
-			description,
-			fields: JSON.stringify(fields),
-			theme,
-			settings: JSON.stringify(settings),
-			status: 'published',
-			ownerId: userId,
-			slug,
-		})
-		// Show share modal after first publish, otherwise just go to dashboard
-		if (!existingSlug) {
-			setShowShareModal(true)
-		} else {
-			navigate('dashboard')
-		}
-	}
-
 	const addField = (afterIndex?: number) => {
 		const newField: FormField = {
 			id: `field_${Date.now()}`,
@@ -373,64 +346,38 @@ export function FormBuilder({ formId, navigate, userId }: Props) {
 
 	return (
 		<div className="max-w-2xl mx-auto">
-			{/* Top bar */}
-			<div className="flex items-center justify-between mb-6">
+			{/* Builder utility row */}
+			<div className="flex items-center justify-end gap-2 mb-4">
+				{saved && (
+					<span className="flex items-center gap-1 text-xs text-emerald-500 animate-fade-in mr-auto">
+						<Check className="h-3 w-3" />
+						Saved
+					</span>
+				)}
 				<button
-					onClick={() => navigate('dashboard')}
-					className="flex items-center gap-2 text-sm text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-smooth"
+					onClick={exportFormJson}
+					className="inline-flex items-center justify-center rounded-lg bg-gray-100 dark:bg-gray-800 p-2 text-gray-500 dark:text-gray-400 transition-smooth hover:bg-gray-200 dark:hover:bg-gray-700 hover:text-gray-700 dark:hover:text-gray-200"
+					title="Export form as JSON"
 				>
-					<ArrowLeft className="h-4 w-4" />
-					Back
+					<Download className="h-3.5 w-3.5" />
 				</button>
-				<div className="flex items-center gap-2">
-					{saved && (
-						<span className="flex items-center gap-1 text-xs text-emerald-500 animate-fade-in">
-							<Check className="h-3 w-3" />
-							Saved
-						</span>
-					)}
-					{isPublished && (
-						<button
-							onClick={() => setShowShareModal(true)}
-							className="inline-flex items-center gap-1.5 rounded-lg bg-gray-100 dark:bg-gray-800 px-2.5 py-2 sm:px-3 text-sm text-gray-600 dark:text-gray-300 transition-smooth hover:bg-gray-200 dark:hover:bg-gray-700"
-							title="Share"
-						>
-							<Share2 className="h-3.5 w-3.5" />
-							<span className="hidden sm:inline">Share</span>
-						</button>
-					)}
-					<button
-						onClick={exportFormJson}
-						className="inline-flex items-center gap-1.5 rounded-lg bg-gray-100 dark:bg-gray-800 px-2.5 py-2 sm:px-3 text-sm text-gray-600 dark:text-gray-300 transition-smooth hover:bg-gray-200 dark:hover:bg-gray-700"
-						title="Export form as JSON"
-					>
-						<Download className="h-3.5 w-3.5" />
-						<span className="hidden sm:inline">Export</span>
-					</button>
-					<button
-						onClick={importFormJson}
-						className="inline-flex items-center gap-1.5 rounded-lg bg-gray-100 dark:bg-gray-800 px-2.5 py-2 sm:px-3 text-sm text-gray-600 dark:text-gray-300 transition-smooth hover:bg-gray-200 dark:hover:bg-gray-700"
-						title="Import form from JSON"
-					>
-						<Upload className="h-3.5 w-3.5" />
-						<span className="hidden sm:inline">Import</span>
-					</button>
-					<button
-						onClick={() => navigate(`fill/${formId}`)}
-						className="inline-flex items-center gap-1.5 rounded-lg bg-gray-100 dark:bg-gray-800 px-2.5 py-2 sm:px-3 text-sm text-gray-600 dark:text-gray-300 transition-smooth hover:bg-gray-200 dark:hover:bg-gray-700"
-						title="Preview"
-					>
-						<Eye className="h-3.5 w-3.5" />
-						<span className="hidden sm:inline">Preview</span>
-					</button>
-					<button
-						onClick={publish}
-						className="inline-flex items-center gap-1.5 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white shadow-sm shadow-brand-600/25 transition-smooth hover:bg-brand-500 active:scale-[0.98]"
-					>
-						<Send className="h-3.5 w-3.5" />
-						{isPublished ? 'Update' : 'Publish'}
-					</button>
-				</div>
+				<button
+					onClick={importFormJson}
+					className="inline-flex items-center justify-center rounded-lg bg-gray-100 dark:bg-gray-800 p-2 text-gray-500 dark:text-gray-400 transition-smooth hover:bg-gray-200 dark:hover:bg-gray-700 hover:text-gray-700 dark:hover:text-gray-200"
+					title="Import form from JSON"
+				>
+					<Upload className="h-3.5 w-3.5" />
+				</button>
+				<button
+					onClick={() => setShowThemePicker(!showThemePicker)}
+					className="inline-flex items-center justify-center rounded-lg bg-gray-100 dark:bg-gray-800 p-2 text-gray-500 dark:text-gray-400 transition-smooth hover:bg-gray-200 dark:hover:bg-gray-700 hover:text-gray-700 dark:hover:text-gray-200"
+					title="Toggle theme picker"
+				>
+					<div
+						className="w-3.5 h-3.5 rounded-full ring-1 ring-black/10"
+						style={{ backgroundColor: getThemeById(theme).preview }}
+					/>
+				</button>
 			</div>
 
 			{/* Form header */}
@@ -582,19 +529,6 @@ export function FormBuilder({ formId, navigate, userId }: Props) {
 						Fields auto-save as you edit.
 					</span>
 				</p>
-			)}
-
-			{/* Share modal */}
-			{showShareModal && (
-				<ShareModal
-					slug={String(form?.slug || formId)}
-					title={title || 'Untitled Form'}
-					onClose={() => {
-						setShowShareModal(false)
-						// If this was the first publish, go to dashboard after closing
-						if (isPublished) navigate('dashboard')
-					}}
-				/>
 			)}
 
 			{/* Keyboard shortcuts hint */}

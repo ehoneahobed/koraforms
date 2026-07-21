@@ -100,6 +100,24 @@
 	animation: shake 0.3s ease;
 }
 
+@keyframes slideInLeft {
+	from { transform: translateX(-100%); }
+	to { transform: translateX(0); }
+}
+
+.animate-slide-in-left {
+	animation: slideInLeft 0.25s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+@keyframes slideInRight {
+	from { transform: translateX(100%); }
+	to { transform: translateX(0); }
+}
+
+.animate-slide-in-right {
+	animation: slideInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
 /* Brand loader animations */
 @keyframes loaderPulse {
 	0%, 100% { transform: scale(1); opacity: 1; }
@@ -146,7 +164,9 @@
 	.animate-slide-up,
 	.animate-slide-down,
 	.animate-fade-in,
-	.animate-scale-in {
+	.animate-scale-in,
+	.animate-slide-in-left,
+	.animate-slide-in-right {
 		animation: fadeIn 0.15s ease forwards;
 	}
 	.animate-shake {
