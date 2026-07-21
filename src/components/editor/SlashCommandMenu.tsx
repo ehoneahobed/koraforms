@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import {
 	Type, Hash, Mail, Phone, Calendar, AlignLeft, List, CircleDot,
 	CheckSquare, Star, ToggleLeft, Clock, Link, SeparatorHorizontal,
-	MessageSquare, PenTool,
+	MessageSquare, PenTool, Upload, Calculator, EyeOff,
 } from 'lucide-react'
 import type { FieldType } from '../../types'
 
@@ -24,6 +24,9 @@ const FIELD_ICONS: Record<FieldType, React.ReactNode> = {
 	section: <SeparatorHorizontal className="h-3.5 w-3.5" />,
 	statement: <MessageSquare className="h-3.5 w-3.5" />,
 	signature: <PenTool className="h-3.5 w-3.5" />,
+	file: <Upload className="h-3.5 w-3.5" />,
+	calculated: <Calculator className="h-3.5 w-3.5" />,
+	hidden: <EyeOff className="h-3.5 w-3.5" />,
 }
 
 interface Props {

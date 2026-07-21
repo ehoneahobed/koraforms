@@ -239,6 +239,24 @@ async function main(): Promise<void> {
 							schemaVersion: 5,
 						}, clock)
 						await store.applyRemoteOperation(op)
+						// Fire webhooks (fire-and-forget)
+						try {
+							const whSettings = JSON.parse(String(form.settings || '{}'))
+							if (whSettings.webhooks?.length) {
+								const formFields = JSON.parse(String(form.fields || '[]'))
+								const fieldsMap: Record<string, { label: string; type: string }> = {}
+								for (const f of formFields) {
+									fieldsMap[f.id] = { label: f.label, type: f.type }
+								}
+								fireWebhooks(whSettings.webhooks, {
+									id: String(form.id),
+									title: String(form.title),
+									slug: String(form.slug || ''),
+								}, data, fieldsMap).catch(console.error)
+							}
+						} catch {
+							// webhook error — don't block response
+						}
 						return withCors({ status: 201, body: { success: true } })
 					} catch (err) {
 						console.error('Public response submission error:', err)
@@ -262,3 +280,52 @@ main().catch((err) => {
 	console.error('Failed to start KoraForms server:', err)
 	process.exit(1)
 })
+
+// ---------------------------------------------------------------------------
+// Webhook delivery (fire-and-forget with retries)
+// ---------------------------------------------------------------------------
+
+interface WebhookConfig {
+	url: string
+	method?: 'POST' | 'PUT'
+	headers?: Record<string, string>
+	active?: boolean
+}
+
+async function fireWebhooks(
+	webhooks: WebhookConfig[],
+	form: { id: string; title: string; slug: string },
+	responseData: string,
+	fieldsMap: Record<string, { label: string; type: string }>,
+): Promise<void> {
+	const payload = {
+		event: 'response.created',
+		form,
+		response: {
+			submittedAt: Date.now(),
+			data: JSON.parse(responseData),
+			fields: fieldsMap,
+		},
+	}
+
+	for (const hook of webhooks) {
+		if (hook.active === false) continue
+		for (let attempt = 0; attempt < 3; attempt++) {
+			try {
+				const res = await fetch(hook.url, {
+					method: hook.method || 'POST',
+					headers: {
+						'Content-Type': 'application/json',
+						...(hook.headers || {}),
+					},
+					body: JSON.stringify(payload),
+				})
+				if (res.ok) break
+			} catch {
+				if (attempt < 2) {
+					await new Promise(r => setTimeout(r, 1000 * Math.pow(2, attempt)))
+				}
+			}
+		}
+	}
+}

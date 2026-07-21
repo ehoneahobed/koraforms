@@ -30,6 +30,9 @@ import {
 	PenTool,
 	GitBranch,
 	X,
+	Upload,
+	Calculator,
+	EyeOff,
 } from 'lucide-react'
 import { FIELD_TYPES, CONDITION_OPERATORS, type FormField, type FormSettings as FormSettingsType, type FieldType, type ConditionalRule } from '../types'
 import { THEME_PRESETS, getThemeById } from '../themes'
@@ -58,6 +61,9 @@ const FIELD_ICONS: Record<FieldType, React.ReactNode> = {
 	section: <SeparatorHorizontal className="h-3.5 w-3.5" />,
 	statement: <MessageSquare className="h-3.5 w-3.5" />,
 	signature: <PenTool className="h-3.5 w-3.5" />,
+	file: <Upload className="h-3.5 w-3.5" />,
+	calculated: <Calculator className="h-3.5 w-3.5" />,
+	hidden: <EyeOff className="h-3.5 w-3.5" />,
 }
 
 interface Props {
@@ -518,8 +524,11 @@ function FieldEditor({
 }) {
 	const needsOptions = ['select', 'radio', 'checkbox'].includes(field.type)
 	const needsScaleLabels = field.type === 'scale'
-	const isDisplayOnly = field.type === 'section' || field.type === 'statement'
+	const isDisplayOnly = field.type === 'section' || field.type === 'statement' || field.type === 'calculated' || field.type === 'hidden'
 	const isSignature = field.type === 'signature'
+	const isFileUpload = field.type === 'file'
+	const isCalculated = field.type === 'calculated'
+	const isHidden = field.type === 'hidden'
 	const [showConditions, setShowConditions] = useState(false)
 
 	// Fields available as condition sources (only fields ABOVE the current one)
@@ -673,6 +682,87 @@ function FieldEditor({
 						<p className="text-xs text-gray-400 dark:text-gray-500 animate-fade-in">
 							Respondent will draw their signature
 						</p>
+					)}
+
+					{/* File upload config */}
+					{isFileUpload && isActive && (
+						<div className="animate-fade-in space-y-2">
+							<input
+								type="text"
+								value={field.accept || ''}
+								onChange={(e) => onUpdate({ accept: e.target.value })}
+								placeholder="Accepted file types (e.g. image/*, .pdf, .doc)"
+								className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2 text-sm outline-none focus:border-brand-400 dark:focus:border-brand-600 transition-smooth"
+								onClick={(e) => e.stopPropagation()}
+							/>
+							<div className="flex items-center gap-3">
+								<label className="text-xs text-gray-500 dark:text-gray-400">
+									Max size: {field.maxSize || 10}MB
+								</label>
+								<input
+									type="range"
+									min={1}
+									max={25}
+									value={field.maxSize || 10}
+									onChange={(e) => onUpdate({ maxSize: parseInt(e.target.value) })}
+									className="flex-1 h-1.5 accent-brand-500"
+									onClick={(e) => e.stopPropagation()}
+								/>
+							</div>
+							<div className="flex gap-2">
+								{([
+									{ value: undefined, label: 'Any camera' },
+									{ value: 'user', label: 'Front camera' },
+									{ value: 'environment', label: 'Back camera' },
+								] as const).map(opt => (
+									<button
+										key={opt.label}
+										onClick={(e) => { e.stopPropagation(); onUpdate({ capture: opt.value as 'user' | 'environment' | undefined }) }}
+										className={`text-[11px] px-2 py-1 rounded-md transition-smooth ${
+											field.capture === opt.value
+												? 'bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300'
+												: 'bg-gray-100 dark:bg-gray-800 text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700'
+										}`}
+									>
+										{opt.label}
+									</button>
+								))}
+							</div>
+						</div>
+					)}
+
+					{/* Calculated field formula */}
+					{isCalculated && isActive && (
+						<div className="animate-fade-in space-y-2">
+							<input
+								type="text"
+								value={field.formula || ''}
+								onChange={(e) => onUpdate({ formula: e.target.value })}
+								placeholder="Formula: {field_id} + {field_id} or SUM({a}, {b})"
+								className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2 text-sm font-mono outline-none focus:border-brand-400 dark:focus:border-brand-600 transition-smooth"
+								onClick={(e) => e.stopPropagation()}
+							/>
+							<p className="text-[10px] text-gray-400 dark:text-gray-500">
+								Use {'{'}<em>field_id</em>{'}'} to reference fields. Supports +, -, *, /, SUM(), AVG(), IF(), CONCAT().
+							</p>
+						</div>
+					)}
+
+					{/* Hidden field default value */}
+					{isHidden && isActive && (
+						<div className="animate-fade-in space-y-2">
+							<input
+								type="text"
+								value={field.defaultValue || ''}
+								onChange={(e) => onUpdate({ defaultValue: e.target.value })}
+								placeholder="Default value or formula"
+								className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2 text-sm outline-none focus:border-brand-400 dark:focus:border-brand-600 transition-smooth"
+								onClick={(e) => e.stopPropagation()}
+							/>
+							<p className="text-[10px] text-gray-400 dark:text-gray-500">
+								Hidden from respondents. Value saved with each response.
+							</p>
+						</div>
 					)}
 
 					{/* Options preview (when not active) */}

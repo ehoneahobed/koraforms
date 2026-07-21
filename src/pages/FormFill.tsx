@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { ArrowLeft, ArrowRight, Check, Send, Star, X, RotateCcw } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Check, Send, Star, X, RotateCcw, Upload, Trash2 } from 'lucide-react'
 import type { FormField, FormSettings } from '../types'
 import { isFieldVisible, pipeValues } from '../types'
+import { evaluateFormula } from '../utils/formula'
 import { getThemeCSSVars } from '../themes'
 import { PoweredByBadge } from '../components/shared/PoweredByBadge'
 import { setPageMeta } from '../utils/meta'
@@ -93,9 +94,29 @@ export function FormFill({ formId, navigate }: Props) {
 	// Compute visible fields based on conditional logic
 	const visibleFields = fields.filter(f => isFieldVisible(f, values))
 
-	// Section breaks and statements are display-only — not counted as questions
-	const isDisplayOnly = (type: string) => type === 'section' || type === 'statement'
+	// Display-only / non-interactive field types
+	const isDisplayOnly = (type: string) => type === 'section' || type === 'statement' || type === 'hidden'
 	const totalQuestions = visibleFields.filter((f) => !isDisplayOnly(f.type)).length
+
+	// Auto-populate calculated and hidden field values
+	useEffect(() => {
+		let changed = false
+		const next = { ...values }
+		for (const field of fields) {
+			if (field.type === 'calculated' && field.formula) {
+				const result = evaluateFormula(field.formula, values, fields)
+				if (result !== (values[field.id] || '')) {
+					next[field.id] = result
+					changed = true
+				}
+			}
+			if (field.type === 'hidden' && field.defaultValue && !values[field.id]) {
+				next[field.id] = field.defaultValue
+				changed = true
+			}
+		}
+		if (changed) setValues(next)
+	}, [values, fields]) // eslint-disable-line react-hooks/exhaustive-deps
 	const questionNumber =
 		currentIndex >= 0 && currentIndex < visibleFields.length
 			? visibleFields.slice(0, currentIndex + 1).filter((f) => !isDisplayOnly(f.type)).length
@@ -1119,7 +1140,21 @@ function QuestionInput({
 		case 'signature':
 			return <SignatureInput value={value} onChange={onChange} />
 
-		// section and statement are handled at the screen level, not as inputs
+		case 'file':
+			return <FileInput field={field} value={value} onChange={onChange} />
+
+		case 'calculated':
+			return (
+				<div className="rounded-xl border-2 border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 px-4 py-3">
+					<p className="text-lg sm:text-xl font-semibold text-gray-900 dark:text-gray-100">
+						{value || '—'}
+					</p>
+					<p className="text-xs text-gray-400 dark:text-gray-500 mt-1">Calculated automatically</p>
+				</div>
+			)
+
+		// hidden fields don't render, section and statement are handled at screen level
+		case 'hidden':
 		case 'section':
 		case 'statement':
 			return null
@@ -1136,6 +1171,102 @@ function QuestionInput({
 				/>
 			)
 	}
+}
+
+function FileInput({
+	field,
+	value,
+	onChange,
+}: {
+	field: FormField
+	value: string
+	onChange: (value: string) => void
+}) {
+	const fileRef = useRef<HTMLInputElement>(null)
+	const maxSize = (field.maxSize || 10) * 1024 * 1024 // Convert MB to bytes
+	const [error, setError] = useState('')
+	const [preview, setPreview] = useState<string | null>(value || null)
+
+	const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+		const file = e.target.files?.[0]
+		if (!file) return
+
+		setError('')
+
+		if (file.size > maxSize) {
+			setError(`File too large. Max size: ${field.maxSize || 10}MB`)
+			return
+		}
+
+		const reader = new FileReader()
+		reader.onload = () => {
+			const result = reader.result as string
+			onChange(result)
+			// Preview for images
+			if (file.type.startsWith('image/')) {
+				setPreview(result)
+			} else {
+				setPreview(null)
+			}
+		}
+		reader.readAsDataURL(file)
+	}
+
+	const clear = () => {
+		onChange('')
+		setPreview(null)
+		if (fileRef.current) fileRef.current.value = ''
+	}
+
+	return (
+		<div>
+			{value ? (
+				<div className="space-y-3">
+					{preview && preview.startsWith('data:image/') && (
+						<div className="rounded-xl border-2 border-gray-200 dark:border-gray-700 overflow-hidden">
+							<img src={preview} alt="Upload preview" className="max-h-48 w-full object-contain bg-gray-50 dark:bg-gray-800" />
+						</div>
+					)}
+					<div className="flex items-center gap-2">
+						<span className="text-sm text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+							<Check className="h-3.5 w-3.5" />
+							File attached
+						</span>
+						<button
+							onClick={clear}
+							className="inline-flex items-center gap-1 text-xs text-gray-400 hover:text-red-500 transition-smooth"
+						>
+							<Trash2 className="h-3 w-3" />
+							Remove
+						</button>
+					</div>
+				</div>
+			) : (
+				<label className="flex flex-col items-center gap-3 rounded-xl border-2 border-dashed border-gray-300 dark:border-gray-600 py-8 px-4 cursor-pointer hover:border-brand-400 dark:hover:border-brand-600 transition-smooth">
+					<Upload className="h-8 w-8 text-gray-400 dark:text-gray-500" />
+					<span className="text-sm text-gray-500 dark:text-gray-400">
+						Click to upload or take a photo
+					</span>
+					{field.accept && (
+						<span className="text-xs text-gray-400 dark:text-gray-500">
+							Accepted: {field.accept}
+						</span>
+					)}
+					<input
+						ref={fileRef}
+						type="file"
+						accept={field.accept || 'image/*'}
+						capture={field.capture}
+						onChange={handleFile}
+						className="hidden"
+					/>
+				</label>
+			)}
+			{error && (
+				<p className="mt-2 text-sm text-red-500">{error}</p>
+			)}
+		</div>
+	)
 }
 
 function SignatureInput({

@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { Settings, Link as LinkIcon, Check, Copy, Ban, Globe, ChevronDown } from 'lucide-react'
+import { Settings, Link as LinkIcon, Check, Copy, Ban, Globe, ChevronDown, Webhook, Plus, Trash2, X } from 'lucide-react'
 import { copyToClipboard } from '../../utils/clipboard'
-import type { FormSettings as FormSettingsType } from '../../types'
+import type { FormSettings as FormSettingsType, WebhookConfig } from '../../types'
 
 interface Props {
 	slug: string
@@ -244,6 +244,54 @@ export function FormSettings({
 							/>
 						</div>
 					) : null}
+
+					{/* Divider */}
+					<div className="border-t border-gray-100 dark:border-gray-800" />
+
+					{/* Webhooks */}
+					<div>
+						<label className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 flex items-center gap-1.5">
+							<Webhook className="h-3.5 w-3.5" />
+							Webhooks
+						</label>
+						<p className="text-[10px] text-gray-400 dark:text-gray-500 mb-3">
+							Send response data to external services (Zapier, Make, Slack, etc.)
+						</p>
+						{(settings.webhooks || []).map((hook, i) => (
+							<div key={i} className="flex items-center gap-2 mb-2">
+								<input
+									type="url"
+									value={hook.url}
+									onChange={(e) => {
+										const next = [...(settings.webhooks || [])]
+										next[i] = { ...next[i]!, url: e.target.value }
+										onSettingsChange({ ...settings, webhooks: next })
+									}}
+									placeholder="https://hooks.zapier.com/..."
+									className="flex-1 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2 text-sm outline-none focus:border-brand-400 dark:focus:border-brand-600 transition-smooth text-gray-700 dark:text-gray-300 placeholder-gray-400"
+								/>
+								<button
+									onClick={() => {
+										const next = (settings.webhooks || []).filter((_, j) => j !== i)
+										onSettingsChange({ ...settings, webhooks: next.length > 0 ? next : undefined })
+									}}
+									className="p-1.5 text-gray-400 hover:text-red-500 transition-smooth"
+								>
+									<Trash2 className="h-3.5 w-3.5" />
+								</button>
+							</div>
+						))}
+						<button
+							onClick={() => {
+								const next: WebhookConfig[] = [...(settings.webhooks || []), { url: '', active: true }]
+								onSettingsChange({ ...settings, webhooks: next })
+							}}
+							className="text-xs text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 font-medium flex items-center gap-1"
+						>
+							<Plus className="h-3 w-3" />
+							Add webhook
+						</button>
+					</div>
 				</div>
 			)}
 		</div>

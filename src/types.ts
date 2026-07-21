@@ -1,5 +1,5 @@
 // Form field types supported by the form builder
-export type FieldType = 'text' | 'number' | 'email' | 'phone' | 'textarea' | 'select' | 'radio' | 'checkbox' | 'date' | 'rating' | 'scale' | 'yesno' | 'time' | 'url' | 'section' | 'statement' | 'signature'
+export type FieldType = 'text' | 'number' | 'email' | 'phone' | 'textarea' | 'select' | 'radio' | 'checkbox' | 'date' | 'rating' | 'scale' | 'yesno' | 'time' | 'url' | 'section' | 'statement' | 'signature' | 'file' | 'calculated' | 'hidden'
 
 // Conditional logic — show/hide fields based on previous answers
 export type ConditionOperator = 'equals' | 'not_equals' | 'contains' | 'not_contains' | 'is_empty' | 'is_not_empty' | 'greater_than' | 'less_than'
@@ -32,6 +32,13 @@ export interface FormField {
 	// Conditional visibility rules
 	conditions?: ConditionalRule[]
 	conditionLogic?: 'and' | 'or'
+	// File upload config
+	accept?: string          // e.g. 'image/*', '.pdf,.doc'
+	maxSize?: number         // Max file size in MB (default: 10)
+	capture?: 'environment' | 'user'  // Camera direction on mobile
+	// Calculated / hidden field config
+	formula?: string         // e.g. "{field_1} + {field_2}"
+	defaultValue?: string    // Static default for hidden fields
 }
 
 // Form-level settings stored as JSON in the `settings` field
@@ -46,6 +53,15 @@ export interface FormSettings {
 	opensAt?: number
 	closesAt?: number
 	closedMessage?: string
+	// Webhooks
+	webhooks?: WebhookConfig[]
+}
+
+export interface WebhookConfig {
+	url: string
+	method?: 'POST' | 'PUT'
+	headers?: Record<string, string>
+	active?: boolean
 }
 
 export const FIELD_TYPES: { value: FieldType; label: string }[] = [
@@ -66,6 +82,9 @@ export const FIELD_TYPES: { value: FieldType; label: string }[] = [
 	{ value: 'section', label: 'Section Break' },
 	{ value: 'statement', label: 'Statement' },
 	{ value: 'signature', label: 'Signature' },
+	{ value: 'file', label: 'File Upload' },
+	{ value: 'calculated', label: 'Calculated' },
+	{ value: 'hidden', label: 'Hidden Field' },
 ]
 
 // Evaluate a single conditional rule against current values
