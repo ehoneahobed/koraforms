@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useQuery, useMutation } from '@korajs/react'
 import { app } from '../kora'
 import { setPageMeta } from '../utils/meta'
@@ -43,7 +43,7 @@ import { useSlashCommand } from '../hooks/useSlashCommand'
 import { SlashCommandMenu } from '../components/editor/SlashCommandMenu'
 import { ShareModal } from '../components/shared/ShareModal'
 import { FormSettings } from '../components/editor/FormSettings'
-import { Share2 } from 'lucide-react'
+import { Share2, Copy, Keyboard } from 'lucide-react'
 
 const FIELD_ICONS: Record<FieldType, React.ReactNode> = {
 	text: <Type className="h-3.5 w-3.5" />,
@@ -274,6 +274,52 @@ export function FormBuilder({ formId, navigate, userId }: Props) {
 		setActiveField(null)
 	}
 
+	const duplicateField = (index: number) => {
+		const source = fields[index]!
+		const copy: FormField = {
+			...source,
+			id: `field_${Date.now()}`,
+			label: source.label ? `${source.label} (copy)` : '',
+		}
+		const next = [...fields]
+		next.splice(index + 1, 0, copy)
+		setFields(next)
+		setActiveField(copy.id)
+	}
+
+	// Keyboard shortcuts
+	useEffect(() => {
+		const handler = (e: KeyboardEvent) => {
+			const meta = e.metaKey || e.ctrlKey
+			// Ctrl+S / Cmd+S → save immediately
+			if (meta && e.key === 's') {
+				e.preventDefault()
+				save()
+			}
+			// Ctrl+D / Cmd+D → duplicate active field
+			if (meta && e.key === 'd' && activeField) {
+				e.preventDefault()
+				const idx = fields.findIndex(f => f.id === activeField)
+				if (idx >= 0) duplicateField(idx)
+			}
+			// Escape → deselect field
+			if (e.key === 'Escape') {
+				setActiveField(null)
+			}
+			// Delete/Backspace with Ctrl → remove active field
+			if (meta && (e.key === 'Backspace' || e.key === 'Delete') && activeField) {
+				// Don't trigger if user is typing in an input
+				const tag = (e.target as HTMLElement)?.tagName?.toLowerCase()
+				if (tag === 'input' || tag === 'textarea' || tag === 'select') return
+				e.preventDefault()
+				const idx = fields.findIndex(f => f.id === activeField)
+				if (idx >= 0) removeField(idx)
+			}
+		}
+		window.addEventListener('keydown', handler)
+		return () => window.removeEventListener('keydown', handler)
+	}, [activeField, fields, save]) // eslint-disable-line react-hooks/exhaustive-deps
+
 	const isPublished = form ? String(form.status) === 'published' : false
 
 	return (
@@ -423,6 +469,7 @@ export function FormBuilder({ formId, navigate, userId }: Props) {
 						onFocus={() => setActiveField(field.id)}
 						onUpdate={(updates) => updateField(index, updates)}
 						onRemove={() => removeField(index)}
+						onDuplicate={() => duplicateField(index)}
 						onMove={(dir) => moveField(index, index + dir)}
 						onAddAfter={() => addField(index)}
 						onDragStart={() => handleDragStart(index)}
@@ -485,6 +532,16 @@ export function FormBuilder({ formId, navigate, userId }: Props) {
 				/>
 			)}
 
+			{/* Keyboard shortcuts hint */}
+			{fields.length > 0 && (
+				<div className="mt-6 flex items-center justify-center gap-4 text-[10px] text-gray-300 dark:text-gray-700">
+					<span><kbd className="px-1 py-0.5 rounded bg-gray-100 dark:bg-gray-800 font-mono">Ctrl+S</kbd> save</span>
+					<span><kbd className="px-1 py-0.5 rounded bg-gray-100 dark:bg-gray-800 font-mono">Ctrl+D</kbd> duplicate</span>
+					<span><kbd className="px-1 py-0.5 rounded bg-gray-100 dark:bg-gray-800 font-mono">/</kbd> insert</span>
+					<span><kbd className="px-1 py-0.5 rounded bg-gray-100 dark:bg-gray-800 font-mono">Esc</kbd> deselect</span>
+				</div>
+			)}
+
 			{/* Bottom spacer */}
 			<div className="h-20" />
 		</div>
@@ -503,6 +560,7 @@ function FieldEditor({
 	onFocus,
 	onUpdate,
 	onRemove,
+	onDuplicate,
 	onMove,
 	onAddAfter,
 	onDragStart,
@@ -521,6 +579,7 @@ function FieldEditor({
 	onFocus: () => void
 	onUpdate: (updates: Partial<FormField>) => void
 	onRemove: () => void
+	onDuplicate: () => void
 	onMove: (direction: number) => void
 	onAddAfter: () => void
 	onDragStart?: () => void
@@ -996,10 +1055,20 @@ function FieldEditor({
 								<button
 									onClick={(e) => {
 										e.stopPropagation()
+										onDuplicate()
+									}}
+									className="p-1.5 rounded-lg text-gray-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-900/20 transition-smooth"
+									title="Duplicate field (Ctrl+D)"
+								>
+									<Copy className="h-3.5 w-3.5" />
+								</button>
+								<button
+									onClick={(e) => {
+										e.stopPropagation()
 										onRemove()
 									}}
 									className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-smooth"
-									title="Delete field"
+									title="Delete field (Ctrl+Backspace)"
 								>
 									<Trash2 className="h-3.5 w-3.5" />
 								</button>
