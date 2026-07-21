@@ -95,12 +95,16 @@ export function FormList({ navigate, userId }: Props) {
 	const published = allForms.filter((f) => String(f.status) === 'published')
 	const drafts = allForms.filter((f) => String(f.status) !== 'published')
 
+	// Only count responses for the current user's forms
+	const userFormIds = new Set(allForms.map((f) => String(f.id)))
 	const responseCountMap = new Map<string, number>()
+	let totalResponses = 0
 	for (const r of allResponses) {
 		const fid = String(r.formId)
+		if (!userFormIds.has(fid)) continue
 		responseCountMap.set(fid, (responseCountMap.get(fid) || 0) + 1)
+		totalResponses++
 	}
-	const totalResponses = allResponses.length
 
 	const filteredForms =
 		filter === 'published' ? published
