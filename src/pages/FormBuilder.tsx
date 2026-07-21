@@ -199,6 +199,89 @@ export function FormBuilder({ formId, navigate, userId }: Props) {
 		return () => clearTimeout(timer)
 	}, [title, description, fields, theme, settings, loaded, save])
 
+	// Field manipulation callbacks (must be before early returns to keep hook order stable)
+	const addField = useCallback((afterIndex?: number) => {
+		const newField: FormField = {
+			id: `field_${Date.now()}`,
+			type: 'text',
+			label: '',
+			required: false,
+		}
+		if (afterIndex !== undefined) {
+			setFields(prev => {
+				const next = [...prev]
+				next.splice(afterIndex + 1, 0, newField)
+				return next
+			})
+		} else {
+			setFields(prev => [...prev, newField])
+		}
+		setActiveField(newField.id)
+	}, [])
+
+	const updateField = useCallback((index: number, updates: Partial<FormField>) => {
+		setFields(prev => {
+			const next = [...prev]
+			next[index] = { ...next[index]!, ...updates }
+			return next
+		})
+	}, [])
+
+	const removeField = useCallback((index: number) => {
+		setFields(prev => prev.filter((_, i) => i !== index))
+		setActiveField(null)
+	}, [])
+
+	const duplicateField = useCallback((index: number) => {
+		setFields(prev => {
+			const source = prev[index]!
+			const copy: FormField = {
+				...source,
+				id: `field_${Date.now()}`,
+				label: source.label ? `${source.label} (copy)` : '',
+			}
+			const next = [...prev]
+			next.splice(index + 1, 0, copy)
+			setActiveField(copy.id)
+			return next
+		})
+	}, [])
+
+	// Keyboard shortcuts (must be before early returns)
+	useEffect(() => {
+		if (!loaded) return
+		const handler = (e: KeyboardEvent) => {
+			const meta = e.metaKey || e.ctrlKey
+			// Ctrl+S / Cmd+S → save immediately
+			if (meta && e.key === 's') {
+				e.preventDefault()
+				save()
+			}
+			// Ctrl+D / Cmd+D → duplicate active field
+			if (meta && e.key === 'd' && activeField) {
+				e.preventDefault()
+				const idx = fields.findIndex(f => f.id === activeField)
+				if (idx >= 0) duplicateField(idx)
+			}
+			// Escape → deselect field
+			if (e.key === 'Escape') {
+				setActiveField(null)
+			}
+			// Delete/Backspace with Ctrl → remove active field
+			if (meta && (e.key === 'Backspace' || e.key === 'Delete') && activeField) {
+				const tag = (e.target as HTMLElement)?.tagName?.toLowerCase()
+				if (tag === 'input' || tag === 'textarea' || tag === 'select') return
+				e.preventDefault()
+				const idx = fields.findIndex(f => f.id === activeField)
+				if (idx >= 0) removeField(idx)
+			}
+		}
+		window.addEventListener('keydown', handler)
+		return () => window.removeEventListener('keydown', handler)
+	}, [loaded, activeField, fields, save, duplicateField, removeField])
+
+	const isPublished = form ? String(form.status) === 'published' : false
+
 	if (!formId || (!form && loaded)) {
 		return (
 			<div className="text-center py-20 text-gray-500 animate-fade-in">
@@ -219,82 +302,6 @@ export function FormBuilder({ formId, navigate, userId }: Props) {
 			</div>
 		)
 	}
-
-	const addField = (afterIndex?: number) => {
-		const newField: FormField = {
-			id: `field_${Date.now()}`,
-			type: 'text',
-			label: '',
-			required: false,
-		}
-		if (afterIndex !== undefined) {
-			const next = [...fields]
-			next.splice(afterIndex + 1, 0, newField)
-			setFields(next)
-		} else {
-			setFields([...fields, newField])
-		}
-		setActiveField(newField.id)
-	}
-
-	const updateField = (index: number, updates: Partial<FormField>) => {
-		const next = [...fields]
-		next[index] = { ...next[index]!, ...updates }
-		setFields(next)
-	}
-
-	const removeField = (index: number) => {
-		setFields(fields.filter((_, i) => i !== index))
-		setActiveField(null)
-	}
-
-	const duplicateField = (index: number) => {
-		const source = fields[index]!
-		const copy: FormField = {
-			...source,
-			id: `field_${Date.now()}`,
-			label: source.label ? `${source.label} (copy)` : '',
-		}
-		const next = [...fields]
-		next.splice(index + 1, 0, copy)
-		setFields(next)
-		setActiveField(copy.id)
-	}
-
-	// Keyboard shortcuts
-	useEffect(() => {
-		const handler = (e: KeyboardEvent) => {
-			const meta = e.metaKey || e.ctrlKey
-			// Ctrl+S / Cmd+S → save immediately
-			if (meta && e.key === 's') {
-				e.preventDefault()
-				save()
-			}
-			// Ctrl+D / Cmd+D → duplicate active field
-			if (meta && e.key === 'd' && activeField) {
-				e.preventDefault()
-				const idx = fields.findIndex(f => f.id === activeField)
-				if (idx >= 0) duplicateField(idx)
-			}
-			// Escape → deselect field
-			if (e.key === 'Escape') {
-				setActiveField(null)
-			}
-			// Delete/Backspace with Ctrl → remove active field
-			if (meta && (e.key === 'Backspace' || e.key === 'Delete') && activeField) {
-				// Don't trigger if user is typing in an input
-				const tag = (e.target as HTMLElement)?.tagName?.toLowerCase()
-				if (tag === 'input' || tag === 'textarea' || tag === 'select') return
-				e.preventDefault()
-				const idx = fields.findIndex(f => f.id === activeField)
-				if (idx >= 0) removeField(idx)
-			}
-		}
-		window.addEventListener('keydown', handler)
-		return () => window.removeEventListener('keydown', handler)
-	}, [activeField, fields, save]) // eslint-disable-line react-hooks/exhaustive-deps
-
-	const isPublished = form ? String(form.status) === 'published' : false
 
 	const exportFormJson = () => {
 		const data = {
