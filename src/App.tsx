@@ -186,7 +186,6 @@ function AuthenticatedRoutes() {
 		<Suspense fallback={<InlineLoader message="Loading..." />}>
 			<Routes>
 				<Route path="/dashboard" element={<FormList navigate={navigate} userId={user?.id || ''} />} />
-				<Route path="/templates" element={<Templates navigate={navigate} userId={user?.id || ''} />} />
 				<Route path="/forms/:formId/edit" element={<FormBuilderPage navigate={navigate} userId={user?.id || ''} />} />
 				<Route path="/forms/:formId/responses" element={<FormResponsesPage navigate={navigate} />} />
 			</Routes>
@@ -316,6 +315,21 @@ function TermsPage() {
 	return <Terms navigate={navigate} />
 }
 
+function PublicTemplatesPage() {
+	const navigate = useAppNavigate()
+	const { isAuthenticated, user } = useAuth()
+	const { dark } = useDarkMode()
+	return (
+		<div className={dark ? 'dark' : ''}>
+			<div className="min-h-screen bg-gray-50/50 dark:bg-surface-dark">
+				<div className="mx-auto max-w-5xl px-4 sm:px-6 py-8 sm:py-10">
+					<Templates navigate={navigate} userId={isAuthenticated ? (user?.id || '') : undefined} isPublic />
+				</div>
+			</div>
+		</div>
+	)
+}
+
 function TemplateDetailPage() {
 	const { templateKey } = useParams()
 	const navigate = useAppNavigate()
@@ -341,6 +355,7 @@ export function App() {
 					<Route path="/privacy" element={<PrivacyPage />} />
 					<Route path="/terms" element={<TermsPage />} />
 					<Route path="/templates/:templateKey" element={<TemplateDetailPage />} />
+					<Route path="/templates" element={<PublicTemplatesPage />} />
 
 					{/* Authenticated routes */}
 					<Route path="/*" element={

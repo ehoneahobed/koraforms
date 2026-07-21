@@ -5,7 +5,8 @@ import { setPageMeta } from '../utils/meta'
 
 interface TemplatesProps {
 	navigate: (path: string) => void
-	userId: string
+	userId?: string
+	isPublic?: boolean
 }
 
 const CATEGORY_ICONS: Record<string, string> = {
@@ -17,11 +18,11 @@ const CATEGORY_ICONS: Record<string, string> = {
 	'Data Collection': '📋',
 }
 
-export function Templates({ navigate, userId }: TemplatesProps) {
+export function Templates({ navigate, userId, isPublic }: TemplatesProps) {
 	useEffect(() => {
 		setPageMeta({
-			title: 'Templates',
-			description: 'Browse form templates for churches, events, surveys, education, and more.',
+			title: 'Form Templates — Free Templates for Every Use Case | KoraForms',
+			description: 'Browse 21+ free form templates for churches, events, surveys, education, and more. Works offline.',
 		})
 	}, [])
 
@@ -58,19 +59,47 @@ export function Templates({ navigate, userId }: TemplatesProps) {
 
 	return (
 		<div>
+			{/* Public nav bar */}
+			{isPublic && (
+				<nav className="flex items-center justify-between mb-6">
+					<button onClick={() => navigate('/')} className="flex items-center gap-2 hover:opacity-80 transition-smooth">
+						<img src="/logo-icon.png" alt="KoraForms" className="w-7 h-7 rounded-lg" />
+						<span className="text-[15px] font-semibold tracking-tight text-gray-900 dark:text-gray-100">KoraForms</span>
+					</button>
+					<div className="flex items-center gap-2">
+						{userId ? (
+							<button onClick={() => navigate('dashboard')} className="px-4 py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-500 transition-smooth shadow-sm shadow-brand-600/25">
+								Dashboard
+							</button>
+						) : (
+							<>
+								<button onClick={() => navigate('signin')} className="px-4 py-2 text-sm text-gray-600 dark:text-gray-300 hover:text-gray-900 transition-smooth">
+									Sign in
+								</button>
+								<button onClick={() => navigate('signup')} className="px-4 py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-500 transition-smooth shadow-sm shadow-brand-600/25">
+									Get started
+								</button>
+							</>
+						)}
+					</div>
+				</nav>
+			)}
+
 			{/* Hero header */}
 			<div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-violet-600 via-brand-600 to-brand-700 p-6 sm:p-8 mb-8 shadow-lg shadow-brand-600/10">
 				<div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/3" />
 				<div className="absolute bottom-0 left-0 w-40 h-40 bg-white/5 rounded-full translate-y-1/2 -translate-x-1/4" />
 
 				<div className="relative">
-					<button
-						onClick={() => navigate('dashboard')}
-						className="inline-flex items-center gap-1.5 text-sm text-brand-200 hover:text-white mb-5 transition-smooth"
-					>
-						<ChevronLeft className="h-4 w-4" />
-						Back to dashboard
-					</button>
+					{!isPublic && (
+						<button
+							onClick={() => navigate('dashboard')}
+							className="inline-flex items-center gap-1.5 text-sm text-brand-200 hover:text-white mb-5 transition-smooth"
+						>
+							<ChevronLeft className="h-4 w-4" />
+							Back to dashboard
+						</button>
+					)}
 
 					<div className="flex items-center gap-2 mb-2">
 						<Sparkles className="h-4 w-4 text-brand-200" />
@@ -185,11 +214,11 @@ export function Templates({ navigate, userId }: TemplatesProps) {
 						Build a completely custom form with our drag-and-drop editor.
 					</p>
 					<button
-						onClick={() => navigate('/forms/new/edit')}
+						onClick={() => navigate(userId ? '/forms/new/edit' : 'signup')}
 						className="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-semibold bg-brand-600 text-white rounded-xl hover:bg-brand-500 transition-smooth shadow-sm shadow-brand-600/25 active:scale-[0.98]"
 					>
 						<Plus className="h-4 w-4" />
-						Create blank form
+						{userId ? 'Create blank form' : 'Sign up to create forms'}
 					</button>
 				</div>
 			</div>
@@ -198,8 +227,9 @@ export function Templates({ navigate, userId }: TemplatesProps) {
 				<TemplatePreviewModal
 					templateKey={previewTemplate}
 					onClose={() => setPreviewTemplate(null)}
-					onUse={(key) => navigate(`/forms/new/edit?template=${key}`)}
+					onUse={(key) => navigate(userId ? `/forms/new/edit?template=${key}` : 'signup')}
 					onViewDetails={(key) => navigate(`/templates/${key}`)}
+					isAuthenticated={!!userId}
 				/>
 			)}
 		</div>
@@ -272,11 +302,13 @@ function TemplatePreviewModal({
 	onClose,
 	onUse,
 	onViewDetails,
+	isAuthenticated,
 }: {
 	templateKey: string
 	onClose: () => void
 	onUse: (key: string) => void
 	onViewDetails: (key: string) => void
+	isAuthenticated?: boolean
 }) {
 	const template = FORM_TEMPLATES[templateKey]
 
@@ -384,7 +416,7 @@ function TemplatePreviewModal({
 							className="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-semibold bg-brand-600 text-white rounded-xl hover:bg-brand-500 transition-smooth shadow-sm shadow-brand-600/25 active:scale-[0.98]"
 						>
 							<Check className="h-4 w-4" />
-							Use this template
+							{isAuthenticated ? 'Use this template' : 'Sign up to use'}
 						</button>
 					</div>
 				</div>
