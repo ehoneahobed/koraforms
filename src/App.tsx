@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, lazy, Suspense } from 'react'
 import { Routes, Route, Navigate, useNavigate, useParams, useLocation, useSearchParams } from 'react-router-dom'
 import { useSyncStatus, useMutation } from '@korajs/react'
 import { app } from './kora'
@@ -6,7 +6,7 @@ import { AuthProvider, useAuthStatus } from '@korajs/auth/react'
 import { useAuth } from '@korajs/auth/react'
 import { authClient } from './auth'
 import { setPageMeta } from './utils/meta'
-import { BrandLoader } from './components/shared/BrandLoader'
+import { BrandLoader, InlineLoader } from './components/shared/BrandLoader'
 import {
 	Wifi,
 	WifiOff,
@@ -19,16 +19,18 @@ import {
 	User,
 } from 'lucide-react'
 import { Landing } from './pages/Landing'
-import { FormList } from './pages/FormList'
-import { FormBuilder } from './pages/FormBuilder'
-import { FormResponses } from './pages/FormResponses'
 import { SignIn } from './pages/SignIn'
 import { SignUp } from './pages/SignUp'
-import { Templates } from './pages/Templates'
-import { HowItWorks } from './pages/HowItWorks'
-import { Help } from './pages/Help'
-import { Privacy } from './pages/Privacy'
-import { Terms } from './pages/Terms'
+
+// Lazy-loaded heavy pages — code-split into separate chunks
+const FormList = lazy(() => import('./pages/FormList').then(m => ({ default: m.FormList })))
+const FormBuilder = lazy(() => import('./pages/FormBuilder').then(m => ({ default: m.FormBuilder })))
+const FormResponses = lazy(() => import('./pages/FormResponses').then(m => ({ default: m.FormResponses })))
+const Templates = lazy(() => import('./pages/Templates').then(m => ({ default: m.Templates })))
+const HowItWorks = lazy(() => import('./pages/HowItWorks').then(m => ({ default: m.HowItWorks })))
+const Help = lazy(() => import('./pages/Help').then(m => ({ default: m.Help })))
+const Privacy = lazy(() => import('./pages/Privacy').then(m => ({ default: m.Privacy })))
+const Terms = lazy(() => import('./pages/Terms').then(m => ({ default: m.Terms })))
 import { ErrorBoundary } from './components/shared/ErrorBoundary'
 import { FORM_TEMPLATES } from './templates'
 
@@ -180,12 +182,14 @@ function AuthenticatedRoutes() {
 	const { user } = useAuth()
 
 	return (
-		<Routes>
-			<Route path="/dashboard" element={<FormList navigate={navigate} userId={user?.id || ''} />} />
-			<Route path="/templates" element={<Templates navigate={navigate} userId={user?.id || ''} />} />
-			<Route path="/forms/:formId/edit" element={<FormBuilderPage navigate={navigate} userId={user?.id || ''} />} />
-			<Route path="/forms/:formId/responses" element={<FormResponsesPage navigate={navigate} />} />
-		</Routes>
+		<Suspense fallback={<InlineLoader message="Loading..." />}>
+			<Routes>
+				<Route path="/dashboard" element={<FormList navigate={navigate} userId={user?.id || ''} />} />
+				<Route path="/templates" element={<Templates navigate={navigate} userId={user?.id || ''} />} />
+				<Route path="/forms/:formId/edit" element={<FormBuilderPage navigate={navigate} userId={user?.id || ''} />} />
+				<Route path="/forms/:formId/responses" element={<FormResponsesPage navigate={navigate} />} />
+			</Routes>
+		</Suspense>
 	)
 }
 
@@ -319,6 +323,7 @@ export function App() {
 	return (
 		<ErrorBoundary>
 		<AuthProvider client={authClient} fallback={<BrandLoader />}>
+			<Suspense fallback={<InlineLoader message="Loading..." />}>
 				<Routes>
 					{/* Public routes */}
 					<Route path="/" element={<LandingPage />} />
@@ -336,6 +341,7 @@ export function App() {
 						</RequireAuth>
 					} />
 				</Routes>
+			</Suspense>
 		</AuthProvider>
 		</ErrorBoundary>
 	)
