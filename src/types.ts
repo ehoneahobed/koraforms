@@ -39,6 +39,12 @@ export interface FormField {
 	// Calculated / hidden field config
 	formula?: string         // e.g. "{field_1} + {field_2}"
 	defaultValue?: string    // Static default for hidden fields
+	// Multi-language translations
+	translations?: Record<string, {
+		label?: string
+		placeholder?: string
+		options?: string
+	}>
 }
 
 // Form-level settings stored as JSON in the `settings` field
@@ -58,6 +64,9 @@ export interface FormSettings {
 	// Public results
 	publicResults?: boolean
 	showResultsAfterSubmit?: boolean
+	// Multi-language
+	languages?: string[]
+	defaultLanguage?: string
 }
 
 export interface WebhookConfig {
@@ -122,6 +131,47 @@ export function pipeValues(text: string, values: Record<string, string>, fields:
 		const field = fields.find(f => f.label.toLowerCase().replace(/\s+/g, '_') === fieldId.toLowerCase())
 		return field ? (values[field.id] || match) : match
 	})
+}
+
+// Supported languages for multi-language forms
+export const LANGUAGES: { code: string; name: string; rtl?: boolean }[] = [
+	{ code: 'en', name: 'English' },
+	{ code: 'fr', name: 'Fran\u00e7ais' },
+	{ code: 'es', name: 'Espa\u00f1ol' },
+	{ code: 'pt', name: 'Portugu\u00eas' },
+	{ code: 'de', name: 'Deutsch' },
+	{ code: 'ar', name: '\u0627\u0644\u0639\u0631\u0628\u064a\u0629', rtl: true },
+	{ code: 'sw', name: 'Kiswahili' },
+	{ code: 'ha', name: 'Hausa' },
+	{ code: 'am', name: '\u12a0\u121b\u122d\u129b' },
+	{ code: 'yo', name: 'Yor\u00f9b\u00e1' },
+	{ code: 'ig', name: 'Igbo' },
+	{ code: 'zu', name: 'isiZulu' },
+	{ code: 'hi', name: '\u0939\u093f\u0928\u094d\u0926\u0940' },
+	{ code: 'ur', name: '\u0627\u0631\u062f\u0648', rtl: true },
+	{ code: 'bn', name: '\u09ac\u09be\u0982\u09b2\u09be' },
+	{ code: 'zh', name: '\u4e2d\u6587' },
+	{ code: 'ja', name: '\u65e5\u672c\u8a9e' },
+	{ code: 'ko', name: '\ud55c\uad6d\uc5b4' },
+	{ code: 'tr', name: 'T\u00fcrk\u00e7e' },
+	{ code: 'ru', name: '\u0420\u0443\u0441\u0441\u043a\u0438\u0439' },
+	{ code: 'he', name: '\u05e2\u05d1\u05e8\u05d9\u05ea', rtl: true },
+	{ code: 'fa', name: '\u0641\u0627\u0631\u0633\u06cc', rtl: true },
+]
+
+// Get translated field text for a given language
+export function getFieldText(field: FormField, lang: string | undefined): { label: string; placeholder: string; options: string } {
+	const t = lang && field.translations?.[lang]
+	return {
+		label: (t && t.label) || field.label,
+		placeholder: (t && t.placeholder) || field.placeholder || '',
+		options: (t && t.options) || field.options || '',
+	}
+}
+
+// Check if a language is RTL
+export function isRtlLanguage(lang: string): boolean {
+	return LANGUAGES.find(l => l.code === lang)?.rtl === true
 }
 
 // Pre-built form templates

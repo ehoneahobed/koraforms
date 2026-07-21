@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Settings, Link as LinkIcon, Check, Copy, Ban, Globe, ChevronDown, Webhook, Plus, Trash2, X } from 'lucide-react'
 import { copyToClipboard } from '../../utils/clipboard'
 import type { FormSettings as FormSettingsType, WebhookConfig } from '../../types'
+import { LANGUAGES } from '../../types'
 
 interface Props {
 	slug: string
@@ -266,6 +267,57 @@ export function FormSettings({
 							/>
 						</div>
 					) : null}
+
+					{/* Divider */}
+					<div className="border-t border-gray-100 dark:border-gray-800" />
+
+					{/* Multi-language */}
+					<div>
+						<label className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 flex items-center gap-1.5">
+							<Globe className="h-3.5 w-3.5" />
+							Languages
+						</label>
+						<p className="text-[10px] text-gray-400 dark:text-gray-500 mb-3">
+							Add languages so respondents can fill the form in their preferred language.
+						</p>
+						<div className="flex flex-wrap gap-1.5 mb-2">
+							{(settings.languages || []).map(code => {
+								const lang = LANGUAGES.find(l => l.code === code)
+								return (
+									<span key={code} className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-brand-50 dark:bg-brand-900/20 text-brand-700 dark:text-brand-300 text-xs font-medium">
+										{lang?.name || code}
+										{code === (settings.defaultLanguage || settings.languages?.[0]) && (
+											<span className="text-[9px] text-brand-400">default</span>
+										)}
+										<button
+											onClick={() => {
+												const next = (settings.languages || []).filter(l => l !== code)
+												onSettingsChange({ ...settings, languages: next.length > 0 ? next : undefined })
+											}}
+											className="p-0.5 text-brand-400 hover:text-red-500 transition-smooth"
+										>
+											<X className="h-2.5 w-2.5" />
+										</button>
+									</span>
+								)
+							})}
+						</div>
+						<select
+							value=""
+							onChange={(e) => {
+								if (!e.target.value) return
+								const next = [...(settings.languages || []), e.target.value]
+								onSettingsChange({ ...settings, languages: next, defaultLanguage: settings.defaultLanguage || next[0] })
+								e.target.value = ''
+							}}
+							className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2 text-sm outline-none text-gray-700 dark:text-gray-300"
+						>
+							<option value="">Add a language...</option>
+							{LANGUAGES.filter(l => !(settings.languages || []).includes(l.code)).map(l => (
+								<option key={l.code} value={l.code}>{l.name}</option>
+							))}
+						</select>
+					</div>
 
 					{/* Divider */}
 					<div className="border-t border-gray-100 dark:border-gray-800" />

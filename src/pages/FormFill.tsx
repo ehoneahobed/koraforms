@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { ArrowLeft, ArrowRight, Check, Send, Star, X, RotateCcw, Upload, Trash2 } from 'lucide-react'
 import type { FormField, FormSettings } from '../types'
-import { isFieldVisible, pipeValues } from '../types'
+import { isFieldVisible, pipeValues, getFieldText, isRtlLanguage, LANGUAGES } from '../types'
 import { evaluateFormula } from '../utils/formula'
 import { getThemeCSSVars } from '../themes'
 import { PoweredByBadge } from '../components/shared/PoweredByBadge'
@@ -84,6 +84,7 @@ export function FormFill({ formId, navigate }: Props) {
 	const [savedProgress, setSavedProgress] = useState<{ values: Record<string, string>; currentIndex: number; savedAt: number } | null>(null)
 	const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(null)
 	const [isSubmitting, setIsSubmitting] = useState(false)
+	const [language, setLanguage] = useState<string | undefined>(undefined)
 
 	let fields: FormField[] = []
 	try {
@@ -527,6 +528,28 @@ export function FormFill({ formId, navigate }: Props) {
 								{String(form.description)}
 							</p>
 						)}
+						{/* Language picker */}
+						{settings.languages && settings.languages.length > 1 && (
+							<div className="flex flex-wrap items-center justify-center gap-2 mb-8">
+								{settings.languages.map(code => {
+									const lang = LANGUAGES.find(l => l.code === code)
+									return (
+										<button
+											key={code}
+											onClick={() => setLanguage(code)}
+											className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-smooth ${
+												(language || settings.defaultLanguage || settings.languages![0]) === code
+													? 'bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 border border-brand-200 dark:border-brand-800'
+													: 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
+											}`}
+										>
+											{lang?.name || code}
+										</button>
+									)
+								})}
+							</div>
+						)}
+
 						<button
 							onClick={goNext}
 							className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-8 py-3.5 text-base font-medium text-white shadow-lg shadow-brand-600/25 transition-smooth hover:bg-brand-500 hover:shadow-xl hover:shadow-brand-600/30 active:scale-[0.98]"
@@ -548,8 +571,12 @@ export function FormFill({ formId, navigate }: Props) {
 	const isLast = currentIndex === visibleFields.length - 1
 	const error = errors[field.id]
 
+	// Get translated text (label, placeholder, options) for current language
+	const fieldText = getFieldText(field, language)
 	// Apply answer piping to label
-	const pipedLabel = pipeValues(field.label, values, fields)
+	const pipedLabel = pipeValues(fieldText.label, values, fields)
+	// Determine text direction
+	const isRtl = language ? isRtlLanguage(language) : false
 
 	// Section break - full screen slide with title and description
 	if (field.type === 'section') {
@@ -582,7 +609,7 @@ export function FormFill({ formId, navigate }: Props) {
 						</h2>
 						{field.placeholder && (
 							<p className="text-lg text-gray-500 dark:text-gray-400 mb-10 leading-relaxed">
-								{pipeValues(field.placeholder, values, fields)}
+								{pipeValues(fieldText.placeholder || field.placeholder || '', values, fields)}
 							</p>
 						)}
 						<div className="flex items-center justify-center gap-3">
@@ -647,7 +674,7 @@ export function FormFill({ formId, navigate }: Props) {
 							</h2>
 							{field.placeholder && (
 								<p className="text-base text-gray-500 dark:text-gray-400 leading-relaxed">
-									{pipeValues(field.placeholder, values, fields)}
+									{pipeValues(fieldText.placeholder || field.placeholder || '', values, fields)}
 								</p>
 							)}
 						</div>
@@ -721,7 +748,7 @@ export function FormFill({ formId, navigate }: Props) {
 			</div>
 
 			{/* Question content */}
-			<div className="flex-1 flex items-center justify-center px-4 sm:px-8">
+			<div className="flex-1 flex items-center justify-center px-4 sm:px-8" dir={isRtl ? 'rtl' : undefined}>
 				<div
 					key={field.id}
 					className={`w-full max-w-lg ${direction === 'forward' ? 'animate-slide-up' : 'animate-fade-in'}`}
@@ -742,7 +769,7 @@ export function FormFill({ formId, navigate }: Props) {
 					{/* Input */}
 					<div className={error ? 'animate-shake' : ''}>
 						<QuestionInput
-							field={field}
+							field={{ ...field, options: fieldText.options || field.options, placeholder: fieldText.placeholder || field.placeholder }}
 							value={values[field.id] || ''}
 							onChange={(v) => setValue(field.id, v)}
 							inputRef={inputRef}

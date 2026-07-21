@@ -34,7 +34,7 @@ import {
 	Calculator,
 	EyeOff,
 } from 'lucide-react'
-import { FIELD_TYPES, CONDITION_OPERATORS, type FormField, type FormSettings as FormSettingsType, type FieldType, type ConditionalRule } from '../types'
+import { FIELD_TYPES, CONDITION_OPERATORS, LANGUAGES, type FormField, type FormSettings as FormSettingsType, type FieldType, type ConditionalRule } from '../types'
 import { THEME_PRESETS, getThemeById } from '../themes'
 import { generateSlug } from '../utils/slug'
 import { useSlashCommand } from '../hooks/useSlashCommand'
@@ -413,6 +413,7 @@ export function FormBuilder({ formId, navigate, userId }: Props) {
 						index={index}
 						total={fields.length}
 						allFields={fields}
+						languages={settings.languages}
 						isActive={activeField === field.id}
 						isDragging={dragIndex === index}
 						isDragOver={dragOverIndex === index && dragIndex !== index}
@@ -492,6 +493,7 @@ function FieldEditor({
 	index,
 	total,
 	allFields,
+	languages,
 	isActive,
 	isDragging,
 	isDragOver,
@@ -509,6 +511,7 @@ function FieldEditor({
 	index: number
 	total: number
 	allFields: FormField[]
+	languages?: string[]
 	isActive: boolean
 	isDragging?: boolean
 	isDragOver?: boolean
@@ -789,6 +792,50 @@ function FieldEditor({
 							<span>1-10</span>
 							<span className="text-gray-300 dark:text-gray-600">|</span>
 							<span>{field.options}</span>
+						</div>
+					)}
+
+					{/* Translation inputs */}
+					{isActive && languages && languages.length > 1 && (
+						<div className="animate-fade-in space-y-2">
+							<span className="text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider">
+								Translations
+							</span>
+							{languages.filter(l => l !== (languages[0])).map(lang => {
+								const langInfo = LANGUAGES.find(l => l.code === lang)
+								const trans = field.translations?.[lang] || {}
+								return (
+									<div key={lang} className="rounded-lg bg-gray-50 dark:bg-gray-800/50 p-2 space-y-1.5">
+										<span className="text-[10px] font-medium text-gray-500 dark:text-gray-400">
+											{langInfo?.name || lang}
+										</span>
+										<input
+											type="text"
+											value={trans.label || ''}
+											onChange={(e) => {
+												const translations = { ...(field.translations || {}), [lang]: { ...trans, label: e.target.value } }
+												onUpdate({ translations })
+											}}
+											placeholder={`Label in ${langInfo?.name || lang}`}
+											className="w-full rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1.5 text-xs outline-none focus:border-brand-400 transition-smooth"
+											onClick={(e) => e.stopPropagation()}
+										/>
+										{needsOptions && (
+											<input
+												type="text"
+												value={trans.options || ''}
+												onChange={(e) => {
+													const translations = { ...(field.translations || {}), [lang]: { ...trans, options: e.target.value } }
+													onUpdate({ translations })
+												}}
+												placeholder="Options (comma-separated)"
+												className="w-full rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1.5 text-xs outline-none focus:border-brand-400 transition-smooth"
+												onClick={(e) => e.stopPropagation()}
+											/>
+										)}
+									</div>
+								)
+							})}
 						</div>
 					)}
 
