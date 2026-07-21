@@ -247,6 +247,99 @@ function computeTextSummary(values: string[]): ChartData & { type: 'text' } {
 }
 
 // ---------------------------------------------------------------------------
+// Cross-question analysis (contingency / co-occurrence)
+// ---------------------------------------------------------------------------
+
+export interface CrossInsight {
+	sourceField: string
+	sourceLabel: string
+	sourceValue: string
+	targetField: string
+	targetLabel: string
+	targetValue: string
+	coCount: number
+	sourceCount: number
+	percentage: number // % of sourceValue respondents who chose targetValue
+}
+
+/**
+ * Find top cross-question insights across all field pairs.
+ * For each (fieldA value → fieldB value), computes co-occurrence percentage.
+ * Returns the most interesting insights (high co-occurrence, non-trivial).
+ */
+export function computeCrossInsights(
+	fields: FormField[],
+	responses: Record<string, string>[],
+	maxInsights = 10,
+): CrossInsight[] {
+	// Only analyze choice-type fields (select, radio, checkbox, yesno, rating)
+	const choiceFields = fields.filter(f =>
+		['select', 'radio', 'checkbox', 'yesno', 'rating', 'scale'].includes(f.type),
+	)
+
+	if (choiceFields.length < 2 || responses.length < 3) return []
+
+	const insights: CrossInsight[] = []
+
+	for (let i = 0; i < choiceFields.length; i++) {
+		for (let j = 0; j < choiceFields.length; j++) {
+			if (i === j) continue
+			const srcField = choiceFields[i]!
+			const tgtField = choiceFields[j]!
+
+			// Group responses by source value
+			const groups = new Map<string, string[]>()
+			for (const resp of responses) {
+				const srcVal = (resp[srcField.id] || '').trim()
+				const tgtVal = (resp[tgtField.id] || '').trim()
+				if (!srcVal || !tgtVal) continue
+				// For checkbox fields, split by comma
+				const srcValues = srcField.type === 'checkbox' ? srcVal.split(',').map(s => s.trim()) : [srcVal]
+				for (const sv of srcValues) {
+					if (!groups.has(sv)) groups.set(sv, [])
+					groups.get(sv)!.push(tgtVal)
+				}
+			}
+
+			// For each source value, find dominant target value
+			for (const [srcVal, tgtValues] of groups) {
+				if (tgtValues.length < 2) continue // need at least 2 respondents
+				const tgtCounts = new Map<string, number>()
+				for (const tv of tgtValues) {
+					// For checkbox, split and count each
+					const tvs = tgtField.type === 'checkbox' ? tv.split(',').map(s => s.trim()) : [tv]
+					for (const t of tvs) {
+						tgtCounts.set(t, (tgtCounts.get(t) || 0) + 1)
+					}
+				}
+				const [topValue, topCount] = [...tgtCounts.entries()].sort((a, b) => b[1] - a[1])[0]!
+				const pct = Math.round((topCount / tgtValues.length) * 100)
+
+				// Only include interesting insights (>60% co-occurrence, at least 2 responses)
+				if (pct >= 60 && topCount >= 2) {
+					insights.push({
+						sourceField: srcField.id,
+						sourceLabel: srcField.label,
+						sourceValue: srcVal,
+						targetField: tgtField.id,
+						targetLabel: tgtField.label,
+						targetValue: topValue,
+						coCount: topCount,
+						sourceCount: tgtValues.length,
+						percentage: pct,
+					})
+				}
+			}
+		}
+	}
+
+	// Sort by interestingness: higher co-occurrence % and sample size
+	return insights
+		.sort((a, b) => (b.percentage * Math.log(b.sourceCount)) - (a.percentage * Math.log(a.sourceCount)))
+		.slice(0, maxInsights)
+}
+
+// ---------------------------------------------------------------------------
 // Response timeline
 // ---------------------------------------------------------------------------
 

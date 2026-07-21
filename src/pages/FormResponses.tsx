@@ -4,6 +4,7 @@ import { app } from '../kora'
 import { setPageMeta } from '../utils/meta'
 import { ArrowLeft, Download, FileSpreadsheet, ChevronDown, ChevronRight, BarChart3, Share2, ExternalLink, Clock, TrendingUp, FileText, Search, Trash2 } from 'lucide-react'
 import type { FormField } from '../types'
+import { computeCrossInsights } from '../utils/analytics'
 
 interface Props {
 	formId: string
@@ -1878,6 +1879,11 @@ function AnalyticsView({
 		return { browsers: toSorted(browsers), devices: toSorted(devices), oses: toSorted(oses), hasData }
 	}, [allData])
 
+	// Cross-question insights
+	const crossInsights = useMemo(() => {
+		return computeCrossInsights(fields, allData)
+	}, [fields, allData])
+
 	return (
 		<div className="space-y-5 animate-fade-in">
 			{/* Time range selector */}
@@ -2011,6 +2017,32 @@ function AnalyticsView({
 						<DonutChart data={deviceBreakdown.devices} title="Devices" />
 						<DonutChart data={deviceBreakdown.browsers} title="Browsers" />
 						<DonutChart data={deviceBreakdown.oses} title="Operating Systems" />
+					</div>
+				</div>
+			)}
+
+			{/* Cross-question insights */}
+			{crossInsights.length > 0 && (
+				<div>
+					<h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3">
+						Cross-Question Insights
+					</h3>
+					<div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-surface-elevated-dark overflow-hidden divide-y divide-gray-100 dark:divide-gray-800">
+						{crossInsights.map((insight, i) => (
+							<div key={i} className="px-4 py-3 flex items-start gap-3">
+								<div className="shrink-0 w-10 h-10 rounded-lg bg-violet-50 dark:bg-violet-900/20 flex items-center justify-center text-violet-600 dark:text-violet-400 text-sm font-bold">
+									{insight.percentage}%
+								</div>
+								<div className="min-w-0 flex-1">
+									<p className="text-sm text-gray-800 dark:text-gray-200">
+										People who answered <span className="font-semibold text-brand-600 dark:text-brand-400">&ldquo;{insight.sourceValue}&rdquo;</span> for <span className="text-gray-500">{insight.sourceLabel}</span> also chose <span className="font-semibold text-violet-600 dark:text-violet-400">&ldquo;{insight.targetValue}&rdquo;</span> for <span className="text-gray-500">{insight.targetLabel}</span>
+									</p>
+									<p className="text-[11px] text-gray-400 mt-0.5">
+										{insight.coCount} of {insight.sourceCount} respondents
+									</p>
+								</div>
+							</div>
+						))}
 					</div>
 				</div>
 			)}
