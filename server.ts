@@ -169,6 +169,43 @@ async function main(): Promise<void> {
 					}
 				},
 			},
+			// Public API: get public results for a form
+			{
+				path: '/api/public/forms/*/results',
+				async handle(req: ProductionHttpRouteRequest): Promise<ProductionHttpRouteResponse> {
+					if (req.method === 'OPTIONS') return withCors({ status: 204 })
+					if (req.method !== 'GET') {
+						return withCors({ status: 405, body: { error: 'Method not allowed' } })
+					}
+					const slug = req.url?.match(/\/api\/public\/forms\/([^/]+)\/results/)?.[1]
+					if (!slug) return withCors({ status: 404, body: { error: 'Not found' } })
+					try {
+						const [form] = await store.queryCollection('forms', {
+							where: { slug: decodeURIComponent(slug), status: 'published' },
+							limit: 1,
+						})
+						if (!form) {
+							return withCors({ status: 404, body: { error: 'Form not found' } })
+						}
+						const formSettings = JSON.parse(String(form.settings || '{}'))
+						if (!formSettings.publicResults) {
+							return withCors({ status: 403, body: { error: 'Results are not public for this form' } })
+						}
+						const responses = await store.queryCollection('responses', {
+							where: { formId: String(form.id) },
+						})
+						return withCors({
+							status: 200,
+							body: {
+								form: { id: form.id, title: form.title, description: form.description, fields: form.fields, theme: form.theme },
+								responses: responses.map(r => ({ data: r.data, submittedAt: r.submittedAt })),
+							},
+						})
+					} catch {
+						return withCors({ status: 500, body: { error: 'Internal server error' } })
+					}
+				},
+			},
 			// Public API: submit a response via REST (no Kora sync needed)
 			{
 				path: '/api/public/responses',

@@ -186,6 +186,28 @@ export function FormSettings({
 						Allow multiple submissions
 					</label>
 
+					<label className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 cursor-pointer select-none">
+						<input
+							type="checkbox"
+							checked={settings.publicResults || false}
+							onChange={(e) => updateSetting('publicResults', e.target.checked)}
+							className="rounded border-gray-300"
+						/>
+						Show results publicly
+					</label>
+
+					{settings.publicResults && (
+						<label className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 cursor-pointer select-none ml-5">
+							<input
+								type="checkbox"
+								checked={settings.showResultsAfterSubmit || false}
+								onChange={(e) => updateSetting('showResultsAfterSubmit', e.target.checked)}
+								className="rounded border-gray-300"
+							/>
+							Show results link after submission
+						</label>
+					)}
+
 					{/* Divider */}
 					<div className="border-t border-gray-100 dark:border-gray-800" />
 

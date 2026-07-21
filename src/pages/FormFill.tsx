@@ -18,6 +18,17 @@ function progressKey(formId: string) {
 	return `koraforms-progress-${formId}`
 }
 
+// Simple string hash for duplicate detection
+function simpleHash(str: string): number {
+	let hash = 0
+	for (let i = 0; i < str.length; i++) {
+		const ch = str.charCodeAt(i)
+		hash = ((hash << 5) - hash) + ch
+		hash = hash & hash // Convert to 32-bit integer
+	}
+	return hash
+}
+
 export function FormFill({ formId, navigate }: Props) {
 	// Fetch form from the public API (no Kora sync required)
 	const [form, setForm] = useState<Record<string, unknown> | null>(null)
@@ -259,13 +270,31 @@ export function FormFill({ formId, navigate }: Props) {
 			setCurrentIndex(currentIndex + 1)
 		} else {
 			const realFormId = String(form?.id || formId)
+			const responseJson = JSON.stringify(values)
+
+			// Duplicate detection — warn if identical response submitted within 5 minutes
+			const dupKey = `koraforms-dup-${formId}`
+			try {
+				const lastSubmit = localStorage.getItem(dupKey)
+				if (lastSubmit) {
+					const { hash, time } = JSON.parse(lastSubmit)
+					const responseHash = simpleHash(responseJson)
+					if (hash === responseHash && Date.now() - time < 5 * 60 * 1000) {
+						const confirmed = window.confirm('It looks like you already submitted this exact response. Submit again?')
+						if (!confirmed) return
+					}
+				}
+			} catch { /* ignore */ }
+
 			setSubmitError('')
 			setIsSubmitting(true)
-			submitResponse(realFormId, JSON.stringify(values))
+			submitResponse(realFormId, responseJson)
 				.then(() => {
 					setSubmitted(true)
 					// Clear saved progress on successful submission
 					localStorage.removeItem(progressKey(formId))
+					// Store hash for duplicate detection
+					localStorage.setItem(dupKey, JSON.stringify({ hash: simpleHash(responseJson), time: Date.now() }))
 				})
 				.catch((err) => setSubmitError(err.message || 'Failed to submit. Please try again.'))
 				.finally(() => setIsSubmitting(false))
@@ -451,6 +480,7 @@ export function FormFill({ formId, navigate }: Props) {
 				redirectUrl={redirectUrl}
 				redirectDelay={settings.redirectDelay || 3}
 				allowMultiple={allowMultiple}
+				showResultsLink={settings.publicResults && settings.showResultsAfterSubmit}
 				formSlug={String(form?.slug || formId)}
 				onReset={() => {
 					setValues({})
@@ -785,6 +815,7 @@ function SubmittedScreen({
 	redirectUrl,
 	redirectDelay,
 	allowMultiple,
+	showResultsLink,
 	formSlug,
 	onReset,
 }: {
@@ -793,6 +824,7 @@ function SubmittedScreen({
 	redirectUrl?: string
 	redirectDelay: number
 	allowMultiple: boolean
+	showResultsLink?: boolean
 	formSlug: string
 	onReset: () => void
 }) {
@@ -839,6 +871,14 @@ function SubmittedScreen({
 						>
 							Submit another response
 						</button>
+					)}
+					{showResultsLink && (
+						<a
+							href={`/f/${formSlug}/results`}
+							className="inline-flex items-center gap-2 rounded-xl border-2 border-gray-200 dark:border-gray-700 px-6 py-3 text-sm font-medium text-gray-500 dark:text-gray-400 transition-smooth hover:border-gray-300 active:scale-[0.98]"
+						>
+							View results
+						</a>
 					)}
 					{redirectUrl && (
 						<a

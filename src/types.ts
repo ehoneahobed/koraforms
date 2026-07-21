@@ -55,6 +55,9 @@ export interface FormSettings {
 	closedMessage?: string
 	// Webhooks
 	webhooks?: WebhookConfig[]
+	// Public results
+	publicResults?: boolean
+	showResultsAfterSubmit?: boolean
 }
 
 export interface WebhookConfig {

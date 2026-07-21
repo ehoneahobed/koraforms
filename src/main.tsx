@@ -6,6 +6,7 @@ import { app } from './kora'
 import { authClient } from './auth'
 import { App } from './App'
 import { PublicFormPage } from './pages/PublicFormPage'
+import { PublicResultsPage } from './pages/PublicResultsPage'
 import { BrandLoader } from './components/shared/BrandLoader'
 import './index.css'
 
@@ -22,6 +23,7 @@ createRoot(document.getElementById('root')!).render(
 				{/* Public form pages don't need Kora sync — render outside KoraProvider
 				    so they work even if the SharedWorker/OPFS init fails */}
 				<Route path="/f/:formId" element={<PublicFormPage />} />
+				<Route path="/f/:slug/results" element={<PublicResultsPage />} />
 
 				{/* Everything else goes through KoraProvider for offline-first sync */}
 				<Route path="/*" element={
