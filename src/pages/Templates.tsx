@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { FileText, Search, ArrowRight, ChevronLeft, Sparkles, Plus, LayoutTemplate, Eye, X, Check } from 'lucide-react'
+import { FileText, Search, ArrowRight, ChevronLeft, Sparkles, Plus, LayoutTemplate, Eye, X, Check, ExternalLink } from 'lucide-react'
 import { FORM_TEMPLATES, TEMPLATE_CATEGORIES } from '../templates'
 import { setPageMeta } from '../utils/meta'
 
@@ -199,6 +199,7 @@ export function Templates({ navigate, userId }: TemplatesProps) {
 					templateKey={previewTemplate}
 					onClose={() => setPreviewTemplate(null)}
 					onUse={(key) => navigate(`/forms/new/edit?template=${key}`)}
+					onViewDetails={(key) => navigate(`/templates/${key}`)}
 				/>
 			)}
 		</div>
@@ -270,10 +271,12 @@ function TemplatePreviewModal({
 	templateKey,
 	onClose,
 	onUse,
+	onViewDetails,
 }: {
 	templateKey: string
 	onClose: () => void
 	onUse: (key: string) => void
+	onViewDetails: (key: string) => void
 }) {
 	const template = FORM_TEMPLATES[templateKey]
 
@@ -361,20 +364,29 @@ function TemplatePreviewModal({
 				</div>
 
 				{/* Footer */}
-				<div className="px-6 py-4 border-t border-gray-100 dark:border-gray-800 flex items-center justify-end gap-3">
+				<div className="px-6 py-4 border-t border-gray-100 dark:border-gray-800 flex items-center justify-between">
 					<button
-						onClick={onClose}
-						className="px-4 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-700 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800 transition-smooth"
+						onClick={() => onViewDetails(templateKey)}
+						className="inline-flex items-center gap-1.5 text-xs font-medium text-brand-600 dark:text-brand-400 hover:text-brand-500 dark:hover:text-brand-300 transition-smooth"
 					>
-						Close
+						<ExternalLink className="h-3.5 w-3.5" />
+						View full details
 					</button>
-					<button
-						onClick={() => onUse(templateKey)}
-						className="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-semibold bg-brand-600 text-white rounded-xl hover:bg-brand-500 transition-smooth shadow-sm shadow-brand-600/25 active:scale-[0.98]"
-					>
-						<Check className="h-4 w-4" />
-						Use this template
-					</button>
+					<div className="flex items-center gap-3">
+						<button
+							onClick={onClose}
+							className="px-4 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-700 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800 transition-smooth"
+						>
+							Close
+						</button>
+						<button
+							onClick={() => onUse(templateKey)}
+							className="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-semibold bg-brand-600 text-white rounded-xl hover:bg-brand-500 transition-smooth shadow-sm shadow-brand-600/25 active:scale-[0.98]"
+						>
+							<Check className="h-4 w-4" />
+							Use this template
+						</button>
+					</div>
 				</div>
 			</div>
 		</div>

@@ -22,9 +22,11 @@ import {
 	ExternalLink,
 	Archive,
 	ArchiveRestore,
+	Download,
 } from 'lucide-react'
 import { useState, useRef, useEffect } from 'react'
 import { FORM_TEMPLATES, TEMPLATE_CATEGORIES } from '../templates'
+import type { FormField } from '../types'
 import { ShareModal } from '../components/shared/ShareModal'
 import { Share2, Search } from 'lucide-react'
 import { getThemeById } from '../themes'
@@ -115,6 +117,30 @@ export function FormList({ navigate, userId }: Props) {
 		copyToClipboard(link)
 		setCopiedId(String(form.id))
 		setTimeout(() => setCopiedId(null), 2000)
+	}
+
+	const handleExportForm = (form: Record<string, unknown>) => {
+		let formFields: FormField[] = []
+		let formSettings = {}
+		try { formFields = JSON.parse(String(form.fields || '[]')) } catch {}
+		try { formSettings = JSON.parse(String(form.settings || '{}')) } catch {}
+
+		const data = {
+			koraforms: true,
+			version: 1,
+			title: String(form.title || 'Untitled Form'),
+			description: String(form.description || ''),
+			fields: formFields,
+			theme: String(form.theme || 'blue'),
+			settings: formSettings,
+		}
+		const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+		const url = URL.createObjectURL(blob)
+		const a = document.createElement('a')
+		a.href = url
+		a.download = `${String(form.title || 'form').replace(/[^a-z0-9]/gi, '-').toLowerCase()}.koraform.json`
+		a.click()
+		URL.revokeObjectURL(url)
 	}
 
 	const activeForms = allForms.filter(f => !isArchived(f))
@@ -258,6 +284,7 @@ export function FormList({ navigate, userId }: Props) {
 							onDuplicate={() => handleDuplicate(form)}
 							onCopyLink={() => handleCopyLink(form)}
 							onShare={() => setShareForm(form)}
+							onExport={() => handleExportForm(form)}
 							onArchive={() => handleArchive(form)}
 							onUnarchive={() => handleUnarchive(form)}
 							isFormArchived={isArchived(form)}
@@ -308,6 +335,7 @@ function FormCard({
 	onDuplicate,
 	onCopyLink,
 	onShare,
+	onExport,
 	onArchive,
 	onUnarchive,
 	isFormArchived,
@@ -321,6 +349,7 @@ function FormCard({
 	onDuplicate: () => void
 	onCopyLink: () => void
 	onShare: () => void
+	onExport: () => void
 	onArchive: () => void
 	onUnarchive: () => void
 	isFormArchived: boolean
@@ -409,6 +438,7 @@ function FormCard({
 									<MenuButton icon={<Share2 className="h-3.5 w-3.5" />} label="Share" onClick={() => { onShare(); setMenuOpen(false) }} />
 								)}
 								<MenuButton icon={<CopyPlus className="h-3.5 w-3.5" />} label="Duplicate" onClick={() => { onDuplicate(); setMenuOpen(false) }} />
+								<MenuButton icon={<Download className="h-3.5 w-3.5" />} label="Export JSON" onClick={() => { onExport(); setMenuOpen(false) }} />
 								{isFormArchived ? (
 									<MenuButton icon={<ArchiveRestore className="h-3.5 w-3.5" />} label="Unarchive" onClick={() => { onUnarchive(); setMenuOpen(false) }} />
 								) : (

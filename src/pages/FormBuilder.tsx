@@ -35,6 +35,7 @@ import {
 	EyeOff,
 	ArrowUpDown,
 	Grid3x3,
+	Download,
 } from 'lucide-react'
 import { FIELD_TYPES, CONDITION_OPERATORS, LANGUAGES, type FormField, type FormSettings as FormSettingsType, type FieldType, type ConditionalRule } from '../types'
 import { THEME_PRESETS, getThemeById } from '../themes'
@@ -322,6 +323,54 @@ export function FormBuilder({ formId, navigate, userId }: Props) {
 
 	const isPublished = form ? String(form.status) === 'published' : false
 
+	const exportFormJson = () => {
+		const data = {
+			koraforms: true,
+			version: 1,
+			title: title || 'Untitled Form',
+			description,
+			fields,
+			theme,
+			settings,
+		}
+		const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+		const url = URL.createObjectURL(blob)
+		const a = document.createElement('a')
+		a.href = url
+		a.download = `${(title || 'form').replace(/[^a-z0-9]/gi, '-').toLowerCase()}.koraform.json`
+		a.click()
+		URL.revokeObjectURL(url)
+	}
+
+	const importFormJson = () => {
+		const input = document.createElement('input')
+		input.type = 'file'
+		input.accept = '.json,.koraform.json'
+		input.onchange = (e) => {
+			const file = (e.target as HTMLInputElement).files?.[0]
+			if (!file) return
+			const reader = new FileReader()
+			reader.onload = () => {
+				try {
+					const data = JSON.parse(reader.result as string)
+					if (!data.koraforms) {
+						alert('This doesn\'t appear to be a KoraForms file.')
+						return
+					}
+					if (data.title) setTitle(data.title)
+					if (data.description) setDescription(data.description)
+					if (Array.isArray(data.fields)) setFields(data.fields)
+					if (data.theme) setTheme(data.theme)
+					if (data.settings) setSettings(data.settings)
+				} catch {
+					alert('Failed to parse the file. Make sure it\'s a valid KoraForms JSON file.')
+				}
+			}
+			reader.readAsText(file)
+		}
+		input.click()
+	}
+
 	return (
 		<div className="max-w-2xl mx-auto">
 			{/* Top bar */}
@@ -350,6 +399,22 @@ export function FormBuilder({ formId, navigate, userId }: Props) {
 							<span className="hidden sm:inline">Share</span>
 						</button>
 					)}
+					<button
+						onClick={exportFormJson}
+						className="inline-flex items-center gap-1.5 rounded-lg bg-gray-100 dark:bg-gray-800 px-2.5 py-2 sm:px-3 text-sm text-gray-600 dark:text-gray-300 transition-smooth hover:bg-gray-200 dark:hover:bg-gray-700"
+						title="Export form as JSON"
+					>
+						<Download className="h-3.5 w-3.5" />
+						<span className="hidden sm:inline">Export</span>
+					</button>
+					<button
+						onClick={importFormJson}
+						className="inline-flex items-center gap-1.5 rounded-lg bg-gray-100 dark:bg-gray-800 px-2.5 py-2 sm:px-3 text-sm text-gray-600 dark:text-gray-300 transition-smooth hover:bg-gray-200 dark:hover:bg-gray-700"
+						title="Import form from JSON"
+					>
+						<Upload className="h-3.5 w-3.5" />
+						<span className="hidden sm:inline">Import</span>
+					</button>
 					<button
 						onClick={() => navigate(`fill/${formId}`)}
 						className="inline-flex items-center gap-1.5 rounded-lg bg-gray-100 dark:bg-gray-800 px-2.5 py-2 sm:px-3 text-sm text-gray-600 dark:text-gray-300 transition-smooth hover:bg-gray-200 dark:hover:bg-gray-700"

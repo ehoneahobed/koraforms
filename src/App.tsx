@@ -27,6 +27,7 @@ const FormList = lazy(() => import('./pages/FormList').then(m => ({ default: m.F
 const FormBuilder = lazy(() => import('./pages/FormBuilder').then(m => ({ default: m.FormBuilder })))
 const FormResponses = lazy(() => import('./pages/FormResponses').then(m => ({ default: m.FormResponses })))
 const Templates = lazy(() => import('./pages/Templates').then(m => ({ default: m.Templates })))
+const TemplateDetail = lazy(() => import('./pages/TemplateDetail').then(m => ({ default: m.TemplateDetail })))
 const HowItWorks = lazy(() => import('./pages/HowItWorks').then(m => ({ default: m.HowItWorks })))
 const Help = lazy(() => import('./pages/Help').then(m => ({ default: m.Help })))
 const Privacy = lazy(() => import('./pages/Privacy').then(m => ({ default: m.Privacy })))
@@ -315,6 +316,12 @@ function TermsPage() {
 	return <Terms navigate={navigate} />
 }
 
+function TemplateDetailPage() {
+	const { templateKey } = useParams()
+	const navigate = useAppNavigate()
+	return <TemplateDetail templateKey={templateKey!} navigate={navigate} />
+}
+
 // ---------------------------------------------------------------------------
 // Root app with auth provider and router
 // ---------------------------------------------------------------------------
@@ -333,6 +340,7 @@ export function App() {
 					<Route path="/help" element={<HelpPage />} />
 					<Route path="/privacy" element={<PrivacyPage />} />
 					<Route path="/terms" element={<TermsPage />} />
+					<Route path="/templates/:templateKey" element={<TemplateDetailPage />} />
 
 					{/* Authenticated routes */}
 					<Route path="/*" element={
