@@ -1,8 +1,21 @@
 import { useState } from 'react'
-import { Settings, Link as LinkIcon, Check, Copy, Ban, Globe, ChevronDown, Webhook, Plus, Trash2, X, Mail, Lock, Code } from 'lucide-react'
+import { Settings, Link as LinkIcon, Check, Copy, Ban, Globe, ChevronDown, Webhook, Plus, Trash2, X, Mail, Lock, Code, Calendar, Clock } from 'lucide-react'
 import { copyToClipboard } from '../../utils/clipboard'
 import type { FormSettings as FormSettingsType, WebhookConfig } from '../../types'
 import { LANGUAGES } from '../../types'
+
+function timestampToDatetimeLocal(ts: number | undefined): string {
+	if (!ts) return ''
+	const d = new Date(ts)
+	const offset = d.getTimezoneOffset()
+	const local = new Date(d.getTime() - offset * 60000)
+	return local.toISOString().slice(0, 16)
+}
+
+function datetimeLocalToTimestamp(val: string): number | undefined {
+	if (!val) return undefined
+	return new Date(val).getTime()
+}
 
 interface Props {
 	slug: string
@@ -227,46 +240,104 @@ export function FormSettings({
 					</div>
 
 					{/* Scheduling */}
-					<div className="grid grid-cols-2 gap-3">
-						<div>
-							<label className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 block">
-								Opens at
-							</label>
-							<input
-								type="datetime-local"
-								value={settings.opensAt ? new Date(settings.opensAt).toISOString().slice(0, 16) : ''}
-								onChange={(e) => updateSetting('opensAt', e.target.value ? new Date(e.target.value).getTime() : undefined)}
-								className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2 text-sm outline-none focus:border-brand-400 dark:focus:border-brand-600 transition-smooth text-gray-700 dark:text-gray-300"
-							/>
-						</div>
-						<div>
-							<label className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 block">
-								Closes at
-							</label>
-							<input
-								type="datetime-local"
-								value={settings.closesAt ? new Date(settings.closesAt).toISOString().slice(0, 16) : ''}
-								onChange={(e) => updateSetting('closesAt', e.target.value ? new Date(e.target.value).getTime() : undefined)}
-								className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2 text-sm outline-none focus:border-brand-400 dark:focus:border-brand-600 transition-smooth text-gray-700 dark:text-gray-300"
-							/>
+					<div>
+						<label className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 flex items-center gap-1.5">
+							<Calendar className="h-3.5 w-3.5" />
+							Scheduling
+						</label>
+						<p className="text-[10px] text-gray-400 dark:text-gray-500 mb-3">
+							Set when your form opens and closes for responses.
+						</p>
+
+						{/* Status indicator */}
+						{settings.opensAt && settings.opensAt > Date.now() && (
+							<div className="flex items-center gap-1.5 mb-3 px-2.5 py-1.5 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
+								<Clock className="h-3.5 w-3.5 text-amber-500" />
+								<span className="text-xs text-amber-700 dark:text-amber-300">
+									Scheduled to open: {new Date(settings.opensAt).toLocaleString()}
+								</span>
+							</div>
+						)}
+						{settings.closesAt && settings.closesAt > Date.now() && (!settings.opensAt || settings.opensAt <= Date.now()) && (
+							<div className="flex items-center gap-1.5 mb-3 px-2.5 py-1.5 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
+								<Clock className="h-3.5 w-3.5 text-blue-500" />
+								<span className="text-xs text-blue-700 dark:text-blue-300">
+									Closes: {new Date(settings.closesAt).toLocaleString()}
+								</span>
+							</div>
+						)}
+						{settings.closesAt && settings.closesAt <= Date.now() && (
+							<div className="flex items-center gap-1.5 mb-3 px-2.5 py-1.5 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
+								<Clock className="h-3.5 w-3.5 text-red-500" />
+								<span className="text-xs text-red-700 dark:text-red-300">
+									Closed since: {new Date(settings.closesAt).toLocaleString()}
+								</span>
+							</div>
+						)}
+
+						<div className="grid grid-cols-2 gap-3">
+							<div>
+								<label className="text-xs text-gray-500 dark:text-gray-400 mb-1.5 block">
+									Opens at
+								</label>
+								<div className="flex gap-1.5">
+									<input
+										type="datetime-local"
+										value={timestampToDatetimeLocal(settings.opensAt)}
+										onChange={(e) => updateSetting('opensAt', datetimeLocalToTimestamp(e.target.value))}
+										className="flex-1 min-w-0 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2 text-sm outline-none focus:border-brand-400 dark:focus:border-brand-600 transition-smooth text-gray-700 dark:text-gray-300"
+									/>
+									{settings.opensAt && (
+										<button
+											onClick={() => updateSetting('opensAt', undefined)}
+											className="p-2 text-gray-400 hover:text-red-500 transition-smooth rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800"
+											title="Clear open date"
+										>
+											<X className="h-3.5 w-3.5" />
+										</button>
+									)}
+								</div>
+							</div>
+							<div>
+								<label className="text-xs text-gray-500 dark:text-gray-400 mb-1.5 block">
+									Closes at
+								</label>
+								<div className="flex gap-1.5">
+									<input
+										type="datetime-local"
+										value={timestampToDatetimeLocal(settings.closesAt)}
+										onChange={(e) => updateSetting('closesAt', datetimeLocalToTimestamp(e.target.value))}
+										className="flex-1 min-w-0 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2 text-sm outline-none focus:border-brand-400 dark:focus:border-brand-600 transition-smooth text-gray-700 dark:text-gray-300"
+									/>
+									{settings.closesAt && (
+										<button
+											onClick={() => updateSetting('closesAt', undefined)}
+											className="p-2 text-gray-400 hover:text-red-500 transition-smooth rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800"
+											title="Clear close date"
+										>
+											<X className="h-3.5 w-3.5" />
+										</button>
+									)}
+								</div>
+							</div>
 						</div>
 					</div>
 
 					{/* Closed message */}
-					{(settings.maxResponses || settings.closesAt) ? (
+					{settings.closesAt && (
 						<div>
 							<label className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 block">
 								Closed message
 							</label>
-							<input
-								type="text"
+							<textarea
 								value={settings.closedMessage || ''}
 								onChange={(e) => updateSetting('closedMessage', e.target.value)}
 								placeholder="This form is no longer accepting responses."
-								className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2 text-sm outline-none focus:border-brand-400 dark:focus:border-brand-600 transition-smooth text-gray-700 dark:text-gray-300 placeholder-gray-400"
+								rows={2}
+								className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2 text-sm outline-none focus:border-brand-400 dark:focus:border-brand-600 transition-smooth text-gray-700 dark:text-gray-300 placeholder-gray-400 resize-none"
 							/>
 						</div>
-					) : null}
+					)}
 
 					{/* Divider */}
 					<div className="border-t border-gray-100 dark:border-gray-800" />
