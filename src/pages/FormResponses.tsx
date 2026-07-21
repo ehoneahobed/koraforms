@@ -61,36 +61,50 @@ export function FormResponses({ formId, navigate }: Props) {
 		// ignore
 	}
 
-	const exportCsv = () => {
-		if (responses.length === 0) return
-
-		const headers = ['#', 'Submitted At', ...fields.map((f) => f.label || f.id)]
-		const rows = responses.map((r, i) => {
-			let data: Record<string, string> = {}
-			try {
-				data = JSON.parse(String(r.data || '{}'))
-			} catch {
-				// ignore
-			}
-			const submittedAt = r.submittedAt
-				? new Date(Number(r.submittedAt)).toLocaleString()
-				: ''
-			return [String(i + 1), submittedAt, ...fields.map((f) => data[f.id] || '')]
-		})
-
-		const csvContent = [headers, ...rows]
-			.map((row) =>
-				row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','),
-			)
-			.join('\n')
-
-		const blob = new Blob([csvContent], { type: 'text/csv' })
+	const downloadFile = (content: string, filename: string, type: string) => {
+		const blob = new Blob([content], { type })
 		const url = URL.createObjectURL(blob)
 		const a = document.createElement('a')
 		a.href = url
-		a.download = `${String(form.title || 'form')}-responses.csv`
+		a.download = filename
 		a.click()
 		URL.revokeObjectURL(url)
+	}
+
+	const exportCsv = () => {
+		if (responses.length === 0) return
+		const headers = ['#', 'Submitted At', ...fields.map((f) => f.label || f.id)]
+		const rows = responses.map((r, i) => {
+			let data: Record<string, string> = {}
+			try { data = JSON.parse(String(r.data || '{}')) } catch { /* ignore */ }
+			const submittedAt = r.submittedAt ? new Date(Number(r.submittedAt)).toLocaleString() : ''
+			return [String(i + 1), submittedAt, ...fields.map((f) => data[f.id] || '')]
+		})
+		const csvContent = [headers, ...rows]
+			.map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+			.join('\n')
+		downloadFile(csvContent, `${String(form.title || 'form')}-responses.csv`, 'text/csv')
+	}
+
+	const exportJson = () => {
+		if (responses.length === 0) return
+		const exported = responses.map((r, i) => {
+			let data: Record<string, string> = {}
+			try { data = JSON.parse(String(r.data || '{}')) } catch { /* ignore */ }
+			// Map field IDs to labels for readability
+			const labeled: Record<string, string> = {}
+			for (const field of fields) {
+				if (data[field.id] !== undefined) {
+					labeled[field.label || field.id] = data[field.id]!
+				}
+			}
+			return {
+				responseNumber: i + 1,
+				submittedAt: r.submittedAt ? new Date(Number(r.submittedAt)).toISOString() : null,
+				data: labeled,
+			}
+		})
+		downloadFile(JSON.stringify(exported, null, 2), `${String(form.title || 'form')}-responses.json`, 'application/json')
 	}
 
 	const exportPdf = () => {
@@ -266,8 +280,15 @@ ${responses.length > 100 ? `<p style="text-align:center;color:#888;margin-top:8p
 										onClick={exportCsv}
 										className="inline-flex items-center gap-1.5 rounded-xl bg-white/10 border border-white/20 px-4 py-2.5 text-sm font-medium text-white transition-smooth hover:bg-white/20 backdrop-blur-sm"
 									>
+										<FileSpreadsheet className="h-3.5 w-3.5" />
+										CSV
+									</button>
+									<button
+										onClick={exportJson}
+										className="inline-flex items-center gap-1.5 rounded-xl bg-white/10 border border-white/20 px-4 py-2.5 text-sm font-medium text-white transition-smooth hover:bg-white/20 backdrop-blur-sm"
+									>
 										<Download className="h-3.5 w-3.5" />
-										Export CSV
+										JSON
 									</button>
 								</>
 							)}
