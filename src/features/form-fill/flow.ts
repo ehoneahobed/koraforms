@@ -1,4 +1,4 @@
-import type { FormField } from '../../types'
+import type { FormField, FormSettings } from '../../types'
 import { isFieldVisible } from '../../types'
 import { isDisplayOnlyField } from '../../domain/forms'
 
@@ -20,6 +20,41 @@ export interface SubmissionMeta {
 export interface ValidationResult {
 	valid: boolean
 	error: string
+}
+
+export function progressStorageKey(formId: string): string {
+	return `koraforms-progress-${formId}`
+}
+
+export function duplicateSubmissionStorageKey(formId: string): string {
+	return `koraforms-dup-${formId}`
+}
+
+export function hashString(value: string): number {
+	let hash = 0
+	for (let i = 0; i < value.length; i++) {
+		const charCode = value.charCodeAt(i)
+		hash = ((hash << 5) - hash) + charCode
+		hash &= hash
+	}
+	return hash
+}
+
+export function isDuplicateSubmission(
+	previous: { hash?: number; time?: number },
+	responseJson: string,
+	now: number,
+	windowMs = 5 * 60 * 1000,
+): boolean {
+	return previous.hash === hashString(responseJson) &&
+		typeof previous.time === 'number' &&
+		now - previous.time < windowMs
+}
+
+export function isFormUnavailable(settings: FormSettings, now: number): boolean {
+	if (settings.closesAt && now > settings.closesAt) return true
+	if (settings.opensAt && now < settings.opensAt) return true
+	return false
 }
 
 export function countInteractiveQuestions(fields: FormField[]): number {

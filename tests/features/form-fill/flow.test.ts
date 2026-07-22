@@ -5,6 +5,10 @@ import {
 	buildResponseJson,
 	buildSubmissionMeta,
 	countInteractiveQuestions,
+	duplicateSubmissionStorageKey,
+	hashString,
+	isDuplicateSubmission,
+	isFormUnavailable,
 	moveListItem,
 	normalizeSavedProgress,
 	optionForShortcutKey,
@@ -14,6 +18,7 @@ import {
 	parseOptionList,
 	parseRankingValue,
 	parseSelectedOptions,
+	progressStorageKey,
 	progressForIndex,
 	questionNumberAtIndex,
 	resumeIndexForValues,
@@ -80,6 +85,26 @@ test('normalizeSavedProgress accepts only populated values', () => {
 		currentIndex: 2,
 		savedAt: 123,
 	})
+})
+
+test('storage and duplicate helpers create stable keys and submission fingerprints', () => {
+	const responseJson = '{"name":"Ada"}'
+	const hash = hashString(responseJson)
+
+	assert.equal(progressStorageKey('form-1'), 'koraforms-progress-form-1')
+	assert.equal(duplicateSubmissionStorageKey('form-1'), 'koraforms-dup-form-1')
+	assert.equal(hashString(responseJson), hash)
+	assert.equal(isDuplicateSubmission({ hash, time: 1_000 }, responseJson, 60_000), true)
+	assert.equal(isDuplicateSubmission({ hash, time: 1_000 }, responseJson, 400_000), false)
+	assert.equal(isDuplicateSubmission({ hash: hashString('different'), time: 1_000 }, responseJson, 60_000), false)
+})
+
+test('availability helper respects scheduled open and close times', () => {
+	assert.equal(isFormUnavailable({}, 10_000), false)
+	assert.equal(isFormUnavailable({ opensAt: 20_000 }, 10_000), true)
+	assert.equal(isFormUnavailable({ opensAt: 5_000 }, 10_000), false)
+	assert.equal(isFormUnavailable({ closesAt: 5_000 }, 10_000), true)
+	assert.equal(isFormUnavailable({ closesAt: 20_000 }, 10_000), false)
 })
 
 test('resumeIndexForValues skips section breaks and resumes at first unanswered input', () => {

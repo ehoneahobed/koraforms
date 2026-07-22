@@ -14,6 +14,10 @@ import {
 	buildResponseJson,
 	buildSubmissionMeta,
 	countInteractiveQuestions,
+	duplicateSubmissionStorageKey,
+	hashString,
+	isDuplicateSubmission,
+	isFormUnavailable,
 	moveListItem,
 	normalizeSavedProgress,
 	optionForShortcutKey,
@@ -23,6 +27,7 @@ import {
 	parseOptionList,
 	parseRankingValue,
 	parseSelectedOptions,
+	progressStorageKey,
 	progressForIndex,
 	questionNumberAtIndex,
 	resumeIndexForValues,
@@ -34,22 +39,6 @@ import {
 interface Props {
 	formId: string
 	navigate: (path: string) => void
-}
-
-// localStorage key for progress saving
-function progressKey(formId: string) {
-	return `koraforms-progress-${formId}`
-}
-
-// Simple string hash for duplicate detection
-function simpleHash(str: string): number {
-	let hash = 0
-	for (let i = 0; i < str.length; i++) {
-		const ch = str.charCodeAt(i)
-		hash = ((hash << 5) - hash) + ch
-		hash = hash & hash // Convert to 32-bit integer
-	}
-	return hash
 }
 
 export function FormFill({ formId, navigate }: Props) {
@@ -173,7 +162,7 @@ export function FormFill({ formId, navigate }: Props) {
 		if (!form) return
 		try {
 			const parsed = readJsonFromStorage<{ values?: Record<string, string>; currentIndex?: number; savedAt?: number }>(
-				progressKey(formId),
+				progressStorageKey(formId),
 				{},
 			)
 			const progress = normalizeSavedProgress(parsed)
@@ -238,7 +227,7 @@ export function FormFill({ formId, navigate }: Props) {
 		if (!form || submitted || currentIndex < 0) return
 		if (Object.keys(values).length === 0) return
 		const timer = setTimeout(() => {
-			writeJsonToStorage(progressKey(formId), {
+			writeJsonToStorage(progressStorageKey(formId), {
 				values,
 				currentIndex,
 				savedAt: Date.now(),
@@ -253,13 +242,6 @@ export function FormFill({ formId, navigate }: Props) {
 			setTimeout(() => inputRef.current?.focus(), 350)
 		}
 	}, [currentIndex])
-
-	// Check if form is closed (client-side)
-	const isFormClosed = () => {
-		if (settings.closesAt && Date.now() > settings.closesAt) return true
-		if (settings.opensAt && Date.now() < settings.opensAt) return true
-		return false
-	}
 
 	const validateCurrent = useCallback((): boolean => {
 		if (currentIndex < 0 || currentIndex >= visibleFields.length) return true
@@ -300,11 +282,10 @@ export function FormFill({ formId, navigate }: Props) {
 			const responseJson = buildResponseJson(values, meta)
 
 			// Duplicate detection — warn if identical response submitted within 5 minutes
-			const dupKey = `koraforms-dup-${formId}`
+			const dupKey = duplicateSubmissionStorageKey(formId)
 			try {
 				const { hash, time } = readJsonFromStorage<{ hash?: number; time?: number }>(dupKey, {})
-				const responseHash = simpleHash(responseJson)
-				if (hash === responseHash && typeof time === 'number' && Date.now() - time < 5 * 60 * 1000) {
+				if (isDuplicateSubmission({ hash, time }, responseJson, Date.now())) {
 					const confirmed = window.confirm('It looks like you already submitted this exact response. Submit again?')
 					if (!confirmed) return
 				}
@@ -316,9 +297,9 @@ export function FormFill({ formId, navigate }: Props) {
 				.then(() => {
 					setSubmitted(true)
 					// Clear saved progress on successful submission
-					removeStorageItem(progressKey(formId))
+					removeStorageItem(progressStorageKey(formId))
 					// Store hash for duplicate detection
-					writeJsonToStorage(dupKey, { hash: simpleHash(responseJson), time: Date.now() })
+					writeJsonToStorage(dupKey, { hash: hashString(responseJson), time: Date.now() })
 				})
 				.catch((err) => setSubmitError(err.message || 'Failed to submit. Please try again.'))
 				.finally(() => setIsSubmitting(false))
@@ -434,7 +415,7 @@ export function FormFill({ formId, navigate }: Props) {
 	}
 
 	// Form closed check (client-side)
-	if (isFormClosed()) {
+	if (isFormUnavailable(settings, Date.now())) {
 		return (
 			<div className="flex items-center justify-center min-h-screen px-4" style={themeVars as React.CSSProperties}>
 				<div className="text-center animate-fade-in max-w-md">
@@ -543,7 +524,7 @@ export function FormFill({ formId, navigate }: Props) {
 						</button>
 						<button
 							onClick={() => {
-								removeStorageItem(progressKey(formId))
+								removeStorageItem(progressStorageKey(formId))
 								setShowResumePrompt(false)
 							}}
 							className="inline-flex items-center gap-2 rounded-xl border-2 border-gray-200 dark:border-gray-700 px-6 py-3 text-sm font-medium text-gray-500 dark:text-gray-400 transition-smooth hover:border-gray-300 active:scale-[0.98]"
