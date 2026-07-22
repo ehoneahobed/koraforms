@@ -2,12 +2,17 @@
 # Apply with: az containerapp update --name koraforms --resource-group koraforms-rg --yaml containerapp.yaml
 #
 # This file configures:
-#   - Volume mount for SQLite persistence (Azure Files)
-#   - Scale-to-zero with HTTP scaling rule
+#   - Production PostgreSQL persistence
+#   - Runtime secrets
+#   - HTTP ingress for app traffic and WebSocket sync
+#   - Conservative autoscaling
 #   - WebSocket transport support
 #
 # Portable: when migrating to AWS/GCP, this file is replaced by their
 # equivalent (ECS task definition, Cloud Run YAML) — the Dockerfile stays the same.
+#
+# Do not use Azure Files for SQLite. SMB locking semantics are unsafe for
+# SQLite, and ephemeral container storage loses production data on replacement.
 
 properties:
   configuration:
@@ -21,6 +26,10 @@ properties:
     secrets:
       - name: kora-auth-secret
         value: "" # Set via: az containerapp secret set --name koraforms --resource-group koraforms-rg --secrets kora-auth-secret=<value>
+      - name: kora-metrics-token
+        value: "" # Set via: az containerapp secret set --name koraforms --resource-group koraforms-rg --secrets kora-metrics-token=<value>
+      - name: database-url
+        value: "" # Set via: az containerapp secret set --name koraforms --resource-group koraforms-rg --secrets database-url=<postgres-url>
   template:
     containers:
       - name: koraforms
@@ -31,22 +40,19 @@ properties:
         env:
           - name: KORA_AUTH_SECRET
             secretRef: kora-auth-secret
-          - name: DB_PATH
-            value: /data/koraforms-server.db
+          - name: KORA_METRICS_TOKEN
+            secretRef: kora-metrics-token
+          - name: DATABASE_URL
+            secretRef: database-url
           - name: NODE_ENV
             value: production
           - name: PORT
             value: "3001"
-        volumeMounts:
-          - volumeName: data
-            mountPath: /data
-    volumes:
-      - name: data
-        storageType: AzureFile
-        storageName: koraformsstorage
+          - name: PUBLIC_URL
+            value: "" # Set to https://your-production-domain
     scale:
-      minReplicas: 0
-      maxReplicas: 3
+      minReplicas: 1
+      maxReplicas: 5
       rules:
         - name: http-rule
           http:

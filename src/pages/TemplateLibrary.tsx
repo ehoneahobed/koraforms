@@ -387,14 +387,19 @@ function PrivateTemplatePreview({
 	const modal = (
 		<div className="fixed inset-0 z-50 flex items-center justify-center p-4">
 			<div className="absolute inset-0 bg-slate-950/35 backdrop-blur-sm" onClick={onClose} />
-			<div className="relative flex max-h-[88vh] w-full max-w-5xl flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl shadow-slate-900/20 dark:border-gray-800 dark:bg-gray-950">
+			<div
+				role="dialog"
+				aria-modal="true"
+				aria-labelledby="private-template-preview-title"
+				className="relative flex max-h-[88vh] w-full max-w-5xl flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl shadow-slate-900/20 dark:border-gray-800 dark:bg-gray-950"
+			>
 				<div className="flex items-start justify-between gap-4 border-b border-slate-100 px-6 py-5 dark:border-gray-900">
 					<div className="min-w-0">
 						<div className="mb-2 flex flex-wrap items-center gap-2">
 							<span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600 dark:bg-gray-900 dark:text-gray-400">{metadata.category}</span>
 							<span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 dark:bg-emerald-900/25 dark:text-emerald-300">{metadata.estimatedMinutes} min</span>
 						</div>
-						<h2 className="truncate text-[24px] font-bold tracking-[-0.01em] text-slate-950 dark:text-white">{template.title}</h2>
+						<h2 id="private-template-preview-title" className="truncate text-[24px] font-bold tracking-[-0.01em] text-slate-950 dark:text-white">{template.title}</h2>
 						<p className="mt-1 max-w-2xl text-[14px] leading-6 text-slate-500 dark:text-gray-400">{template.description}</p>
 					</div>
 					<button

@@ -16,10 +16,13 @@
 #   AZURE_ENV            — Container Apps environment (default: koraforms-env)
 #   AZURE_APP            — Container app name (default: koraforms)
 #   KORA_AUTH_SECRET     — Auth JWT secret (generated if not set)
+#   KORA_METRICS_TOKEN   — Bearer token for /api/ops/diagnostics (generated if not set)
+#   DATABASE_URL         — PostgreSQL connection string for production persistence
+#   PUBLIC_URL           — Public origin, e.g. https://forms.example.com
+#   ALLOW_EPHEMERAL_SQLITE=true — allow non-production ephemeral SQLite deployment
 #
 # Note: SQLite + Azure Files (SMB) is incompatible due to POSIX locking.
-# The app uses ephemeral storage (data lives as long as the container).
-# For production persistence, set DATABASE_URL to a PostgreSQL connection string.
+# Public releases must use PostgreSQL. Ephemeral SQLite is only acceptable for demos.
 #
 set -euo pipefail
 
@@ -37,10 +40,36 @@ if [ -z "${KORA_AUTH_SECRET:-}" ]; then
   echo ""
 fi
 
+if [ -z "${KORA_METRICS_TOKEN:-}" ]; then
+  KORA_METRICS_TOKEN=$(openssl rand -base64 48)
+  echo "Generated KORA_METRICS_TOKEN (save this):"
+  echo "  $KORA_METRICS_TOKEN"
+  echo ""
+fi
+
+if [ -z "${DATABASE_URL:-}" ] && [ "${ALLOW_EPHEMERAL_SQLITE:-false}" != "true" ]; then
+  cat >&2 <<'EOF'
+DATABASE_URL is required for a public release deployment.
+
+Azure Container Apps filesystem storage is not durable enough for production
+KoraForms data, and SQLite on Azure Files is unsafe because SMB does not provide
+the locking semantics SQLite relies on.
+
+Set DATABASE_URL to a PostgreSQL connection string, or run a temporary demo with:
+  ALLOW_EPHEMERAL_SQLITE=true ./scripts/deploy-azure.sh
+EOF
+  exit 1
+fi
+
 echo "==> Deploying KoraForms to Azure Container Apps"
 echo "    Region: $LOCATION"
 echo "    Resource Group: $RG"
 echo "    App: $APP_NAME"
+if [ -n "${DATABASE_URL:-}" ]; then
+  echo "    Database: PostgreSQL"
+else
+  echo "    Database: ephemeral SQLite (demo only)"
+fi
 echo ""
 
 # 0. Ensure required providers are registered
@@ -77,6 +106,22 @@ fi
 
 # 3. Deploy container app (builds from source using Dockerfile)
 echo "==> Deploying container app (building from source)..."
+ENV_VARS=(
+  "KORA_AUTH_SECRET=$KORA_AUTH_SECRET"
+  "KORA_METRICS_TOKEN=$KORA_METRICS_TOKEN"
+  "NODE_ENV=production"
+)
+
+if [ -n "${PUBLIC_URL:-}" ]; then
+  ENV_VARS+=("PUBLIC_URL=$PUBLIC_URL")
+fi
+
+if [ -n "${DATABASE_URL:-}" ]; then
+  ENV_VARS+=("DATABASE_URL=$DATABASE_URL")
+else
+  ENV_VARS+=("DB_PATH=/tmp/koraforms-server.db")
+fi
+
 az containerapp up \
   --name "$APP_NAME" \
   --resource-group "$RG" \
@@ -84,19 +129,67 @@ az containerapp up \
   --source . \
   --target-port 3001 \
   --ingress external \
-  --env-vars \
-    "KORA_AUTH_SECRET=$KORA_AUTH_SECRET" \
-    "DB_PATH=/data/koraforms-server.db" \
-    "NODE_ENV=production"
+  --env-vars "${ENV_VARS[@]}"
 
-# 4. Keep exactly 1 replica (prevent scale-to-zero data loss with ephemeral SQLite)
-echo "==> Configuring scale..."
-az containerapp update \
+echo "==> Storing runtime secrets in Container Apps..."
+SECRET_ARGS=(
+  "kora-auth-secret=$KORA_AUTH_SECRET"
+  "kora-metrics-token=$KORA_METRICS_TOKEN"
+)
+if [ -n "${DATABASE_URL:-}" ]; then
+  SECRET_ARGS+=("database-url=$DATABASE_URL")
+fi
+
+az containerapp secret set \
   --name "$APP_NAME" \
   --resource-group "$RG" \
-  --min-replicas 1 \
-  --max-replicas 1 \
+  --secrets "${SECRET_ARGS[@]}" \
   --output none
+
+SECRET_ENV_VARS=(
+  "KORA_AUTH_SECRET=secretref:kora-auth-secret"
+  "KORA_METRICS_TOKEN=secretref:kora-metrics-token"
+  "NODE_ENV=production"
+)
+
+if [ -n "${PUBLIC_URL:-}" ]; then
+  SECRET_ENV_VARS+=("PUBLIC_URL=$PUBLIC_URL")
+fi
+
+if [ -n "${DATABASE_URL:-}" ]; then
+  SECRET_ENV_VARS+=("DATABASE_URL=secretref:database-url")
+  az containerapp update \
+    --name "$APP_NAME" \
+    --resource-group "$RG" \
+    --remove-env-vars DB_PATH \
+    --set-env-vars "${SECRET_ENV_VARS[@]}" \
+    --output none
+else
+  SECRET_ENV_VARS+=("DB_PATH=/tmp/koraforms-server.db")
+  az containerapp update \
+    --name "$APP_NAME" \
+    --resource-group "$RG" \
+    --set-env-vars "${SECRET_ENV_VARS[@]}" \
+    --output none
+fi
+
+# 4. Configure scale.
+echo "==> Configuring scale..."
+if [ -n "${DATABASE_URL:-}" ]; then
+  az containerapp update \
+    --name "$APP_NAME" \
+    --resource-group "$RG" \
+    --min-replicas "${AZURE_MIN_REPLICAS:-1}" \
+    --max-replicas "${AZURE_MAX_REPLICAS:-5}" \
+    --output none
+else
+  az containerapp update \
+    --name "$APP_NAME" \
+    --resource-group "$RG" \
+    --min-replicas 1 \
+    --max-replicas 1 \
+    --output none
+fi
 
 # 5. Get the URL
 echo ""
@@ -107,7 +200,11 @@ FQDN=$(az containerapp show \
   --query "properties.configuration.ingress.fqdn" -o tsv)
 echo "    URL: https://$FQDN"
 echo ""
+echo "==> Health check..."
+curl -fsS "https://$FQDN/health" >/dev/null
+echo "    /health OK"
+echo ""
 echo "Next steps:"
 echo "  - Set custom domain: az containerapp hostname add --name $APP_NAME --resource-group $RG --hostname your-domain.com"
 echo "  - View logs: az containerapp logs show --name $APP_NAME --resource-group $RG --follow"
-echo "  - For persistent data: set DATABASE_URL env var pointing to PostgreSQL"
+echo "  - Test diagnostics: curl -H \"Authorization: Bearer <KORA_METRICS_TOKEN>\" https://$FQDN/api/ops/diagnostics"

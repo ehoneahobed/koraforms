@@ -59,5 +59,16 @@ jobs:
           appSourcePath: ${{ github.workspace }}
           environmentVariables: >-
             KORA_AUTH_SECRET=secretref:kora-auth-secret
+            KORA_METRICS_TOKEN=secretref:kora-metrics-token
             DATABASE_URL=secretref:database-url
             NODE_ENV=production
+            PUBLIC_URL=${{ vars.PUBLIC_URL }}
+
+      - name: Health check
+        run: |
+          FQDN=$(az containerapp show \
+            --name "${{ vars.AZURE_APP || 'koraforms' }}" \
+            --resource-group "${{ vars.AZURE_RG || 'koraforms-rg' }}" \
+            --query "properties.configuration.ingress.fqdn" \
+            --output tsv)
+          curl -fsS "https://${FQDN}/health"

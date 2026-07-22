@@ -221,7 +221,10 @@ export function Templates({ navigate, userId, isPublic }: TemplatesProps) {
 					templateKey={previewTemplate}
 					onClose={() => setPreviewTemplate(null)}
 					onUse={(key) => navigate(userId ? `/forms/new/edit?template=${key}` : `/signup?template=${key}`)}
-					onViewDetails={(key) => navigate(`/templates/${key}`)}
+					onViewDetails={(key) => {
+						setPreviewTemplate(null)
+						navigate(`/templates/${key}`)
+					}}
 					isAuthenticated={!!userId}
 				/>
 			)}
@@ -338,6 +341,9 @@ function TemplatePreviewModal({
 
 			{/* Modal card */}
 			<div
+				role="dialog"
+				aria-modal="true"
+				aria-labelledby="template-preview-title"
 				className="relative w-full max-w-xl bg-white dark:bg-surface-elevated-dark rounded-2xl shadow-2xl overflow-hidden animate-fade-in"
 				onClick={(e) => e.stopPropagation()}
 			>
@@ -346,7 +352,7 @@ function TemplatePreviewModal({
 				<div className="px-6 pt-5 pb-4 border-b border-gray-100 dark:border-gray-800">
 					<div className="flex items-start justify-between">
 						<div className="flex-1 min-w-0 pr-4">
-							<h2 className="text-lg font-bold text-gray-900 dark:text-white tracking-tight mb-1">
+							<h2 id="template-preview-title" className="text-lg font-bold text-gray-900 dark:text-white tracking-tight mb-1">
 								{template.title}
 							</h2>
 							<p className="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">
@@ -356,6 +362,7 @@ function TemplatePreviewModal({
 						<button
 							onClick={onClose}
 							className="flex-shrink-0 w-8 h-8 rounded-xl flex items-center justify-center text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-smooth"
+							aria-label="Close preview"
 						>
 							<X className="h-4 w-4" />
 						</button>

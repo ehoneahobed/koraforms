@@ -20,6 +20,7 @@ import { parseFormFields, parseFormSettings, safeJsonParse, serializeFormSetting
 import { FORM_PASSWORD_ALGORITHM, hasFormAccessPassword, stripFormAccessSecrets } from './src/domain/formPassword'
 import { validatePublishedResponsePayload } from './src/domain/responseValidation'
 import { buildSideEffectDeliveryJobs, isDeliverableWebhookUrl, isPublicWebhookIpAddress, normalizeWebhookConfig } from './src/domain/responseSideEffects'
+import { buildOpsDiagnosticsSnapshot } from './src/domain/opsDiagnostics'
 
 // ---------------------------------------------------------------------------
 // KoraForms schema (shared between client and server for materialized tables)
@@ -385,6 +386,23 @@ async function main(): Promise<void> {
 					} catch (err) {
 						console.error('Auth route error:', err)
 						return withCors({ status: 500, body: { error: 'Internal auth error' } })
+					}
+				},
+			},
+			// Operational diagnostics — protected aggregate health snapshot.
+			{
+				path: '/api/ops/diagnostics',
+				async handle(req: ProductionHttpRouteRequest): Promise<ProductionHttpRouteResponse> {
+					if (req.method === 'OPTIONS') return withCors({ status: 204 })
+					if (req.method !== 'GET') return withCors({ status: 405, body: { error: 'Method not allowed' } })
+					if (!isAuthorizedOpsRequest(req)) {
+						return withCors({ status: 401, body: { error: 'Unauthorized' } })
+					}
+					try {
+						return withCors({ status: 200, body: await buildOpsDiagnostics(store) })
+					} catch (err) {
+						console.error('Operational diagnostics error:', err)
+						return withCors({ status: 500, body: { error: 'Internal server error' } })
 					}
 				},
 			},
@@ -863,6 +881,42 @@ function getHeaderValue(headers: Record<string, unknown>, name: string): string 
 	const direct = headers[name] ?? headers[name.toLowerCase()] ?? headers[name.toUpperCase()]
 	if (Array.isArray(direct)) return String(direct[0] || '')
 	return typeof direct === 'string' ? direct : ''
+}
+
+function isAuthorizedOpsRequest(req: ProductionHttpRouteRequest): boolean {
+	const expected = process.env.KORA_METRICS_TOKEN || process.env.KORA_ADMIN_TOKEN
+	if (!expected) return process.env.NODE_ENV !== 'production'
+	const authHeader = getHeaderValue(req.headers || {}, 'authorization')
+	const token = authHeader.toLowerCase().startsWith('bearer ') ? authHeader.slice(7).trim() : ''
+	if (!token) return false
+	return constantTimeStringEqual(token, expected)
+}
+
+function constantTimeStringEqual(actual: string, expected: string): boolean {
+	const actualBuffer = Buffer.from(actual)
+	const expectedBuffer = Buffer.from(expected)
+	if (actualBuffer.length !== expectedBuffer.length) return false
+	return timingSafeEqual(actualBuffer, expectedBuffer)
+}
+
+async function buildOpsDiagnostics(store: ServerStore) {
+	const [
+		allForms,
+		responses,
+		resumeLinks,
+		sideEffects,
+	] = await Promise.all([
+		store.queryCollection('forms', { includeDeleted: false }),
+		store.queryCollection('responses', { includeDeleted: false }),
+		store.queryCollection('resume_links', { includeDeleted: false }),
+		store.queryCollection('side_effect_deliveries', { includeDeleted: false }),
+	])
+	return buildOpsDiagnosticsSnapshot({
+		forms: allForms as Array<{ status?: unknown }>,
+		responses: responses as Array<{ clientSubmissionId?: unknown }>,
+		resumeLinks: resumeLinks as Array<{ status?: unknown }>,
+		sideEffects,
+	})
 }
 
 function clampNumber(value: number, min: number, max: number): number {
