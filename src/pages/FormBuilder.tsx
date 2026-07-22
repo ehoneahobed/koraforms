@@ -121,6 +121,7 @@ export function FormBuilder({ formId, navigate, userId }: Props) {
 	const [activeField, setActiveField] = useState<string | null>(null)
 	const [previewMode, setPreviewMode] = useState<'desktop' | 'mobile'>('desktop')
 	const [fieldSearch, setFieldSearch] = useState('')
+	const [importError, setImportError] = useState('')
 	const themePreset = getThemeById(theme)
 	// Share modal is now handled by FormPageShell
 
@@ -288,6 +289,7 @@ export function FormBuilder({ formId, navigate, userId }: Props) {
 	}
 
 	const importFormJson = () => {
+		setImportError('')
 		const input = document.createElement('input')
 		input.type = 'file'
 		input.accept = '.json,.koraform.json'
@@ -298,7 +300,7 @@ export function FormBuilder({ formId, navigate, userId }: Props) {
 			reader.onload = () => {
 				const data = parseImportedFormFile(String(reader.result || ''))
 				if (!data) {
-					alert('Failed to parse the file. Make sure it\'s a valid KoraForms JSON file.')
+					setImportError('Import failed. Choose a valid KoraForms JSON file and try again.')
 					return
 				}
 				if (data.title) setTitle(data.title)
@@ -306,6 +308,10 @@ export function FormBuilder({ formId, navigate, userId }: Props) {
 				if (data.fields) setFields(data.fields)
 				if (data.theme) setTheme(data.theme)
 				if (data.settings) setSettings(data.settings)
+				setImportError('')
+			}
+			reader.onerror = () => {
+				setImportError('Import failed. The selected file could not be read.')
 			}
 			reader.readAsText(file)
 		}
@@ -421,6 +427,18 @@ export function FormBuilder({ formId, navigate, userId }: Props) {
 
 			{/* Center Panel: Form preview */}
 			<div className="flex-1 min-w-0 overflow-y-auto px-8 py-6">
+				{importError && (
+					<div className="mx-auto mb-4 flex max-w-[640px] items-start justify-between gap-3 rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700 shadow-sm dark:border-red-900/30 dark:bg-red-900/15 dark:text-red-300">
+						<p>{importError}</p>
+						<button
+							onClick={() => setImportError('')}
+							className="rounded-lg p-1 text-red-500 transition-colors hover:bg-red-100 hover:text-red-700 dark:text-red-300 dark:hover:bg-red-900/30"
+							aria-label="Dismiss import error"
+						>
+							<X className="h-4 w-4" />
+						</button>
+					</div>
+				)}
 				{/* Form preview card */}
 				<div className={`mx-auto ${previewMode === 'desktop' ? 'max-w-[640px]' : 'max-w-sm'} transition-all duration-300`}>
 					{/* Form header */}
