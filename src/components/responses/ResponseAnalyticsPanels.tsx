@@ -45,6 +45,10 @@ const TIME_RANGE_OPTIONS: { value: TimeRange; label: string }[] = [
 export function AnalyticsView({ fields, responses }: { fields: FormField[]; responses: Record<string, unknown>[] }) {
 	const [range, setRange] = useState<TimeRange>('30d')
 	const [filters, setFilters] = useState<ResponseFilter[]>([])
+	const [filterFieldId, setFilterFieldId] = useState('')
+	const [filterValue, setFilterValue] = useState('')
+	const filterableFields = useMemo(() => responseFields(fields), [fields])
+	const selectedFilterField = filterableFields.find(field => field.id === filterFieldId) ?? filterableFields[0]
 
 	const summary = useMemo(() => {
 		return buildResponsesAnalyticsSummary(fields, responses, range, filters)
@@ -72,6 +76,14 @@ export function AnalyticsView({ fields, responses }: { fields: FormField[]; resp
 		return calculateTrendPct(current, previous, range)
 	}
 
+	const addFilter = () => {
+		const value = filterValue.trim()
+		if (!selectedFilterField || !value) return
+		setFilters(current => [...current, { fieldId: selectedFilterField.id, value }])
+		setFilterValue('')
+		setFilterFieldId(selectedFilterField.id)
+	}
+
 	return (
 		<div className="space-y-5 animate-fade-in">
 			{/* Time range selector */}
@@ -89,17 +101,55 @@ export function AnalyticsView({ fields, responses }: { fields: FormField[]; resp
 					const field = fields.find(fld => fld.id === f.fieldId)
 					return (
 						<span key={i} className="inline-flex items-center gap-1.5 rounded-lg bg-brand-50 dark:bg-brand-900/20 text-brand-700 dark:text-brand-300 px-2.5 py-1.5 text-xs font-medium">
-							{field?.label || f.fieldId}: {f.value}
-							<button onClick={() => setFilters(filters.filter((_, j) => j !== i))} className="p-0.5 hover:text-red-500 transition-colors">&times;</button>
+							{field ? staticFieldLabel(field) : f.fieldId}: {f.value}
+							<button
+								onClick={() => setFilters(filters.filter((_, j) => j !== i))}
+								className="p-0.5 hover:text-red-500 transition-colors"
+								aria-label={`Remove ${field ? staticFieldLabel(field) : f.fieldId} filter`}
+							>
+								&times;
+							</button>
 						</span>
 					)
 				})}
-				<div className="relative">
-					<select value="" onChange={e => { if (!e.target.value) return; const fieldId = e.target.value; const val = prompt(`Filter "${fields.find(f => f.id === fieldId)?.label || fieldId}" contains:`); if (val) setFilters([...filters, { fieldId, value: val }]); e.target.value = '' }} className="text-xs rounded-lg border border-dashed border-gray-300 dark:border-gray-700 bg-transparent px-2.5 py-1.5 text-gray-500 dark:text-gray-400 outline-none cursor-pointer">
-						<option value="">+ Filter</option>
-						{responseFields(fields).map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
+				<form
+					onSubmit={event => {
+						event.preventDefault()
+						addFilter()
+					}}
+					className="inline-flex min-w-0 flex-wrap items-center gap-1 rounded-xl border border-dashed border-gray-300 bg-white p-1 dark:border-gray-700 dark:bg-surface-elevated-dark"
+				>
+					<select
+						value={selectedFilterField?.id ?? ''}
+						onChange={event => setFilterFieldId(event.target.value)}
+						disabled={filterableFields.length === 0}
+						className="h-8 rounded-lg border-0 bg-transparent px-2 text-xs font-medium text-gray-500 outline-none disabled:opacity-50 dark:text-gray-400"
+						aria-label="Filter field"
+					>
+						{filterableFields.length === 0 ? (
+							<option value="">No fields</option>
+						) : filterableFields.map(field => (
+							<option key={field.id} value={field.id}>{staticFieldLabel(field)}</option>
+						))}
 					</select>
-				</div>
+					<div className="relative">
+						<Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+						<input
+							value={filterValue}
+							onChange={event => setFilterValue(event.target.value)}
+							placeholder="Contains..."
+							className="h-8 w-36 rounded-lg border-0 bg-slate-50 pl-7 pr-2 text-xs text-gray-700 outline-none placeholder:text-gray-400 focus:bg-white focus:ring-2 focus:ring-brand-500/10 dark:bg-gray-900 dark:text-gray-200 dark:focus:bg-gray-900"
+							aria-label="Filter value"
+						/>
+					</div>
+					<button
+						type="submit"
+						disabled={!selectedFilterField || filterValue.trim().length === 0}
+						className="h-8 rounded-lg bg-slate-950 px-3 text-xs font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-white dark:text-slate-950 dark:hover:bg-gray-100"
+					>
+						Add
+					</button>
+				</form>
 				{filters.length > 0 && <button onClick={() => setFilters([])} className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors">Clear all</button>}
 			</div>
 
