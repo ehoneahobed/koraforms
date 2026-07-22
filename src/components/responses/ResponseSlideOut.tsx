@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { ChevronLeft, ChevronRight, Copy, Globe, Monitor, Smartphone, Timer, Trash2, X } from 'lucide-react'
 import type { FormField } from '../../types'
 import { parseResponseData as parsePersistedResponseData } from '../../domain/forms'
@@ -28,6 +28,7 @@ export function ResponseSlideOut({
 	onNavigate,
 	onDelete,
 }: ResponseSlideOutProps) {
+	const [confirmingDelete, setConfirmingDelete] = useState(false)
 	const currentIndex = responses.findIndex(response => response.id === responseId)
 	const response = responses[currentIndex]
 	const hasPrev = currentIndex > 0
@@ -48,6 +49,10 @@ export function ResponseSlideOut({
 		window.addEventListener('keydown', handleKeyDown)
 		return () => window.removeEventListener('keydown', handleKeyDown)
 	}, [currentIndex, hasPrev, hasNext, onClose, onNavigate, responses])
+
+	useEffect(() => {
+		setConfirmingDelete(false)
+	}, [responseId])
 
 	const copyToClipboard = () => {
 		const lines: string[] = []
@@ -183,28 +188,50 @@ export function ResponseSlideOut({
 				</div>
 
 				<div className="flex items-center justify-between px-6 py-3 border-t border-gray-100 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/30 shrink-0">
-					<div className="flex items-center gap-1.5">
-						<button
-							onClick={copyToClipboard}
-							className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-						>
-							<Copy className="h-3.5 w-3.5" />
-							Copy
-						</button>
-						<button
-							onClick={() => { if (window.confirm('Delete this response?')) onDelete(String(response.id)) }}
-							className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-500 dark:text-gray-400 hover:text-red-500 px-3 py-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-						>
-							<Trash2 className="h-3.5 w-3.5" />
-							Delete
-						</button>
-					</div>
-					<button
-						onClick={onClose}
-						className="inline-flex items-center rounded-xl bg-brand-600 px-4 py-2 text-xs font-semibold text-white hover:bg-brand-500 transition-colors shadow-sm"
-					>
-						Done
-					</button>
+					{confirmingDelete ? (
+						<div className="flex w-full items-center justify-between gap-3">
+							<p className="text-xs font-medium text-gray-600 dark:text-gray-300">Delete this response?</p>
+							<div className="flex items-center gap-2">
+								<button
+									onClick={() => setConfirmingDelete(false)}
+									className="inline-flex items-center rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-600 transition-colors hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
+								>
+									Cancel
+								</button>
+								<button
+									onClick={() => onDelete(String(response.id))}
+									className="inline-flex items-center rounded-xl bg-red-600 px-3 py-2 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-red-500"
+								>
+									Delete
+								</button>
+							</div>
+						</div>
+					) : (
+						<>
+							<div className="flex items-center gap-1.5">
+								<button
+									onClick={copyToClipboard}
+									className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+								>
+									<Copy className="h-3.5 w-3.5" />
+									Copy
+								</button>
+								<button
+									onClick={() => setConfirmingDelete(true)}
+									className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-500 dark:text-gray-400 hover:text-red-500 px-3 py-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+								>
+									<Trash2 className="h-3.5 w-3.5" />
+									Delete
+								</button>
+							</div>
+							<button
+								onClick={onClose}
+								className="inline-flex items-center rounded-xl bg-brand-600 px-4 py-2 text-xs font-semibold text-white hover:bg-brand-500 transition-colors shadow-sm"
+							>
+								Done
+							</button>
+						</>
+					)}
 				</div>
 			</div>
 		</>
