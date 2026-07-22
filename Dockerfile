@@ -23,6 +23,9 @@ RUN corepack enable && corepack prepare pnpm@10.11.0 --activate
 # Copy built assets and server files
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/server.ts ./
+COPY --from=builder /app/src/domain ./src/domain
+COPY --from=builder /app/src/types.ts ./src/types.ts
+COPY --from=builder /app/src/utils/formula.ts ./src/utils/formula.ts
 COPY --from=builder /app/package.json ./
 COPY --from=builder /app/pnpm-lock.yaml ./
 COPY --from=builder /app/.npmrc ./
