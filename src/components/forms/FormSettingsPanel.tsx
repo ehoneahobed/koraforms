@@ -1,4 +1,6 @@
+import { useEffect, useState } from 'react'
 import { Ban, Calendar, Globe, Lock } from 'lucide-react'
+import { clearFormAccessPassword, hasFormAccessPassword, withFormAccessPasswordHash } from '../../domain/formPassword'
 import { updateSettingsValue, datetimeLocalToTimestamp, timestampToDatetimeLocal } from '../../features/forms/shell'
 import { THEME_PRESETS } from '../../themes'
 import type { FormSettings as FormSettingsType } from '../../types'
@@ -165,21 +167,86 @@ export function FormSettingsPanel({
 									className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-[14px] text-slate-700 outline-none focus:border-brand-300 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300"
 								/>
 							</label>
-							<label className="block">
-								<span className="mb-1.5 block text-[12px] font-medium text-slate-500 dark:text-gray-400">Password</span>
-								<input
-									type="password"
-									value={settings.password || ''}
-									onChange={(event) => updateSetting('password', event.target.value || undefined)}
-									placeholder="Optional"
-									className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-[14px] text-slate-700 outline-none focus:border-brand-300 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300"
-								/>
-							</label>
+							<PasswordProtectionControl
+								settings={settings}
+								onSettingsChange={onSettingsChange}
+							/>
 						</div>
 					</div>
 				</div>
 			</div>
 		</section>
+	)
+}
+
+function PasswordProtectionControl({
+	settings,
+	onSettingsChange,
+}: {
+	settings: FormSettingsType
+	onSettingsChange: (settings: FormSettingsType) => void
+}) {
+	const [draft, setDraft] = useState('')
+	const [status, setStatus] = useState('')
+	const hasPassword = hasFormAccessPassword(settings)
+
+	useEffect(() => {
+		setDraft('')
+		setStatus(hasPassword ? 'Password set' : '')
+	}, [hasPassword, settings.passwordHash, settings.passwordSalt, settings.password])
+
+	const commitDraft = async () => {
+		const nextPassword = draft.trim()
+		if (!nextPassword) return
+		setStatus('Securing password...')
+		try {
+			onSettingsChange(await withFormAccessPasswordHash(settings, nextPassword))
+			setDraft('')
+			setStatus('Password set')
+		} catch {
+			setStatus('Could not secure password in this browser')
+		}
+	}
+
+	return (
+		<div>
+			<div className="mb-1.5 flex items-center justify-between gap-3">
+				<span className="block text-[12px] font-medium text-slate-500 dark:text-gray-400">Password</span>
+				{hasPassword && (
+					<button
+						type="button"
+						onClick={() => {
+							onSettingsChange(clearFormAccessPassword(settings))
+							setDraft('')
+							setStatus('')
+						}}
+						className="text-[12px] font-medium text-slate-400 transition-colors hover:text-brand-600"
+					>
+						Remove
+					</button>
+				)}
+			</div>
+			<input
+				type="password"
+				value={draft}
+				onChange={(event) => {
+					setDraft(event.target.value)
+					setStatus(event.target.value ? 'Press Enter or leave the field to save' : hasPassword ? 'Password set' : '')
+				}}
+				onBlur={() => { commitDraft().catch(() => {}) }}
+				onKeyDown={(event) => {
+					if (event.key === 'Enter') {
+						event.preventDefault()
+						commitDraft().catch(() => {})
+					}
+				}}
+				placeholder={hasPassword ? 'Enter a new password to replace it' : 'Optional'}
+				className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-[14px] text-slate-700 outline-none focus:border-brand-300 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300"
+			/>
+			{status && (
+				<p className="mt-1.5 text-[11px] text-slate-400 dark:text-gray-500">{status}</p>
+			)}
+		</div>
 	)
 }
 

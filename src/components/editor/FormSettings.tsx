@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Settings, Link as LinkIcon, Check, Copy, Ban, Globe, ChevronDown, Webhook, Plus, Trash2, X, Mail, Lock, Code, Calendar, Clock } from 'lucide-react'
 import { copyToClipboard } from '../../utils/clipboard'
+import { clearFormAccessPassword, hasFormAccessPassword, withFormAccessPasswordHash } from '../../domain/formPassword'
 import type { FormSettings as FormSettingsType, WebhookConfig } from '../../types'
 import { LANGUAGES } from '../../types'
 
@@ -58,10 +59,10 @@ export function FormSettings({
 		}
 	}
 
-	const copyUrl = () => {
+	const copyUrl = async () => {
 		if (!formUrl) return
-		copyToClipboard(formUrl)
-		setCopied(true)
+		const ok = await copyToClipboard(formUrl)
+		setCopied(ok)
 		setTimeout(() => setCopied(false), 2000)
 	}
 
@@ -505,23 +506,10 @@ export function FormSettings({
 					{/* Divider */}
 					<div className="border-t border-gray-100 dark:border-gray-800" />
 
-					{/* Password protection */}
-					<div>
-						<label className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 flex items-center gap-1.5">
-							<Lock className="h-3.5 w-3.5" />
-							Password protection
-						</label>
-						<p className="text-[10px] text-gray-400 dark:text-gray-500 mb-3">
-							Require a password to access this form. Leave blank for no protection.
-						</p>
-						<input
-							type="text"
-							value={settings.password || ''}
-							onChange={(e) => updateSetting('password', e.target.value)}
-							placeholder="Enter a password..."
-							className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2 text-sm outline-none focus:border-brand-400 dark:focus:border-brand-600 transition-smooth text-gray-700 dark:text-gray-300 placeholder-gray-400"
-						/>
-					</div>
+					<PasswordProtectionSettings
+						settings={settings}
+						onSettingsChange={onSettingsChange}
+					/>
 
 					{/* Divider */}
 					<div className="border-t border-gray-100 dark:border-gray-800" />
@@ -546,6 +534,81 @@ export function FormSettings({
 					</div>
 				</div>
 			)}
+		</div>
+	)
+}
+
+function PasswordProtectionSettings({
+	settings,
+	onSettingsChange,
+}: {
+	settings: FormSettingsType
+	onSettingsChange: (settings: FormSettingsType) => void
+}) {
+	const [draft, setDraft] = useState('')
+	const [status, setStatus] = useState('')
+	const hasPassword = hasFormAccessPassword(settings)
+
+	useEffect(() => {
+		setDraft('')
+		setStatus(hasPassword ? 'Password set' : '')
+	}, [hasPassword, settings.passwordHash, settings.passwordSalt, settings.password])
+
+	const commitDraft = async () => {
+		const nextPassword = draft.trim()
+		if (!nextPassword) return
+		setStatus('Securing password...')
+		try {
+			onSettingsChange(await withFormAccessPasswordHash(settings, nextPassword))
+			setDraft('')
+			setStatus('Password set')
+		} catch {
+			setStatus('Could not secure password in this browser')
+		}
+	}
+
+	return (
+		<div>
+			<div className="mb-2 flex items-center justify-between gap-3">
+				<label className="flex items-center gap-1.5 text-xs font-medium text-gray-500 dark:text-gray-400">
+					<Lock className="h-3.5 w-3.5" />
+					Password protection
+				</label>
+				{hasPassword && (
+					<button
+						type="button"
+						onClick={() => {
+							onSettingsChange(clearFormAccessPassword(settings))
+							setDraft('')
+							setStatus('')
+						}}
+						className="text-[11px] font-medium text-gray-400 transition-smooth hover:text-brand-500"
+					>
+						Remove
+					</button>
+				)}
+			</div>
+			<p className="mb-3 text-[10px] text-gray-400 dark:text-gray-500">
+				Require a password to access this form. New passwords are stored as hashes.
+			</p>
+			<input
+				type="password"
+				value={draft}
+				onChange={(e) => {
+					setDraft(e.target.value)
+					setStatus(e.target.value ? 'Press Enter or leave the field to save' : hasPassword ? 'Password set' : '')
+				}}
+				onBlur={() => { commitDraft().catch(() => {}) }}
+				onKeyDown={(event) => {
+					if (event.key === 'Enter') {
+						event.preventDefault()
+						commitDraft().catch(() => {})
+					}
+				}}
+				placeholder={hasPassword ? 'Enter a new password to replace it' : 'Enter a password...'}
+				className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700 outline-none transition-smooth placeholder-gray-400 focus:border-brand-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:focus:border-brand-600"
+			/>
+			{status && <p className="mt-1.5 text-[10px] text-gray-400 dark:text-gray-500">{status}</p>}
 		</div>
 	)
 }

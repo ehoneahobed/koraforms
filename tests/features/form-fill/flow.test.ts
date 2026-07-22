@@ -113,6 +113,15 @@ test('resumeIndexForValues skips section breaks and resumes at first unanswered 
 	assert.equal(resumeIndexForValues(fields, { name: 'Ada', email: 'ada@example.com', phone: '1234567' }), 3)
 })
 
+test('resumeIndexForValues never resumes to hidden fields', () => {
+	const hiddenFields: FormField[] = [
+		{ id: 'name', type: 'text', label: 'Name', required: true },
+		{ id: 'region', type: 'hidden', label: 'Region', required: false, defaultValue: 'north' },
+		{ id: 'notes', type: 'textarea', label: 'Notes', required: true },
+	]
+	assert.equal(resumeIndexForValues(hiddenFields, { name: 'Ada' }), 1)
+})
+
 test('validateField returns field-specific errors', () => {
 	assert.deepEqual(validateField(fields[0]!, ''), { valid: true, error: '' })
 	assert.deepEqual(validateField(fields[1]!, ''), { valid: false, error: 'This field is required' })

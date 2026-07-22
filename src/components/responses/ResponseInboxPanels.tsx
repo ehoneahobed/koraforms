@@ -10,6 +10,7 @@ import {
 	formatTimeSince,
 	staticFieldLabel,
 } from '../../features/responses/utils'
+import { copyToClipboard } from '../../utils/clipboard'
 
 export function ResponseOverview({
 	totalResponses,
@@ -287,12 +288,13 @@ export function EmptyState({
 }) {
 	const [copied, setCopied] = useState(false)
 
-	const copyLink = () => {
+	const copyLink = async () => {
 		const slug = String(form.slug || formId)
 		const url = `${window.location.origin}/f/${slug}`
-		navigator.clipboard.writeText(url)
-		setCopied(true)
-		setTimeout(() => setCopied(false), 2000)
+		if (await copyToClipboard(url)) {
+			setCopied(true)
+			setTimeout(() => setCopied(false), 2000)
+		}
 	}
 
 	return (

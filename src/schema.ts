@@ -1,7 +1,7 @@
 import { defineSchema, t } from 'korajs'
 
 export default defineSchema({
-	version: 5,
+	version: 12,
 	collections: {
 		// A form definition (e.g. "Customer Feedback", "Event Registration")
 		forms: {
@@ -44,9 +44,112 @@ export default defineSchema({
 				// JSON-encoded key-value pairs: { fieldId: value }
 				data: t.string().default('{}'),
 				submittedBy: t.string().default(''),
-				submittedAt: t.timestamp().auto(),
+				clientSubmissionId: t.string().default(''),
+				submittedAt: t.number(),
 			},
-			indexes: ['formId', 'submittedAt'],
+			indexes: ['formId', 'clientSubmissionId', 'submittedAt'],
+		},
+
+		// Sanitized, immutable public form payloads cached in Kora's local
+		// database so respondents can open known forms without connectivity.
+		public_form_versions: {
+			fields: {
+				slug: t.string(),
+				formId: t.string(),
+				versionHash: t.string(),
+				title: t.string(),
+				description: t.string().default(''),
+				fields: t.string().default('[]'),
+				settings: t.string().default('{}'),
+				theme: t.string().default('red'),
+				status: t.enum(['published', 'revoked']).default('published'),
+				cachedAt: t.number(),
+				publishedAt: t.number(),
+			},
+			indexes: ['slug', 'formId', 'versionHash', 'status', 'cachedAt'],
+			constraints: [{
+				type: 'unique',
+				fields: ['slug', 'versionHash'],
+				onConflict: 'first-write-wins',
+			}],
+		},
+
+		// Respondent-side durable outbox. These records live in Kora's offline
+		// database first, then an app-level bridge finalizes them with the server.
+		response_submissions: {
+			fields: {
+				formId: t.string(),
+				slug: t.string().default(''),
+				formVersionHash: t.string().default(''),
+				data: t.string().default('{}'),
+				clientSubmissionId: t.string(),
+				localStatus: t.enum(['submitted_locally', 'syncing', 'accepted', 'rejected', 'failed']).default('submitted_locally'),
+				attempts: t.number().default(0),
+				lastError: t.string().default(''),
+				submittedAt: t.number(),
+				updatedAt: t.number(),
+			},
+			indexes: ['formId', 'slug', 'clientSubmissionId', 'localStatus', 'submittedAt'],
+			constraints: [{
+				type: 'unique',
+				fields: ['formId', 'clientSubmissionId'],
+				onConflict: 'first-write-wins',
+			}],
+		},
+
+		public_form_progress: {
+			fields: {
+				slug: t.string(),
+				formId: t.string(),
+				answers: t.string().default('{}'),
+				currentIndex: t.number().default(-1),
+				resumeId: t.string().default(''),
+				resumeUrl: t.string().default(''),
+				savedAt: t.number(),
+				updatedAt: t.number(),
+			},
+			indexes: ['slug', 'formId', 'resumeId', 'updatedAt'],
+			constraints: [{
+				type: 'unique',
+				fields: ['slug'],
+				onConflict: 'last-write-wins',
+			}],
+		},
+
+		resume_links: {
+			fields: {
+				token: t.string(),
+				formId: t.string(),
+				slug: t.string(),
+				data: t.string().default('{}'),
+				status: t.enum(['active', 'expired', 'revoked']).default('active'),
+				createdAt: t.number(),
+				updatedAt: t.number(),
+				expiresAt: t.number(),
+			},
+			indexes: ['token', 'formId', 'slug', 'status', 'expiresAt', 'updatedAt'],
+			constraints: [{
+				type: 'unique',
+				fields: ['token'],
+				onConflict: 'first-write-wins',
+			}],
+		},
+
+		side_effect_deliveries: {
+			fields: {
+				responseId: t.string(),
+				formId: t.string(),
+				type: t.enum(['webhook', 'email']),
+				target: t.string(),
+				payload: t.string().default('{}'),
+				status: t.enum(['pending', 'delivering', 'delivered', 'failed']).default('pending'),
+				attempts: t.number().default(0),
+				lastError: t.string().default(''),
+				nextAttemptAt: t.number(),
+				createdAt: t.number(),
+				updatedAt: t.number(),
+			},
+			indexes: ['responseId', 'formId', 'type', 'status', 'nextAttemptAt', 'createdAt'],
 		},
 	},
 })

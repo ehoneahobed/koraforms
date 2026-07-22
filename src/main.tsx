@@ -1,20 +1,19 @@
-import { KoraProvider } from '@korajs/react'
-import { StrictMode } from 'react'
+import { lazy, StrictMode, Suspense } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
-import { app } from './kora'
-import { authClient } from './auth'
-import { App } from './App'
 import { PublicFormPage } from './pages/PublicFormPage'
 import { PublicResultsPage } from './pages/PublicResultsPage'
 import { BrandLoader } from './components/shared/BrandLoader'
+import { registerOfflineServiceWorker } from './utils/serviceWorker'
 import './index.css'
 
-// Auto sign-out when the server rejects our auth token (e.g. after a database reset)
-app.events.on('sync:auth-failed', () => {
-	console.warn('Sync auth failed — signing out stale session')
-	authClient.signOut()
-})
+const AuthenticatedAppShell = lazy(() =>
+	import('./AuthenticatedAppShell').then(module => ({
+		default: module.AuthenticatedAppShell,
+	})),
+)
+
+registerOfflineServiceWorker()
 
 createRoot(document.getElementById('root')!).render(
 	<StrictMode>
@@ -27,12 +26,9 @@ createRoot(document.getElementById('root')!).render(
 
 				{/* Everything else goes through KoraProvider for offline-first sync */}
 				<Route path="/*" element={
-					<KoraProvider
-						app={app}
-						fallback={<BrandLoader />}
-					>
-						<App />
-					</KoraProvider>
+					<Suspense fallback={<BrandLoader />}>
+						<AuthenticatedAppShell />
+					</Suspense>
 				} />
 			</Routes>
 		</BrowserRouter>

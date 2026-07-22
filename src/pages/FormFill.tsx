@@ -8,9 +8,10 @@ import { PoweredByBadge } from '../components/shared/PoweredByBadge'
 import { QuestionInput } from '../components/form-fill/QuestionInput'
 import { SubmittedScreen } from '../components/form-fill/SubmittedScreen'
 import { setPageMeta } from '../utils/meta'
+import { copyToClipboard } from '../utils/clipboard'
 import { InlineLoader } from '../components/shared/BrandLoader'
 import { isDisplayOnlyField, parseFormFields, parseFormSettings, safeJsonParse } from '../domain/forms'
-import { readJsonFromStorage, removeStorageItem, writeJsonToStorage } from '../utils/storage'
+import { readJsonFromStorage, writeJsonToStorage } from '../utils/storage'
 import {
 	buildPrefillValues,
 	buildResponseJson,
@@ -23,7 +24,6 @@ import {
 	normalizeSavedProgress,
 	optionForShortcutKey,
 	parseOptionList,
-	progressStorageKey,
 	progressForIndex,
 	questionNumberAtIndex,
 	resumeIndexForValues,
@@ -31,6 +31,34 @@ import {
 	validateField,
 	yesNoValueForKey,
 } from '../features/form-fill/flow'
+import {
+	countPendingResponseSubmissions,
+	countRejectedResponseSubmissions,
+	clearPublicFormProgress,
+	enqueueResponseSubmission,
+	flushResponseSubmissions,
+	publicFormRecordToForm,
+	readLatestPublicFormVersion,
+	readPublicFormProgress,
+	savePublicFormVersion,
+	savePublicFormProgress,
+	shouldQueueSubmission,
+	type PublicFormSource,
+} from '../features/form-fill/offlineRuntime'
+import { createSubmissionId } from '../features/form-fill/offlineModel'
+import { deleteLocalBlobsFromResponseJson, hydrateLocalBlobValues } from '../features/form-fill/blobStorage'
+
+function isPermanentHttpSubmissionStatus(status: number): boolean {
+	return status >= 400 && status < 500 && status !== 408 && status !== 429
+}
+
+type PendingDuplicateSubmission = {
+	realFormId: string
+	responseJson: string
+	duplicateKey: string
+	clientSubmissionId: string
+	clientSubmittedAt: number
+}
 
 interface Props {
 	formId: string
@@ -41,22 +69,64 @@ export function FormFill({ formId, navigate }: Props) {
 	// Fetch form from the public API (no Kora sync required)
 	const [form, setForm] = useState<Record<string, unknown> | null>(null)
 	const [remoteFetched, setRemoteFetched] = useState(false)
+	const [formSource, setFormSource] = useState<PublicFormSource | null>(null)
+	const [pendingOfflineSubmissions, setPendingOfflineSubmissions] = useState(0)
+	const [rejectedOfflineSubmissions, setRejectedOfflineSubmissions] = useState(0)
+	const [lastSyncMessage, setLastSyncMessage] = useState('')
+	const [formVersionHash, setFormVersionHash] = useState('')
+	const [formPersistedOffline, setFormPersistedOffline] = useState(false)
+	const [offlinePersistenceError, setOfflinePersistenceError] = useState(false)
 
 	useEffect(() => {
 		const controller = new AbortController()
+		let mounted = true
+		readLatestPublicFormVersion(formId)
+			.then((local) => {
+				if (!mounted || !local) return
+				setForm(publicFormRecordToForm(local))
+				setFormVersionHash(local.versionHash)
+				setFormSource('local')
+				setFormPersistedOffline(true)
+			})
+			.catch(() => {
+				setOfflinePersistenceError(true)
+				// Local Kora store is unavailable; network fetch below can still load the form.
+			})
 		fetch(`/api/public/forms/${encodeURIComponent(formId)}`, { signal: controller.signal })
 			.then((res) => {
 				if (res.ok) return res.json()
 				return null
 			})
 			.then((data) => {
-				if (data && !data.error) setForm(data)
+				if (mounted && data && !data.error) {
+					setForm(data)
+					setFormSource('network')
+					savePublicFormVersion(formId, data)
+						.then((record) => {
+							if (!record || !mounted) return
+							setFormVersionHash(record.versionHash)
+							setFormPersistedOffline(true)
+							setOfflinePersistenceError(false)
+						})
+						.catch((error) => {
+							if (mounted) setOfflinePersistenceError(true)
+							console.warn(
+								'[koraforms] Public form could not be persisted in Kora local database.',
+								error instanceof Error ? error.message : error,
+							)
+						})
+				}
 			})
 			.catch(() => {
 				// Fetch failed (offline, network error)
 			})
-			.finally(() => setRemoteFetched(true))
-		return () => controller.abort()
+			.finally(() => {
+				if (mounted) setRemoteFetched(true)
+			})
+		return () => {
+			mounted = false
+			controller.abort()
+		}
 	}, [formId])
 
 	// Set page meta when form loads (for client-side navigation and tab title)
@@ -70,23 +140,121 @@ export function FormFill({ formId, navigate }: Props) {
 		}
 	}, [form, formId])
 
-	const submitResponse = useCallback(async (realFormId: string, responseData: string) => {
+	const submitResponseToServer = useCallback(async (
+		realFormId: string,
+		responseData: string,
+		clientSubmissionId?: string,
+		clientSubmittedAt = Date.now(),
+	) => {
 		// Submit via REST API — no Kora worker needed
+		const hydratedResponseData = await hydrateLocalBlobValues(responseData)
 		const res = await fetch('/api/public/responses', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ formId: realFormId, data: responseData }),
+			body: JSON.stringify({ formId: realFormId, data: hydratedResponseData, clientSubmissionId, clientSubmittedAt }),
 		})
 		if (!res.ok) {
 			const err = await res.json().catch(() => ({ error: 'Unknown error' }))
-			throw new Error(err.error || 'Failed to submit response')
+			const error = new Error(err.error || 'Failed to submit response') as Error & { permanent?: boolean; status?: number }
+			error.status = res.status
+			error.permanent = isPermanentHttpSubmissionStatus(res.status)
+			throw error
 		}
 	}, [])
+
+	const refreshPendingOfflineCount = useCallback(() => {
+		Promise.all([
+			countPendingResponseSubmissions(),
+			countRejectedResponseSubmissions(),
+		])
+			.then(([pending, rejected]) => {
+				setPendingOfflineSubmissions(pending)
+				setRejectedOfflineSubmissions(rejected)
+			})
+			.catch(() => {
+				setPendingOfflineSubmissions(0)
+				setRejectedOfflineSubmissions(0)
+			})
+	}, [])
+
+	const flushOfflineSubmissions = useCallback(async () => {
+		if (typeof navigator !== 'undefined' && !navigator.onLine) {
+			refreshPendingOfflineCount()
+			return
+		}
+		const before = await countPendingResponseSubmissions()
+		if (before === 0) {
+			refreshPendingOfflineCount()
+			return
+		}
+		const result = await flushResponseSubmissions(
+			item => submitResponseToServer(item.formId, item.data, item.clientSubmissionId, item.submittedAt),
+		)
+		refreshPendingOfflineCount()
+		if (result.synced > 0 && result.remaining === 0) {
+			setLastSyncMessage(`${result.synced} offline response${result.synced === 1 ? '' : 's'} synced`)
+		} else if (result.rejected > 0) {
+			setLastSyncMessage(`${result.rejected} response${result.rejected === 1 ? '' : 's'} needs review before it can sync`)
+		} else if (result.failed > 0) {
+			setLastSyncMessage(`${result.remaining} response${result.remaining === 1 ? '' : 's'} still waiting to sync`)
+		}
+	}, [refreshPendingOfflineCount, submitResponseToServer])
+
+	useEffect(() => {
+		refreshPendingOfflineCount()
+		flushOfflineSubmissions().catch(() => refreshPendingOfflineCount())
+		const handleOnline = () => {
+			flushOfflineSubmissions().catch(() => refreshPendingOfflineCount())
+		}
+		window.addEventListener('online', handleOnline)
+		return () => {
+			window.removeEventListener('online', handleOnline)
+		}
+	}, [flushOfflineSubmissions, refreshPendingOfflineCount])
+
+	const submitResponse = useCallback(async (
+		realFormId: string,
+		responseData: string,
+		clientSubmissionId: string,
+		clientSubmittedAt: number,
+	): Promise<'accepted' | 'queued'> => {
+		try {
+			if (typeof navigator !== 'undefined' && !navigator.onLine) {
+				await enqueueResponseSubmission({
+					formId: realFormId,
+					slug: formId,
+					formVersionHash,
+					data: responseData,
+					clientSubmissionId,
+					now: clientSubmittedAt,
+				})
+				refreshPendingOfflineCount()
+				return 'queued'
+			}
+			await submitResponseToServer(realFormId, responseData, clientSubmissionId, clientSubmittedAt)
+			return 'accepted'
+		} catch (error) {
+			if (shouldQueueSubmission(error, typeof navigator === 'undefined' ? true : navigator.onLine)) {
+				await enqueueResponseSubmission({
+					formId: realFormId,
+					slug: formId,
+					formVersionHash,
+					data: responseData,
+					clientSubmissionId,
+					now: clientSubmittedAt,
+				})
+				refreshPendingOfflineCount()
+				return 'queued'
+			}
+			throw error
+		}
+	}, [formId, formVersionHash, refreshPendingOfflineCount, submitResponseToServer])
 
 	const [currentIndex, setCurrentIndex] = useState(-1) // -1 = welcome screen
 	const [values, setValues] = useState<Record<string, string>>({})
 	const [errors, setErrors] = useState<Record<string, string>>({})
 	const [submitted, setSubmitted] = useState(false)
+	const [submissionStatus, setSubmissionStatus] = useState<'accepted' | 'queued'>('accepted')
 	const [direction, setDirection] = useState<'forward' | 'back'>('forward')
 	const [showResumePrompt, setShowResumePrompt] = useState(false)
 	const [savedProgress, setSavedProgress] = useState<{ values: Record<string, string>; currentIndex: number; savedAt: number } | null>(null)
@@ -101,6 +269,10 @@ export function FormFill({ formId, navigate }: Props) {
 	const [showSaveLink, setShowSaveLink] = useState(false)
 	const [resumeUrl, setResumeUrl] = useState('')
 	const [isSaving, setIsSaving] = useState(false)
+	const [saveMessage, setSaveMessage] = useState('')
+	const [resumeLinkCopied, setResumeLinkCopied] = useState(false)
+	const [resumeLinkCopyFailed, setResumeLinkCopyFailed] = useState(false)
+	const [duplicateSubmissionDraft, setDuplicateSubmissionDraft] = useState<PendingDuplicateSubmission | null>(null)
 
 	const fields: FormField[] = useMemo(() => parseFormFields(form?.fields), [form?.fields])
 	const settings: FormSettings = useMemo(() => parseFormSettings(form?.settings), [form?.settings])
@@ -109,7 +281,7 @@ export function FormFill({ formId, navigate }: Props) {
 
 	// Compute visible fields based on conditional logic
 	const visibleFields = useMemo(
-		() => fields.filter(f => isFieldVisible(f, values)),
+		() => fields.filter(f => f.type !== 'hidden' && isFieldVisible(f, values)),
 		[fields, values],
 	)
 
@@ -156,43 +328,50 @@ export function FormFill({ formId, navigate }: Props) {
 	// Progress saving — check for saved progress on mount
 	useEffect(() => {
 		if (!form) return
-		try {
-			const parsed = readJsonFromStorage<{ values?: Record<string, string>; currentIndex?: number; savedAt?: number }>(
-				progressStorageKey(formId),
-				{},
-			)
-			const progress = normalizeSavedProgress(parsed)
-			if (progress) {
+		let mounted = true
+		readPublicFormProgress(formId)
+			.then((record) => {
+				if (!mounted || !record) return
+				const progress = normalizeSavedProgress({
+					values: safeJsonParse<Record<string, string>>(record.answers, {}),
+					currentIndex: record.currentIndex,
+					savedAt: record.updatedAt || record.savedAt,
+				})
+				if (!progress) return
 				setSavedProgress(progress)
+				setResumeId(record.resumeId || null)
+				setResumeUrl(record.resumeUrl || '')
 				setShowResumePrompt(true)
-			}
-		} catch {
-			// ignore
+			})
+			.catch(() => {
+				// Progress is best-effort; the live form remains usable.
+			})
+		return () => {
+			mounted = false
 		}
 	}, [form, formId])
 
-	// Check for resume URL parameter (save & continue later)
-	useEffect(() => {
-		if (!form || fields.length === 0) return
-		const searchParams = new URLSearchParams(window.location.search)
-		const resume = searchParams.get('resume')
-		if (!resume) return
-		setResumeId(resume)
-		fetch(`/api/public/partial/${encodeURIComponent(resume)}`)
-			.then(res => res.ok ? res.json() : null)
-			.then(data => {
-				if (data?.data) {
-					const saved = safeJsonParse<Record<string, string>>(data.data, {})
-					setValues(saved)
-					setCurrentIndex(resumeIndexForValues(fields, saved))
-				}
-			})
-			.catch(() => {})
-	}, [fields, form])
+	const persistProgress = useCallback((nextResumeId = resumeId, nextResumeUrl = resumeUrl) => {
+		if (!form || Object.keys(values).length === 0) return Promise.resolve()
+		return savePublicFormProgress({
+			slug: formId,
+			formId: String(form.id || formId),
+			values,
+			currentIndex,
+			resumeId: nextResumeId,
+			resumeUrl: nextResumeUrl,
+		}).then(() => undefined)
+	}, [currentIndex, form, formId, resumeId, resumeUrl, values])
 
-	// Save and continue later — POST current progress to server
+	// Save and continue later — persist locally first, then create a shared link online.
 	const saveAndContinueLater = useCallback(async () => {
 		if (!form || Object.keys(values).length === 0) return
+		setSaveMessage('')
+		await persistProgress()
+		if (typeof navigator !== 'undefined' && !navigator.onLine) {
+			setSaveMessage('Progress is saved on this device. Shared resume links are created when you are online.')
+			return
+		}
 		setIsSaving(true)
 		try {
 			const realFormId = String(form.id || formId)
@@ -209,29 +388,52 @@ export function FormFill({ formId, navigate }: Props) {
 				const result = await res.json()
 				setResumeId(result.resumeId)
 				setResumeUrl(result.resumeUrl)
+				await persistProgress(result.resumeId, result.resumeUrl)
 				setShowSaveLink(true)
 			}
 		} catch {
-			// Save failed silently — local progress still works
+			setSaveMessage('Progress is saved on this device. The shared resume link could not be created yet.')
 		} finally {
 			setIsSaving(false)
 		}
-	}, [form, formId, values, resumeId])
+	}, [form, formId, persistProgress, values, resumeId])
 
 	// Progress saving — auto-save on every answer change (debounced)
 	useEffect(() => {
 		if (!form || submitted || currentIndex < 0) return
 		if (Object.keys(values).length === 0) return
 		const timer = setTimeout(() => {
-			writeJsonToStorage(progressStorageKey(formId), {
-				values,
-				currentIndex,
-				savedAt: Date.now(),
-			})
+			persistProgress().catch(() => {})
 		}, 500)
 		return () => clearTimeout(timer)
-	}, [values, currentIndex, form, submitted, formId])
+	}, [values, currentIndex, form, submitted, persistProgress])
 
+	// Check for resume URL parameter (save & continue later)
+	useEffect(() => {
+		if (!form || fields.length === 0) return
+		const searchParams = new URLSearchParams(window.location.search)
+		const resume = searchParams.get('resume')
+		if (!resume) return
+		setResumeId(resume)
+		fetch(`/api/public/partial/${encodeURIComponent(resume)}?slug=${encodeURIComponent(formId)}`)
+			.then(res => res.ok ? res.json() : null)
+			.then(data => {
+				if (data?.data) {
+					const saved = safeJsonParse<Record<string, string>>(data.data, {})
+					setValues(saved)
+					setCurrentIndex(resumeIndexForValues(fields, saved))
+					savePublicFormProgress({
+						slug: formId,
+						formId: String(form.id || formId),
+						values: saved,
+						currentIndex: resumeIndexForValues(fields, saved),
+						resumeId: resume,
+						resumeUrl: window.location.href,
+					}).catch(() => {})
+				}
+			})
+			.catch(() => {})
+	}, [fields, form, formId])
 	// Focus input when question changes
 	useEffect(() => {
 		if (currentIndex >= 0) {
@@ -255,7 +457,26 @@ export function FormFill({ formId, navigate }: Props) {
 
 	const [submitError, setSubmitError] = useState('')
 
+	const finalizeSubmission = useCallback((draft: PendingDuplicateSubmission) => {
+		setDuplicateSubmissionDraft(null)
+		setSubmitError('')
+		setIsSubmitting(true)
+		submitResponse(draft.realFormId, draft.responseJson, draft.clientSubmissionId, draft.clientSubmittedAt)
+			.then((status) => {
+				setSubmissionStatus(status)
+				setSubmitted(true)
+				if (status === 'accepted') {
+					deleteLocalBlobsFromResponseJson(draft.responseJson).catch(() => {})
+				}
+				clearPublicFormProgress(formId).catch(() => {})
+				writeJsonToStorage(draft.duplicateKey, { hash: hashString(draft.responseJson), time: Date.now() })
+			})
+			.catch((err) => setSubmitError(err.message || 'Failed to submit. Please try again.'))
+			.finally(() => setIsSubmitting(false))
+	}, [formId, submitResponse])
+
 	const goNext = useCallback(() => {
+		if (duplicateSubmissionDraft) return
 		if (currentIndex === -1) {
 			setDirection('forward')
 			setCurrentIndex(0)
@@ -276,31 +497,22 @@ export function FormFill({ formId, navigate }: Props) {
 				lang: navigator.language,
 			})
 			const responseJson = buildResponseJson(values, meta)
+			const clientSubmissionId = createSubmissionId()
+			const clientSubmittedAt = now
 
 			// Duplicate detection — warn if identical response submitted within 5 minutes
 			const dupKey = duplicateSubmissionStorageKey(formId)
 			try {
 				const { hash, time } = readJsonFromStorage<{ hash?: number; time?: number }>(dupKey, {})
 				if (isDuplicateSubmission({ hash, time }, responseJson, Date.now())) {
-					const confirmed = window.confirm('It looks like you already submitted this exact response. Submit again?')
-					if (!confirmed) return
+					setDuplicateSubmissionDraft({ realFormId, responseJson, duplicateKey: dupKey, clientSubmissionId, clientSubmittedAt })
+					return
 				}
 			} catch { /* ignore */ }
 
-			setSubmitError('')
-			setIsSubmitting(true)
-			submitResponse(realFormId, responseJson)
-				.then(() => {
-					setSubmitted(true)
-					// Clear saved progress on successful submission
-					removeStorageItem(progressStorageKey(formId))
-					// Store hash for duplicate detection
-					writeJsonToStorage(dupKey, { hash: hashString(responseJson), time: Date.now() })
-				})
-				.catch((err) => setSubmitError(err.message || 'Failed to submit. Please try again.'))
-				.finally(() => setIsSubmitting(false))
+			finalizeSubmission({ realFormId, responseJson, duplicateKey: dupKey, clientSubmissionId, clientSubmittedAt })
 		}
-	}, [currentIndex, visibleFields.length, formId, values, form, validateCurrent, submitResponse])
+	}, [currentIndex, duplicateSubmissionDraft, visibleFields.length, formId, values, form, validateCurrent, finalizeSubmission])
 
 	const goBack = useCallback(() => {
 		if (currentIndex > 0) {
@@ -457,6 +669,12 @@ export function FormFill({ formId, navigate }: Props) {
 							if (res.ok) {
 								const fullForm = await res.json()
 								setForm(fullForm)
+								setFormSource('network')
+								savePublicFormVersion(formId, fullForm)
+									.then((record) => {
+										if (record?.versionHash) setFormVersionHash(record.versionHash)
+									})
+									.catch(() => {})
 								setPasswordUnlocked(true)
 							} else {
 								setPasswordError(true)
@@ -520,7 +738,8 @@ export function FormFill({ formId, navigate }: Props) {
 						</button>
 						<button
 							onClick={() => {
-								removeStorageItem(progressStorageKey(formId))
+								deleteLocalBlobsFromResponseJson(JSON.stringify(savedProgress.values)).catch(() => {})
+								clearPublicFormProgress(formId).catch(() => {})
 								setShowResumePrompt(false)
 							}}
 							className="inline-flex items-center gap-2 rounded-xl border-2 border-gray-200 dark:border-gray-700 px-6 py-3 text-sm font-medium text-gray-500 dark:text-gray-400 transition-smooth hover:border-gray-300 active:scale-[0.98]"
@@ -548,9 +767,13 @@ export function FormFill({ formId, navigate }: Props) {
 				allowMultiple={allowMultiple}
 				showResultsLink={settings.publicResults && settings.showResultsAfterSubmit}
 				formSlug={String(form?.slug || formId)}
+				submissionStatus={submissionStatus}
+				pendingOfflineSubmissions={pendingOfflineSubmissions}
+				rejectedOfflineSubmissions={rejectedOfflineSubmissions}
 				onReset={() => {
 					setValues({})
 					setSubmitted(false)
+					setSubmissionStatus('accepted')
 					setCurrentIndex(-1)
 				}}
 			/>
@@ -623,8 +846,25 @@ export function FormFill({ formId, navigate }: Props) {
 							<ArrowRight className="h-4 w-4" />
 						</button>
 						<p className="mt-6 text-xs text-gray-400 dark:text-gray-500">
-							{totalQuestions} question{totalQuestions !== 1 ? 's' : ''} &middot; Works offline
+							{totalQuestions} question{totalQuestions !== 1 ? 's' : ''} &middot; {
+								formSource === 'local'
+									? 'Loaded from this device'
+									: formPersistedOffline
+										? 'Available offline'
+										: offlinePersistenceError
+											? 'Offline access is unavailable'
+											: 'Preparing offline access...'
+							}
 						</p>
+						{(pendingOfflineSubmissions > 0 || rejectedOfflineSubmissions > 0 || lastSyncMessage) && (
+							<p className="mt-2 text-xs text-gray-400 dark:text-gray-500">
+								{pendingOfflineSubmissions > 0
+									? `${pendingOfflineSubmissions} response${pendingOfflineSubmissions === 1 ? '' : 's'} waiting to sync`
+									: rejectedOfflineSubmissions > 0
+										? `${rejectedOfflineSubmissions} response${rejectedOfflineSubmissions === 1 ? '' : 's'} needs review`
+									: lastSyncMessage}
+							</p>
+						)}
 					</div>
 				</div>
 			</div>
@@ -642,6 +882,38 @@ export function FormFill({ formId, navigate }: Props) {
 	const pipedLabel = pipeValues(fieldText.label, values, fields)
 	// Determine text direction
 	const isRtl = language ? isRtlLanguage(language) : false
+	const duplicateSubmissionDialog = duplicateSubmissionDraft ? (
+		<div className="fixed inset-0 z-[60] flex items-center justify-center bg-gray-950/35 px-4 backdrop-blur-sm animate-fade-in">
+			<div className="w-full max-w-md rounded-3xl border border-gray-200 bg-white p-6 shadow-2xl shadow-gray-900/15 dark:border-gray-800 dark:bg-gray-950">
+				<div className="mb-5 flex h-10 w-10 items-center justify-center rounded-2xl bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-300">
+					<RotateCcw className="h-5 w-5" />
+				</div>
+				<h3 className="text-lg font-semibold text-gray-950 dark:text-gray-50">
+					This response was already submitted
+				</h3>
+				<p className="mt-2 text-sm leading-6 text-gray-500 dark:text-gray-400">
+					This device recently saved the same answers. You can review the form, or submit another copy if this is intentional.
+				</p>
+				<div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+					<button
+						type="button"
+						onClick={() => setDuplicateSubmissionDraft(null)}
+						className="inline-flex items-center justify-center rounded-xl border border-gray-200 px-4 py-2.5 text-sm font-medium text-gray-600 transition-smooth hover:border-gray-300 hover:text-gray-900 active:scale-[0.98] dark:border-gray-800 dark:text-gray-300 dark:hover:border-gray-700 dark:hover:text-gray-50"
+					>
+						Review answers
+					</button>
+					<button
+						type="button"
+						onClick={() => finalizeSubmission(duplicateSubmissionDraft)}
+						disabled={isSubmitting}
+						className="inline-flex items-center justify-center rounded-xl bg-gray-950 px-4 py-2.5 text-sm font-medium text-white transition-smooth hover:bg-gray-800 active:scale-[0.98] disabled:opacity-60 dark:bg-white dark:text-gray-950 dark:hover:bg-gray-200"
+					>
+						{isSubmitting ? 'Submitting...' : 'Submit again'}
+					</button>
+				</div>
+			</div>
+		</div>
+	) : null
 
 	// Section break - full screen slide with title and description
 	if (field.type === 'section') {
@@ -703,6 +975,7 @@ export function FormFill({ formId, navigate }: Props) {
 						Powered by KoraForms
 					</span>
 				</div>
+				{duplicateSubmissionDialog}
 			</div>
 		)
 	}
@@ -782,6 +1055,7 @@ export function FormFill({ formId, navigate }: Props) {
 						Powered by KoraForms
 					</span>
 				</div>
+				{duplicateSubmissionDialog}
 			</div>
 		)
 	}
@@ -893,16 +1167,23 @@ export function FormFill({ formId, navigate }: Props) {
 			</div>
 
 			{/* Bottom bar */}
-			<div className="p-4 flex justify-center items-center gap-4">
-				<button
-					onClick={saveAndContinueLater}
-					disabled={isSaving || Object.keys(values).length === 0}
-					className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-smooth disabled:opacity-40"
-				>
-					<Bookmark className="h-3 w-3 inline mr-1" />
-					{isSaving ? 'Saving...' : 'Save & continue later'}
-				</button>
-				<PoweredByBadge slug={String(form?.slug || formId)} />
+			<div className="p-4 flex flex-col justify-center items-center gap-2">
+				<div className="flex justify-center items-center gap-4">
+					<button
+						onClick={saveAndContinueLater}
+						disabled={isSaving || Object.keys(values).length === 0}
+						className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-smooth disabled:opacity-40"
+					>
+						<Bookmark className="h-3 w-3 inline mr-1" />
+						{isSaving ? 'Saving...' : 'Save & continue later'}
+					</button>
+					<PoweredByBadge slug={String(form?.slug || formId)} />
+				</div>
+				{saveMessage && (
+					<p className="max-w-md text-center text-xs text-gray-400 dark:text-gray-500">
+						{saveMessage}
+					</p>
+				)}
 			</div>
 
 			{/* Save & continue later — resume URL overlay */}
@@ -935,18 +1216,25 @@ export function FormFill({ formId, navigate }: Props) {
 								onFocus={(e) => e.target.select()}
 							/>
 							<button
-								onClick={() => {
-									navigator.clipboard.writeText(resumeUrl).catch(() => {})
+								onClick={async () => {
+									const ok = await copyToClipboard(resumeUrl)
+									setResumeLinkCopied(ok)
+									setResumeLinkCopyFailed(!ok)
+									setTimeout(() => {
+										setResumeLinkCopied(false)
+										setResumeLinkCopyFailed(false)
+									}, 1600)
 								}}
 								className="shrink-0 inline-flex items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-2 text-xs font-medium text-white transition-smooth hover:bg-brand-500 active:scale-[0.96]"
 							>
-								<Copy className="h-3 w-3" />
-								Copy
+								{resumeLinkCopied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+								{resumeLinkCopied ? 'Copied' : resumeLinkCopyFailed ? 'Failed' : 'Copy'}
 							</button>
 						</div>
 					</div>
 				</div>
 			)}
+			{duplicateSubmissionDialog}
 		</div>
 	)
 }

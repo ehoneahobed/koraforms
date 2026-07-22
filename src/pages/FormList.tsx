@@ -132,12 +132,13 @@ export function FormList({ navigate, userId }: Props) {
 		duplicateForm(buildDuplicateFormPayload(form as FormRecord, userId))
 	}
 
-	const handleCopyLink = (form: Record<string, unknown>) => {
+	const handleCopyLink = async (form: Record<string, unknown>) => {
 		const identifier = publicFormIdentifier(form as FormRecord)
 		const link = `${window.location.origin}/f/${identifier}`
-		copyToClipboard(link)
-		setCopiedId(String(form.id))
-		setTimeout(() => setCopiedId(null), 2000)
+		if (await copyToClipboard(link)) {
+			setCopiedId(String(form.id))
+			setTimeout(() => setCopiedId(null), 2000)
+		}
 	}
 
 	const handleExportForm = (form: Record<string, unknown>) => {

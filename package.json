@@ -6,10 +6,13 @@
   "scripts": {
     "dev": "concurrently -k -n vite,server -c cyan,green \"vite\" \"node --import tsx --watch server.ts\"",
     "dev:vite": "vite",
+    "dev:e2e": "vite --host 127.0.0.1 --port 4175 --strictPort",
     "dev:server": "node --import tsx --watch server.ts",
     "build": "vite build",
+    "preview:e2e": "pnpm run build && vite preview --host 127.0.0.1 --port 4175 --strictPort",
     "typecheck": "tsc --noEmit",
     "test": "node scripts/run-tests.js",
+    "test:e2e": "playwright test",
     "check": "pnpm run typecheck && pnpm run test && pnpm run build",
     "start": "node --import tsx server.ts",
     "preview": "vite build && node --import tsx server.ts",
@@ -49,6 +52,7 @@
   },
   "devDependencies": {
     "@korajs/cli": "1.0.0-beta.0",
+    "@playwright/test": "^1.61.1",
     "@tailwindcss/vite": "^4.0.0",
     "@types/better-sqlite3": "^7.6.13",
     "@types/qrcode": "^1.5.6",

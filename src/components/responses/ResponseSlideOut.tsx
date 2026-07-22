@@ -10,6 +10,7 @@ import {
 	parseUA,
 	responseFields,
 } from '../../features/responses/utils'
+import { copyToClipboard as copyTextToClipboard } from '../../utils/clipboard'
 
 interface ResponseSlideOutProps {
 	responseId: string
@@ -54,7 +55,7 @@ export function ResponseSlideOut({
 		setConfirmingDelete(false)
 	}, [responseId])
 
-	const copyToClipboard = () => {
+	const copyToClipboard = async () => {
 		const lines: string[] = []
 		lines.push(`Response #${responseNumber}`)
 		if (submittedAt) lines.push(`Submitted: ${submittedAt.toLocaleString()}`)
@@ -69,7 +70,7 @@ export function ResponseSlideOut({
 			lines.push(`Duration: ${formatDuration(Math.round(meta.duration))}`)
 		}
 		if (uaInfo) lines.push(`Device: ${uaInfo.device} | Browser: ${uaInfo.browser} | OS: ${uaInfo.os}`)
-		navigator.clipboard.writeText(lines.join('\n'))
+		await copyTextToClipboard(lines.join('\n'))
 	}
 
 	if (!response) return null

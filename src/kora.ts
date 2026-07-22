@@ -13,7 +13,7 @@ export const app = createApp({
 	sync: {
 		url: syncUrl,
 		authClient: createKoraAuthSync({ authClient, schema }),
-		schemaVersion: 5,
+		schemaVersion: 12,
 		autoConnect: true,
 	},
 	store: {

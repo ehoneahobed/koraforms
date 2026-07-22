@@ -25,6 +25,7 @@ export function FormUrlPanel({
 }: FormUrlPanelProps) {
 	const [draftSlug, setDraftSlug] = useState(slug || generateSlug(title))
 	const [copied, setCopied] = useState(false)
+	const [copyFailed, setCopyFailed] = useState(false)
 	const isPublished = status === 'published'
 
 	useEffect(() => {
@@ -37,10 +38,14 @@ export function FormUrlPanel({
 		onSlugChange(sanitized)
 	}
 
-	const copyUrl = () => {
-		copyToClipboard(formUrl)
-		setCopied(true)
-		setTimeout(() => setCopied(false), 1600)
+	const copyUrl = async () => {
+		const ok = await copyToClipboard(formUrl)
+		setCopied(ok)
+		setCopyFailed(!ok)
+		setTimeout(() => {
+			setCopied(false)
+			setCopyFailed(false)
+		}, 1600)
 	}
 
 	return (
@@ -75,7 +80,7 @@ export function FormUrlPanel({
 						<div className="flex shrink-0 flex-wrap gap-2">
 							<button onClick={copyUrl} className="inline-flex items-center gap-2 kf-control px-4 py-2.5 text-[13px] font-semibold">
 								{copied ? <Check className="h-4 w-4 text-emerald-500" /> : <Copy className="h-4 w-4" />}
-								{copied ? 'Copied' : 'Copy'}
+								{copied ? 'Copied' : copyFailed ? 'Copy failed' : 'Copy'}
 							</button>
 							<a href={formUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 kf-control px-4 py-2.5 text-[13px] font-semibold">
 								<ExternalLink className="h-4 w-4" />

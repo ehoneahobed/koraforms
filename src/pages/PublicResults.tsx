@@ -21,6 +21,11 @@ interface ResultsData {
 		theme: string
 	}
 	responses: { data: string; submittedAt: number }[]
+	pagination?: {
+		limit: number
+		returned: number
+		hasMore: boolean
+	}
 }
 
 export function PublicResults({ slug, navigate }: Props) {
@@ -29,7 +34,7 @@ export function PublicResults({ slug, navigate }: Props) {
 	const [loading, setLoading] = useState(true)
 
 	useEffect(() => {
-		fetch(`/api/public/forms/${encodeURIComponent(slug)}/results`)
+		fetch(`/api/public/forms/${encodeURIComponent(slug)}/results?limit=500`)
 			.then(res => {
 				if (!res.ok) throw new Error(res.status === 403 ? 'Results are not public for this form.' : 'Form not found.')
 				return res.json()
@@ -63,6 +68,7 @@ export function PublicResults({ slug, navigate }: Props) {
 	const fields: FormField[] = parseFormFields(data.form.fields)
 
 	const responses = data.responses
+	const hasMoreResults = data.pagination?.hasMore === true
 	const themeVars = getThemeCSSVars(data.form.theme || 'blue')
 
 	return (
@@ -80,12 +86,18 @@ export function PublicResults({ slug, navigate }: Props) {
 						<span className="flex items-center gap-1.5">
 							<Users className="h-4 w-4" />
 							{responses.length} response{responses.length !== 1 ? 's' : ''}
+							{hasMoreResults ? ' shown' : ''}
 						</span>
 						<span className="flex items-center gap-1.5">
 							<BarChart3 className="h-4 w-4" />
 							Live results
 						</span>
 					</div>
+					{hasMoreResults && (
+						<p className="mt-3 text-xs text-gray-400 dark:text-gray-500">
+							Public results are capped to {data.pagination?.limit || responses.length} responses for fast loading.
+						</p>
+					)}
 				</div>
 			</div>
 

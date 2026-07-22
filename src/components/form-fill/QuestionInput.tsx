@@ -2,6 +2,14 @@ import { useEffect, useRef, useState, type ChangeEvent, type MouseEvent, type Re
 import { ArrowLeft, ArrowRight, Check, Star, Trash2, Upload, X } from 'lucide-react'
 import type { FormField } from '../../types'
 import {
+	deleteLocalBlob,
+	parseLocalBlobManifest,
+	readLocalBlob,
+	saveLocalBlob,
+	serializeLocalBlobManifest,
+	type LocalBlobManifest,
+} from '../../features/form-fill/blobStorage'
+import {
 	moveListItem,
 	parseLabelList,
 	parseMatrixAnswers,
@@ -346,6 +354,28 @@ function FileInput({
 	const maxSize = (field.maxSize || 10) * 1024 * 1024 // Convert MB to bytes
 	const [error, setError] = useState('')
 	const [preview, setPreview] = useState<string | null>(value || null)
+	const manifest = parseLocalBlobManifest(value)
+
+	useEffect(() => {
+		let objectUrl = ''
+		if (!manifest) {
+			setPreview(value && value.startsWith('data:image/') ? value : null)
+			return
+		}
+		readLocalBlob(manifest.blobId)
+			.then(record => {
+				if (!record || !record.type.startsWith('image/')) {
+					setPreview(null)
+					return
+				}
+				objectUrl = URL.createObjectURL(record.blob)
+				setPreview(objectUrl)
+			})
+			.catch(() => setPreview(null))
+		return () => {
+			if (objectUrl) URL.revokeObjectURL(objectUrl)
+		}
+	}, [manifest?.blobId, value])
 
 	const handleFile = (e: ChangeEvent<HTMLInputElement>) => {
 		const file = e.target.files?.[0]
@@ -358,21 +388,23 @@ function FileInput({
 			return
 		}
 
-		const reader = new FileReader()
-		reader.onload = () => {
-			const result = reader.result as string
-			onChange(result)
-			// Preview for images
-			if (file.type.startsWith('image/')) {
-				setPreview(result)
-			} else {
+		saveLocalBlob(file, { name: file.name, type: file.type, replacingBlobId: manifest?.blobId })
+			.then(saved => {
+				if (manifest) {
+					deleteLocalBlob(manifest.blobId).catch(() => {})
+				}
+				onChange(serializeLocalBlobManifest(saved))
 				setPreview(null)
-			}
-		}
-		reader.readAsDataURL(file)
+			})
+			.catch(() => {
+				setError('This browser could not save the file for offline submission.')
+			})
 	}
 
 	const clear = () => {
+		if (manifest) {
+			deleteLocalBlob(manifest.blobId).catch(() => {})
+		}
 		onChange('')
 		setPreview(null)
 		if (fileRef.current) fileRef.current.value = ''
@@ -390,7 +422,7 @@ function FileInput({
 					<div className="flex items-center gap-2">
 						<span className="text-sm text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
 							<Check className="h-3.5 w-3.5" />
-							File attached
+							{manifest ? `${manifest.name} saved locally` : 'File attached'}
 						</span>
 						<button
 							onClick={clear}
@@ -438,6 +470,7 @@ function SignatureInput({
 }) {
 	const canvasRef = useRef<HTMLCanvasElement>(null)
 	const isDrawingRef = useRef(false)
+	const [restoreManifest, setRestoreManifest] = useState<LocalBlobManifest | null>(() => parseLocalBlobManifest(value))
 
 	useEffect(() => {
 		const canvas = canvasRef.current
@@ -455,15 +488,34 @@ function SignatureInput({
 		ctx.lineWidth = 2
 		ctx.strokeStyle = document.documentElement.classList.contains('dark') ? '#e5e7eb' : '#1f2937'
 
-		// Restore existing signature if value exists
-		if (value) {
+		const drawImage = (src: string) => {
 			const img = new Image()
 			img.onload = () => {
+				ctx.clearRect(0, 0, rect.width, rect.height)
 				ctx.drawImage(img, 0, 0, rect.width, rect.height)
 			}
-			img.src = value
+			img.src = src
 		}
-	}, []) // Only run once on mount
+
+		if (restoreManifest) {
+			let objectUrl = ''
+			readLocalBlob(restoreManifest.blobId)
+				.then(record => {
+					if (!record) return
+					objectUrl = URL.createObjectURL(record.blob)
+					drawImage(objectUrl)
+				})
+				.catch(() => {})
+			return () => {
+				if (objectUrl) URL.revokeObjectURL(objectUrl)
+			}
+		}
+
+		// Restore older signatures that were stored as direct data URLs.
+		if (value && value.startsWith('data:image/')) {
+			drawImage(value)
+		}
+	}, [restoreManifest, value])
 
 	const getPosition = (e: MouseEvent | TouchEvent) => {
 		const canvas = canvasRef.current
@@ -508,15 +560,38 @@ function SignatureInput({
 		isDrawingRef.current = false
 		const canvas = canvasRef.current
 		if (!canvas) return
-		onChange(canvas.toDataURL('image/png'))
+		canvas.toBlob((blob) => {
+			if (!blob) return
+			saveLocalBlob(blob, {
+				name: 'signature.png',
+				type: 'image/png',
+				replacingBlobId: parseLocalBlobManifest(value)?.blobId,
+			})
+				.then(saved => {
+					const previousManifest = parseLocalBlobManifest(value)
+					if (previousManifest && previousManifest.blobId !== saved.blobId) {
+						deleteLocalBlob(previousManifest.blobId).catch(() => {})
+					}
+					setRestoreManifest(saved)
+					onChange(serializeLocalBlobManifest(saved))
+				})
+				.catch(() => {
+					onChange(canvas.toDataURL('image/png'))
+				})
+		}, 'image/png')
 	}
 
 	const clearSignature = () => {
+		const manifest = parseLocalBlobManifest(value)
+		if (manifest) {
+			deleteLocalBlob(manifest.blobId).catch(() => {})
+		}
 		const canvas = canvasRef.current
 		const ctx = canvas?.getContext('2d')
 		if (!ctx || !canvas) return
 		const rect = canvas.getBoundingClientRect()
 		ctx.clearRect(0, 0, rect.width, rect.height)
+		setRestoreManifest(null)
 		onChange('')
 	}
 
@@ -565,6 +640,12 @@ function RankingInput({
 }) {
 	const [items, setItems] = useState<string[]>(() => parseRankingValue(value, options))
 	const [dragIndex, setDragIndex] = useState<number | null>(null)
+
+	useEffect(() => {
+		if (!value && options.length > 0) {
+			onChange(JSON.stringify(options))
+		}
+	}, [onChange, options, value])
 
 	const moveItem = (from: number, to: number) => {
 		const next = moveListItem(items, from, to)

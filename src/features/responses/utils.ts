@@ -1,5 +1,6 @@
 import type { FormField, FieldType } from '../../types'
 import { pipeValues } from '../../types'
+import { parseLocalBlobManifest } from '../form-fill/blobStorage'
 import {
 	getResponseFields,
 	parseResponseData as parsePersistedResponseData,
@@ -146,10 +147,25 @@ export function formatResponseValue(field: Pick<FormField, 'type'>, value: unkno
 	}
 	if (field.type === 'rating') return { kind: 'text', values: [`${raw} star${raw === '1' ? '' : 's'}`] }
 	if (field.type === 'scale') return { kind: 'text', values: [`${raw} / 10`] }
-	if (field.type === 'file') return { kind: 'text', values: [raw] }
-	if (field.type === 'signature') return { kind: 'text', values: raw.startsWith('data:image') ? ['Signature captured'] : [raw] }
+	if (field.type === 'file') {
+		const manifest = parseLocalBlobManifest(raw)
+		if (manifest) return { kind: 'text', values: [`${manifest.name} (${formatBytes(manifest.size)})`] }
+		return { kind: 'text', values: [raw.startsWith('data:') ? 'File attached' : raw] }
+	}
+	if (field.type === 'signature') {
+		const manifest = parseLocalBlobManifest(raw)
+		if (manifest || raw.startsWith('data:image')) return { kind: 'text', values: ['Signature captured'] }
+		return { kind: 'text', values: [raw] }
+	}
 	if (field.type === 'calculated') return { kind: 'text', values: [raw] }
 	return { kind: 'text', values: [raw] }
+}
+
+function formatBytes(size: number): string {
+	if (size < 1024) return `${size} B`
+	const kb = size / 1024
+	if (kb < 1024) return `${Math.round(kb)} KB`
+	return `${(kb / 1024).toFixed(1)} MB`
 }
 
 function escapeRegExp(value: string): string {

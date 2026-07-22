@@ -184,7 +184,7 @@ export function normalizeSavedProgress(value: {
 }
 
 export function resumeIndexForValues(fields: FormField[], values: Record<string, string>): number {
-	const visible = fields.filter(field => isFieldVisible(field, values))
+	const visible = fields.filter(field => field.type !== 'hidden' && isFieldVisible(field, values))
 	const firstUnanswered = visible.findIndex(field => !isDisplayOnlyField(field) && !values[field.id])
 	if (firstUnanswered > 0) return firstUnanswered
 	if (firstUnanswered === -1 && visible.length > 0) return visible.length - 1

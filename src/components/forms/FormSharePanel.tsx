@@ -25,6 +25,7 @@ export function FormSharePanel({
 	onPublish,
 }: FormSharePanelProps) {
 	const [copied, setCopied] = useState<'link' | 'embed' | 'results' | null>(null)
+	const [copyFailed, setCopyFailed] = useState<'link' | 'embed' | 'results' | null>(null)
 	const [embedMode, setEmbedMode] = useState<EmbedMode>('inline')
 	const [qrDataUrl, setQrDataUrl] = useState('')
 	const baseUrl = typeof window === 'undefined' ? '' : window.location.origin
@@ -36,10 +37,14 @@ export function FormSharePanel({
 	}, [formUrl])
 
 	const embedCode = buildEmbedCode({ mode: embedMode, formUrl, baseUrl, slug })
-	const copy = (value: string, key: 'link' | 'embed' | 'results') => {
-		copyToClipboard(value)
-		setCopied(key)
-		setTimeout(() => setCopied(null), 1600)
+	const copy = async (value: string, key: 'link' | 'embed' | 'results') => {
+		const ok = await copyToClipboard(value)
+		setCopyFailed(ok ? null : key)
+		setCopied(ok ? key : null)
+		setTimeout(() => {
+			setCopied(null)
+			setCopyFailed(null)
+		}, 1600)
 	}
 	const downloadQR = () => {
 		if (!qrDataUrl) return
@@ -77,7 +82,7 @@ export function FormSharePanel({
 								<div className="flex flex-wrap gap-2">
 									<button onClick={() => copy(formUrl, 'link')} className="inline-flex items-center gap-2 kf-control px-4 py-2.5 text-[13px] font-semibold">
 										{copied === 'link' ? <Check className="h-4 w-4 text-emerald-500" /> : <Copy className="h-4 w-4" />}
-										{copied === 'link' ? 'Copied' : 'Copy link'}
+										{copied === 'link' ? 'Copied' : copyFailed === 'link' ? 'Copy failed' : 'Copy link'}
 									</button>
 									<a href={formUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 kf-control px-4 py-2.5 text-[13px] font-semibold">
 										<ExternalLink className="h-4 w-4" />
@@ -129,7 +134,7 @@ export function FormSharePanel({
 						/>
 						<button onClick={() => copy(embedCode, 'embed')} className="mt-3 inline-flex items-center gap-2 kf-control px-4 py-2.5 text-[13px] font-semibold">
 							{copied === 'embed' ? <Check className="h-4 w-4 text-emerald-500" /> : <Copy className="h-4 w-4" />}
-							{copied === 'embed' ? 'Copied' : 'Copy embed'}
+							{copied === 'embed' ? 'Copied' : copyFailed === 'embed' ? 'Copy failed' : 'Copy embed'}
 						</button>
 						<p className="mt-2 text-[11px] text-slate-400 dark:text-gray-500">
 							{embedMode === 'inline' && 'Paste this where the form should appear.'}
@@ -161,7 +166,7 @@ export function FormSharePanel({
 								</button>
 								<button onClick={() => copy(formUrl, 'link')} className="inline-flex items-center gap-2 kf-control px-4 py-2.5 text-[13px] font-semibold">
 									{copied === 'link' ? <Check className="h-4 w-4 text-emerald-500" /> : <Copy className="h-4 w-4" />}
-									{copied === 'link' ? 'Copied' : 'Copy link'}
+									{copied === 'link' ? 'Copied' : copyFailed === 'link' ? 'Copy failed' : 'Copy link'}
 								</button>
 							</div>
 						</div>
@@ -181,7 +186,7 @@ export function FormSharePanel({
 								className="inline-flex items-center justify-center gap-2 kf-control px-4 py-2.5 text-[13px] font-semibold disabled:cursor-not-allowed disabled:opacity-45"
 							>
 								{copied === 'results' ? <Check className="h-4 w-4 text-emerald-500" /> : <Copy className="h-4 w-4" />}
-								{copied === 'results' ? 'Copied' : 'Copy results link'}
+								{copied === 'results' ? 'Copied' : copyFailed === 'results' ? 'Copy failed' : 'Copy results link'}
 							</button>
 						</div>
 					</div>

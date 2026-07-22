@@ -15,6 +15,7 @@ type Tab = 'link' | 'embed' | 'qr'
 
 export function ShareModal({ slug, title, onClose }: Props) {
 	const [copied, setCopied] = useState<'link' | 'embed' | null>(null)
+	const [copyFailed, setCopyFailed] = useState<'link' | 'embed' | null>(null)
 	const [embedMode, setEmbedMode] = useState<EmbedMode>('inline')
 	const [tab, setTab] = useState<Tab>('link')
 	const [qrDataUrl, setQrDataUrl] = useState<string>('')
@@ -32,10 +33,14 @@ export function ShareModal({ slug, title, onClose }: Props) {
 
 	const embedCode = buildEmbedCode({ mode: embedMode, formUrl, baseUrl, slug })
 
-	const copyToClipboard = (text: string, type: 'link' | 'embed') => {
-		copyText(text)
-		setCopied(type)
-		setTimeout(() => setCopied(null), 2000)
+	const copyToClipboard = async (text: string, type: 'link' | 'embed') => {
+		const ok = await copyText(text)
+		setCopied(ok ? type : null)
+		setCopyFailed(ok ? null : type)
+		setTimeout(() => {
+			setCopied(null)
+			setCopyFailed(null)
+		}, 2000)
 	}
 
 	const downloadQR = () => {
@@ -105,6 +110,8 @@ export function ShareModal({ slug, title, onClose }: Props) {
 									>
 										{copied === 'link' ? (
 											<><Check className="h-3.5 w-3.5" /> Copied</>
+										) : copyFailed === 'link' ? (
+											<><Copy className="h-3.5 w-3.5" /> Failed</>
 										) : (
 											<><Copy className="h-3.5 w-3.5" /> Copy</>
 										)}
@@ -184,6 +191,8 @@ export function ShareModal({ slug, title, onClose }: Props) {
 								>
 									{copied === 'embed' ? (
 										<><Check className="h-3 w-3" /> Copied</>
+									) : copyFailed === 'embed' ? (
+										<><Copy className="h-3 w-3" /> Failed</>
 									) : (
 										<><Copy className="h-3 w-3" /> Copy</>
 									)}
@@ -231,6 +240,8 @@ export function ShareModal({ slug, title, onClose }: Props) {
 								>
 									{copied === 'link' ? (
 										<><Check className="h-3.5 w-3.5" /> Copied</>
+									) : copyFailed === 'link' ? (
+										<><Copy className="h-3.5 w-3.5" /> Copy failed</>
 									) : (
 										<><Copy className="h-3.5 w-3.5" /> Copy link</>
 									)}
