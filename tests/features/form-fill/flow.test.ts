@@ -66,6 +66,7 @@ test('option helpers parse configured lists and shortcut choices consistently', 
 test('ranking helpers tolerate invalid saved values', () => {
 	assert.deepEqual(parseRankingValue('', ['A', 'B']), ['A', 'B'])
 	assert.deepEqual(parseRankingValue('["B","A"]', ['A', 'B']), ['B', 'A'])
+	assert.deepEqual(parseRankingValue('["B","Injected","B"]', ['A', 'B', 'C']), ['B', 'A', 'C'])
 	assert.deepEqual(parseRankingValue('not json', ['A', 'B']), ['A', 'B'])
 	assert.deepEqual(moveListItem(['A', 'B', 'C'], 0, 2), ['B', 'C', 'A'])
 	assert.deepEqual(moveListItem(['A', 'B'], -1, 1), ['A', 'B'])

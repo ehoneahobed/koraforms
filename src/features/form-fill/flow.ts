@@ -110,7 +110,14 @@ export function parseRankingValue(value: string, fallbackOptions: string[]): str
 	if (!value) return [...fallbackOptions]
 	try {
 		const parsed = JSON.parse(value) as unknown
-		if (Array.isArray(parsed) && parsed.length > 0) return parsed.map(String)
+		if (Array.isArray(parsed) && parsed.length > 0) {
+			const allowed = new Set(fallbackOptions)
+			const ranked = parsed
+				.map(String)
+				.filter((option, index, options) => allowed.has(option) && options.indexOf(option) === index)
+			const missing = fallbackOptions.filter(option => !ranked.includes(option))
+			return [...ranked, ...missing]
+		}
 	} catch {
 		// Invalid saved ranking values fall back to the configured option order.
 	}
