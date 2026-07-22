@@ -59,6 +59,8 @@ const Terms = lazy(() => import('./pages/Terms').then(m => ({ default: m.Terms }
 import { ErrorBoundary } from './components/shared/ErrorBoundary'
 import { FORM_TEMPLATES, createFieldsFromTemplate } from './templates'
 import { copyToClipboard } from './utils/clipboard'
+import { downloadDataUrl } from './utils/download'
+import { buildEmbedCode, qrCodeFilename, type EmbedMode } from './utils/embed'
 import { createQrDataUrl } from './utils/qr'
 import { readStringFromStorage, writeStringToStorage } from './utils/storage'
 import { THEME_PRESETS } from './themes'
@@ -726,7 +728,7 @@ function FormSharePanel({
 	onPublish: () => void
 }) {
 	const [copied, setCopied] = useState<'link' | 'embed' | 'results' | null>(null)
-	const [embedMode, setEmbedMode] = useState<'inline' | 'popup' | 'slidein'>('inline')
+	const [embedMode, setEmbedMode] = useState<EmbedMode>('inline')
 	const [qrDataUrl, setQrDataUrl] = useState('')
 	const baseUrl = typeof window === 'undefined' ? '' : window.location.origin
 
@@ -736,17 +738,7 @@ function FormSharePanel({
 		})
 	}, [formUrl])
 
-	const getEmbedCode = (mode: 'inline' | 'popup' | 'slidein') => {
-		if (mode === 'inline') {
-			return `<iframe src="${formUrl}?embed=1" width="100%" height="600" frameborder="0" style="border:none;border-radius:12px;"></iframe>`
-		}
-		if (mode === 'popup') {
-			return `<script src="${baseUrl}/embed.js"></script>\n<button onclick="KoraForms.popup('${slug}')">Open Form</button>`
-		}
-		return `<script src="${baseUrl}/embed.js"></script>\n<script>KoraForms.slideIn('${slug}', { position: 'right' })</script>`
-	}
-
-	const embedCode = getEmbedCode(embedMode)
+	const embedCode = buildEmbedCode({ mode: embedMode, formUrl, baseUrl, slug })
 	const copy = (value: string, key: 'link' | 'embed' | 'results') => {
 		copyToClipboard(value)
 		setCopied(key)
@@ -754,10 +746,7 @@ function FormSharePanel({
 	}
 	const downloadQR = () => {
 		if (!qrDataUrl) return
-		const a = document.createElement('a')
-		a.href = qrDataUrl
-		a.download = `${slug}-qr-code.png`
-		a.click()
+		downloadDataUrl(qrDataUrl, qrCodeFilename(slug))
 	}
 
 	return (

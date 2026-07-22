@@ -1,7 +1,8 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { X, Copy, Check, Code, Link as LinkIcon, QrCode, Download } from 'lucide-react'
 import { copyToClipboard as copyText } from '../../utils/clipboard'
 import { downloadDataUrl } from '../../utils/download'
+import { buildEmbedCode, qrCodeFilename, type EmbedMode } from '../../utils/embed'
 import { createQrDataUrl } from '../../utils/qr'
 
 interface Props {
@@ -10,7 +11,6 @@ interface Props {
 	onClose: () => void
 }
 
-type EmbedMode = 'inline' | 'popup' | 'slidein'
 type Tab = 'link' | 'embed' | 'qr'
 
 export function ShareModal({ slug, title, onClose }: Props) {
@@ -18,7 +18,6 @@ export function ShareModal({ slug, title, onClose }: Props) {
 	const [embedMode, setEmbedMode] = useState<EmbedMode>('inline')
 	const [tab, setTab] = useState<Tab>('link')
 	const [qrDataUrl, setQrDataUrl] = useState<string>('')
-	const canvasRef = useRef<HTMLCanvasElement>(null)
 	const formUrl = `${window.location.origin}/f/${slug}`
 	const baseUrl = window.location.origin
 
@@ -31,18 +30,7 @@ export function ShareModal({ slug, title, onClose }: Props) {
 		}
 	}, [tab, formUrl])
 
-	const getEmbedCode = (mode: EmbedMode): string => {
-		switch (mode) {
-			case 'inline':
-				return `<iframe src="${formUrl}?embed=1" width="100%" height="600" frameborder="0" style="border:none;border-radius:12px;"></iframe>`
-			case 'popup':
-				return `<script src="${baseUrl}/embed.js"></script>\n<button onclick="KoraForms.popup('${slug}')">Open Form</button>`
-			case 'slidein':
-				return `<script src="${baseUrl}/embed.js"></script>\n<script>KoraForms.slideIn('${slug}', { position: 'right' })</script>`
-		}
-	}
-
-	const embedCode = getEmbedCode(embedMode)
+	const embedCode = buildEmbedCode({ mode: embedMode, formUrl, baseUrl, slug })
 
 	const copyToClipboard = (text: string, type: 'link' | 'embed') => {
 		copyText(text)
@@ -52,7 +40,7 @@ export function ShareModal({ slug, title, onClose }: Props) {
 
 	const downloadQR = () => {
 		if (!qrDataUrl) return
-		downloadDataUrl(qrDataUrl, `${slug}-qr-code.png`)
+		downloadDataUrl(qrDataUrl, qrCodeFilename(slug))
 	}
 
 	return (
