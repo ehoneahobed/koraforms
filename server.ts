@@ -298,7 +298,7 @@ async function main(): Promise<void> {
 					if (req.method !== 'GET') {
 						return withCors({ status: 405, body: { error: 'Method not allowed' } })
 					}
-					const slug = req.url?.match(/\/api\/public\/forms\/([^/]+)\/results/)?.[1]
+					const slug = req.path.match(/\/api\/public\/forms\/([^/]+)\/results/)?.[1]
 					if (!slug) return withCors({ status: 404, body: { error: 'Not found' } })
 					try {
 						const [form] = await store.queryCollection('forms', {
