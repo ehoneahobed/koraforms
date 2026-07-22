@@ -109,6 +109,7 @@ export function FormResponses({ formId, navigate }: Props) {
 	const [showShareModal, setShowShareModal] = useState(false)
 	const [showExportModal, setShowExportModal] = useState(false)
 	const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+	const [confirmingBulkDelete, setConfirmingBulkDelete] = useState(false)
 	const [currentPage, setCurrentPage] = useState(1)
 
 	const switchSubTab = (tab: SubTab) => {
@@ -157,6 +158,10 @@ export function FormResponses({ formId, navigate }: Props) {
 		})
 	}, [filteredResponses])
 
+	useEffect(() => {
+		setConfirmingBulkDelete(false)
+	}, [selectedIds.size])
+
 	// --- Actions ---
 	const toggleSort = (col: string) => {
 		if (sortCol === col) {
@@ -177,11 +182,11 @@ export function FormResponses({ formId, navigate }: Props) {
 
 	const deleteSelected = () => {
 		if (selectedIds.size === 0) return
-		if (!window.confirm(deleteResponsesMessage(selectedIds.size))) return
 		for (const id of responseIdsForDeletion(selectedIds)) {
 			app.responses.delete(id)
 		}
 		setSelectedIds(new Set())
+		setConfirmingBulkDelete(false)
 	}
 
 	const exportCsv = (selectedFieldIds?: string[], sourceResponses: Record<string, unknown>[] = responses, includeMetadata = true) => {
@@ -542,29 +547,50 @@ export function FormResponses({ formId, navigate }: Props) {
 			{selectedIds.size > 0 && (
 				<div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 animate-scale-in">
 					<div className="flex items-center gap-3 bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 rounded-2xl shadow-2xl px-5 py-3 backdrop-blur-sm">
-						<span className="text-sm font-medium">{selectedIds.size} selected</span>
-						<button
-							onClick={() => setSelectedIds(new Set())}
-							className="text-xs text-gray-400 dark:text-gray-600 hover:text-white dark:hover:text-gray-900 transition-colors"
-						>
-							Clear
-						</button>
-						<div className="w-px h-5 bg-gray-700 dark:bg-gray-300" />
-						<button
-							onClick={() => exportCsv(undefined, responses.filter(response => selectedIds.has(String(response.id))))}
-							className="inline-flex items-center gap-1.5 text-sm font-medium text-gray-200 dark:text-gray-700 hover:text-white dark:hover:text-gray-900 transition-colors"
-						>
-							<Download className="h-3.5 w-3.5" />
-							Export
-						</button>
-						<div className="w-px h-5 bg-gray-700 dark:bg-gray-300" />
-						<button
-							onClick={deleteSelected}
-							className="inline-flex items-center gap-1.5 text-sm font-medium text-red-400 dark:text-red-600 hover:text-red-300 dark:hover:text-red-500 transition-colors"
-						>
-							<Trash2 className="h-3.5 w-3.5" />
-							Delete
-						</button>
+						{confirmingBulkDelete ? (
+							<>
+								<span className="max-w-[260px] text-sm font-medium">{deleteResponsesMessage(selectedIds.size)}</span>
+								<button
+									onClick={() => setConfirmingBulkDelete(false)}
+									className="text-xs text-gray-400 dark:text-gray-600 hover:text-white dark:hover:text-gray-900 transition-colors"
+								>
+									Cancel
+								</button>
+								<button
+									onClick={deleteSelected}
+									className="inline-flex items-center gap-1.5 rounded-xl bg-red-500 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-red-400"
+								>
+									<Trash2 className="h-3.5 w-3.5" />
+									Delete
+								</button>
+							</>
+						) : (
+							<>
+								<span className="text-sm font-medium">{selectedIds.size} selected</span>
+								<button
+									onClick={() => setSelectedIds(new Set())}
+									className="text-xs text-gray-400 dark:text-gray-600 hover:text-white dark:hover:text-gray-900 transition-colors"
+								>
+									Clear
+								</button>
+								<div className="w-px h-5 bg-gray-700 dark:bg-gray-300" />
+								<button
+									onClick={() => exportCsv(undefined, responses.filter(response => selectedIds.has(String(response.id))))}
+									className="inline-flex items-center gap-1.5 text-sm font-medium text-gray-200 dark:text-gray-700 hover:text-white dark:hover:text-gray-900 transition-colors"
+								>
+									<Download className="h-3.5 w-3.5" />
+									Export
+								</button>
+								<div className="w-px h-5 bg-gray-700 dark:bg-gray-300" />
+								<button
+									onClick={() => setConfirmingBulkDelete(true)}
+									className="inline-flex items-center gap-1.5 text-sm font-medium text-red-400 dark:text-red-600 hover:text-red-300 dark:hover:text-red-500 transition-colors"
+								>
+									<Trash2 className="h-3.5 w-3.5" />
+									Delete
+								</button>
+							</>
+						)}
 					</div>
 				</div>
 			)}
