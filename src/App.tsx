@@ -64,6 +64,19 @@ import { readStringFromStorage, writeStringToStorage } from './utils/storage'
 import { THEME_PRESETS } from './themes'
 import type { FormSettings as FormSettingsType } from './types'
 import { parseFormSettings, serializeFormSettings } from './domain/forms'
+import {
+	activeFormShellTab,
+	buildPublishPayload,
+	buildStatusPayload,
+	datetimeLocalToTimestamp,
+	formShellTabPath,
+	getPublicFormUrl,
+	parseFormShellPanel,
+	sanitizeSlug,
+	timestampToDatetimeLocal,
+	updateSettingsValue,
+	type FormShellTab,
+} from './features/forms/shell'
 
 // ---------------------------------------------------------------------------
 // Dark mode management
@@ -354,8 +367,6 @@ function AuthenticatedRoutes() {
 // FormPageShell — shared layout for all form-level pages (Builder, Responses)
 // ---------------------------------------------------------------------------
 
-type FormShellTab = 'build' | 'responses' | 'url' | 'share' | 'settings'
-
 function FormPageShell({ navigate, userId }: { navigate: (path: string) => void; userId: string }) {
 	const { formId } = useParams()
 	const location = useLocation()
@@ -389,23 +400,12 @@ function FormPageShell({ navigate, userId }: { navigate: (path: string) => void;
 	}
 
 	// Determine active tab from URL
-	const panelParam = searchParams.get('panel')
-	const activePanel: 'url' | 'share' | 'settings' | null =
-		panelParam === 'url' || panelParam === 'share' || panelParam === 'settings' ? panelParam : null
-	const activeTab: FormShellTab = activePanel
-		? activePanel
-		: location.pathname.endsWith('/responses')
-			? 'responses'
-			: 'build'
+	const activePanel = parseFormShellPanel(searchParams.get('panel'))
+	const activeTab = activeFormShellTab(location.pathname, activePanel)
 
 	const handleTabClick = (tab: FormShellTab) => {
-		if (tab === 'build') {
-			routerNav(`/forms/${formId}/edit`)
-		} else if (tab === 'responses') {
-			routerNav(`/forms/${formId}/responses`)
-		} else {
-			routerNav(`/forms/${formId}/edit?panel=${tab}`)
-		}
+		if (!formId) return
+		routerNav(formShellTabPath(formId, tab))
 	}
 
 	// Publish handler
@@ -413,17 +413,16 @@ function FormPageShell({ navigate, userId }: { navigate: (path: string) => void;
 		if (!formId || !form) return
 		setPublishFeedback('saving')
 		const title = String(form.title || 'Untitled Form')
-		const existingSlug = String(form.slug || '')
-		const slug = existingSlug || generateSlug(title)
+		const payload = buildPublishPayload(title, String(form.slug || ''))
 		updateForm(formId, {
-			status: 'published',
-			slug,
+			status: payload.status,
+			slug: payload.slug,
 		})
 		window.setTimeout(() => {
 			setPublishFeedback('saved')
 			window.setTimeout(() => setPublishFeedback('idle'), 1800)
 		}, 300)
-		if (!existingSlug) {
+		if (payload.shouldOpenShare) {
 			setShowShareModal(true)
 		}
 	}
@@ -437,11 +436,7 @@ function FormPageShell({ navigate, userId }: { navigate: (path: string) => void;
 
 	const handleStatusChange = (status: string) => {
 		if (!formId || !form) return
-		const next: Record<string, unknown> = { status }
-		if (status === 'published' && !slug) {
-			next.slug = generateSlug(formTitle)
-		}
-		updateForm(formId, next)
+		updateForm(formId, buildStatusPayload(status, slug, formTitle))
 	}
 
 	// Sync status text for the breadcrumb bar
@@ -619,33 +614,6 @@ function FormPageShell({ navigate, userId }: { navigate: (path: string) => void;
 			)}
 		</div>
 	)
-}
-
-function getPublicFormUrl(identifier: string) {
-	const origin = typeof window === 'undefined' ? '' : window.location.origin
-	return `${origin}/f/${identifier}`
-}
-
-function sanitizeSlug(value: string) {
-	return value
-		.toLowerCase()
-		.trim()
-		.replace(/[^a-z0-9-]/g, '-')
-		.replace(/-+/g, '-')
-		.replace(/^-|-$/g, '')
-}
-
-function timestampToDatetimeLocal(ts: number | undefined): string {
-	if (!ts) return ''
-	const d = new Date(ts)
-	const offset = d.getTimezoneOffset()
-	const local = new Date(d.getTime() - offset * 60000)
-	return local.toISOString().slice(0, 16)
-}
-
-function datetimeLocalToTimestamp(value: string): number | undefined {
-	if (!value) return undefined
-	return new Date(value).getTime()
 }
 
 function FormUrlPanel({
@@ -953,7 +921,7 @@ function FormSettingsPanel({
 	onSettingsChange: (settings: FormSettingsType) => void
 }) {
 	const updateSetting = <K extends keyof FormSettingsType>(key: K, value: FormSettingsType[K]) => {
-		onSettingsChange({ ...settings, [key]: value })
+		onSettingsChange(updateSettingsValue(settings, key, value))
 	}
 
 	return (

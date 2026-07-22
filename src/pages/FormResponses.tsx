@@ -31,7 +31,13 @@ import {
 	staticFieldLabel,
 	type TimeRange,
 } from '../features/responses/utils'
-import { createResponsesCsv, createResponsesJson, createResponsesReportHtml } from '../features/responses/export'
+import {
+	buildResponsesCsvExport,
+	buildResponsesJsonExport,
+	buildResponsesReportHtmlExport,
+	deleteResponsesMessage,
+	responseIdsForDeletion,
+} from '../features/responses/actions'
 import {
 	buildFieldAnalyses,
 	fieldHealthBarClass,
@@ -54,6 +60,14 @@ import {
 	type ResponseOverviewSummary,
 } from '../features/responses/inbox'
 import {
+	reconcileSelectedResponseIds,
+	responsesSubTabFromSearch,
+	toggleSelectedResponseId,
+	toggleVisibleResponseSelection,
+	updateResponsesSubTabUrl,
+	type ResponsesSubTab,
+} from '../features/responses/navigation'
+import {
 	buildCategoricalBarData,
 	buildHeatmapModel,
 	buildHistogramBins,
@@ -69,7 +83,7 @@ interface Props {
 	navigate: (path: string) => void
 }
 
-type SubTab = 'all' | 'analytics' | 'insights' | 'todo'
+type SubTab = ResponsesSubTab
 type ExportFormat = 'csv' | 'json'
 
 const SUB_TABS: { key: SubTab; label: string; icon: typeof Inbox }[] = [
@@ -78,8 +92,6 @@ const SUB_TABS: { key: SubTab; label: string; icon: typeof Inbox }[] = [
 	{ key: 'insights', label: 'Field insights', icon: Lightbulb },
 	{ key: 'todo', label: 'To do', icon: ListChecks },
 ]
-
-const SUB_TAB_KEYS = new Set<SubTab>(SUB_TABS.map(tab => tab.key))
 
 const TIME_RANGE_OPTIONS: { value: TimeRange; label: string }[] = [
 	{ value: '7d', label: '7d' },
@@ -93,16 +105,12 @@ const ITEMS_PER_PAGE = 25
 
 function getResponsesSubTabFromUrl(): SubTab {
 	if (typeof window === 'undefined') return 'all'
-	const value = new URLSearchParams(window.location.search).get('tab') as SubTab | null
-	return value && SUB_TAB_KEYS.has(value) ? value : 'all'
+	return responsesSubTabFromSearch(window.location.search)
 }
 
 function setResponsesSubTabInUrl(tab: SubTab) {
 	if (typeof window === 'undefined') return
-	const url = new URL(window.location.href)
-	if (tab === 'all') url.searchParams.delete('tab')
-	else url.searchParams.set('tab', tab)
-	window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`)
+	window.history.replaceState(null, '', updateResponsesSubTabUrl(window.location.href, tab))
 }
 
 // ============================================================================
@@ -179,10 +187,7 @@ export function FormResponses({ formId, navigate }: Props) {
 
 	useEffect(() => {
 		setSelectedIds(prev => {
-			if (prev.size === 0) return prev
-			const visibleIds = new Set(filteredResponses.map(response => String(response.id)))
-			const next = new Set(Array.from(prev).filter(id => visibleIds.has(id)))
-			return next.size === prev.size ? prev : next
+			return reconcileSelectedResponseIds(prev, filteredResponses.map(response => String(response.id)))
 		})
 	}, [filteredResponses])
 
@@ -197,50 +202,53 @@ export function FormResponses({ formId, navigate }: Props) {
 	}
 
 	const toggleSelect = (id: string) => {
-		setSelectedIds(prev => {
-			const next = new Set(prev)
-			if (next.has(id)) next.delete(id)
-			else next.add(id)
-			return next
-		})
+		setSelectedIds(prev => toggleSelectedResponseId(prev, id))
 	}
 
 	const selectAll = () => {
-		if (selectedIds.size === paginatedResponses.length) {
-			setSelectedIds(new Set())
-		} else {
-			setSelectedIds(new Set(paginatedResponses.map(r => r.id)))
-		}
+		setSelectedIds(prev => toggleVisibleResponseSelection(prev, paginatedResponses.map(response => String(response.id))))
 	}
 
 	const deleteSelected = () => {
 		if (selectedIds.size === 0) return
-		if (!window.confirm(`Delete ${selectedIds.size} response${selectedIds.size !== 1 ? 's' : ''}?`)) return
-		for (const id of selectedIds) {
+		if (!window.confirm(deleteResponsesMessage(selectedIds.size))) return
+		for (const id of responseIdsForDeletion(selectedIds)) {
 			app.responses.delete(id)
 		}
 		setSelectedIds(new Set())
 	}
 
 	const exportCsv = (selectedFieldIds?: string[], sourceResponses: Record<string, unknown>[] = responses, includeMetadata = true) => {
-		if (sourceResponses.length === 0) return
-		const csvContent = createResponsesCsv({ fields, responses: sourceResponses, selectedFieldIds, includeMetadata })
-		downloadTextFile(csvContent, `${String(form?.title || 'form')}-responses.csv`, 'text/csv')
+		const exported = buildResponsesCsvExport({
+			fields,
+			responses: sourceResponses,
+			formTitle: String(form?.title || 'form'),
+			selectedFieldIds,
+			includeMetadata,
+		})
+		if (!exported) return
+		downloadTextFile(exported.content, exported.filename, exported.type)
 	}
 
 	const exportJson = (selectedFieldIds?: string[], sourceResponses: Record<string, unknown>[] = responses, includeMetadata = true) => {
-		if (sourceResponses.length === 0) return
-		const exported = createResponsesJson({ fields, responses: sourceResponses, selectedFieldIds, includeMetadata })
-		downloadJsonFile(exported, `${String(form?.title || 'form')}-responses.json`)
+		const exported = buildResponsesJsonExport({
+			fields,
+			responses: sourceResponses,
+			formTitle: String(form?.title || 'form'),
+			selectedFieldIds,
+			includeMetadata,
+		})
+		if (!exported) return
+		downloadJsonFile(exported.data, exported.filename)
 	}
 
 	const exportPdf = () => {
-		if (responses.length === 0) return
-		const html = createResponsesReportHtml({
-			title: String(form?.title || 'Form'),
+		const html = buildResponsesReportHtmlExport({
+			formTitle: String(form?.title || 'Form'),
 			fields,
 			responses,
 		})
+		if (!html) return
 		const w = window.open('', '_blank')
 		if (w) {
 			w.document.write(html)
