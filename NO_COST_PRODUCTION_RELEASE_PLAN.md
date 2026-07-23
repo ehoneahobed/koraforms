@@ -51,15 +51,15 @@ Acceptance criteria:
 
 ### 3. Pending Submission Visibility
 
-Status: partially implemented.
+Status: implemented for public respondents; owner/admin diagnostics remain part of Phase 4.
 
 Goal: queued local submissions should be visible and understandable.
 
 Checklist:
 
-- Show counts for waiting, syncing, accepted, rejected, and failed local submissions.
-- Surface recent rejected/failed submission reasons without exposing sensitive answer data.
-- Keep diagnostics copyable for support/debugging.
+- Show counts for waiting, syncing, accepted, rejected, and failed local submissions. Implemented through public offline diagnostics and readiness state.
+- Surface recent rejected/failed submission reasons without exposing sensitive answer data. Implemented in diagnostics payload.
+- Keep diagnostics copyable for support/debugging. Implemented from the public form readiness panel and submitted screen.
 
 Acceptance criteria:
 

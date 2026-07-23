@@ -37,6 +37,7 @@ import {
 	clearPublicFormProgress,
 	enqueueResponseSubmission,
 	flushResponseSubmissions,
+	getPublicOfflineDiagnostics,
 	getPublicOfflineReadiness,
 	publicFormRecordToForm,
 	readLatestPublicFormVersion,
@@ -71,14 +72,21 @@ function OfflineReadinessPanel({
 	readiness,
 	isPreparing,
 	onPrepare,
+	onCopyDiagnostics,
+	diagnosticsCopyState,
 }: {
 	readiness: PublicOfflineReadiness | null
 	isPreparing: boolean
 	onPrepare: () => void
+	onCopyDiagnostics: () => void
+	diagnosticsCopyState: 'idle' | 'copied' | 'failed'
 }) {
 	const ready = readiness?.ready ?? false
 	return (
-		<div className="mt-8 rounded-2xl border border-gray-200 bg-white/80 p-4 text-left shadow-sm shadow-gray-900/5 backdrop-blur dark:border-gray-800 dark:bg-gray-900/70">
+		<div
+			className="mt-8 rounded-2xl border border-gray-200 bg-white/80 p-4 text-left shadow-sm shadow-gray-900/5 backdrop-blur dark:border-gray-800 dark:bg-gray-900/70"
+			aria-live="polite"
+		>
 			<div className="flex items-start justify-between gap-4">
 				<div className="flex items-start gap-3">
 					<div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl ${
@@ -128,6 +136,23 @@ function OfflineReadinessPanel({
 					))}
 				</div>
 			)}
+			<div className="mt-4 flex items-center justify-between gap-3 border-t border-gray-100 pt-3 dark:border-gray-800">
+				<p className="text-[11px] leading-4 text-gray-400 dark:text-gray-500">
+					Diagnostics include local status counts and storage usage, not answer data.
+				</p>
+				<button
+					type="button"
+					onClick={onCopyDiagnostics}
+					className="inline-flex shrink-0 items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs font-medium text-gray-500 transition-smooth hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100"
+				>
+					<Copy className="h-3.5 w-3.5" />
+					{diagnosticsCopyState === 'copied'
+						? 'Copied'
+						: diagnosticsCopyState === 'failed'
+							? 'Copy failed'
+							: 'Copy diagnostics'}
+				</button>
+			</div>
 		</div>
 	)
 }
@@ -145,6 +170,7 @@ export function FormFill({ formId, navigate }: Props) {
 	const [offlinePersistenceError, setOfflinePersistenceError] = useState(false)
 	const [offlineReadiness, setOfflineReadiness] = useState<PublicOfflineReadiness | null>(null)
 	const [isPreparingOffline, setIsPreparingOffline] = useState(false)
+	const [diagnosticsCopyState, setDiagnosticsCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
 
 	useEffect(() => {
 		const controller = new AbortController()
@@ -355,6 +381,17 @@ export function FormFill({ formId, navigate }: Props) {
 			setIsPreparingOffline(false)
 		}
 	}, [form, formId, refreshOfflineReadiness])
+
+	const copyOfflineDiagnostics = useCallback(async () => {
+		try {
+			const diagnostics = await getPublicOfflineDiagnostics()
+			const copied = await copyToClipboard(JSON.stringify(diagnostics, null, 2))
+			setDiagnosticsCopyState(copied ? 'copied' : 'failed')
+		} catch {
+			setDiagnosticsCopyState('failed')
+		}
+		window.setTimeout(() => setDiagnosticsCopyState('idle'), 2000)
+	}, [])
 
 	const [currentIndex, setCurrentIndex] = useState(-1) // -1 = welcome screen
 	const [values, setValues] = useState<Record<string, string>>({})
@@ -963,7 +1000,7 @@ export function FormFill({ formId, navigate }: Props) {
 							}
 						</p>
 						{(pendingOfflineSubmissions > 0 || rejectedOfflineSubmissions > 0 || lastSyncMessage) && (
-							<p className="mt-2 text-xs text-gray-400 dark:text-gray-500">
+							<p className="mt-2 text-xs text-gray-400 dark:text-gray-500" aria-live="polite">
 								{pendingOfflineSubmissions > 0
 									? `${pendingOfflineSubmissions} response${pendingOfflineSubmissions === 1 ? '' : 's'} waiting to sync`
 									: rejectedOfflineSubmissions > 0
@@ -975,6 +1012,8 @@ export function FormFill({ formId, navigate }: Props) {
 							readiness={offlineReadiness}
 							isPreparing={isPreparingOffline}
 							onPrepare={prepareOfflineUse}
+							onCopyDiagnostics={copyOfflineDiagnostics}
+							diagnosticsCopyState={diagnosticsCopyState}
 						/>
 					</div>
 				</div>
