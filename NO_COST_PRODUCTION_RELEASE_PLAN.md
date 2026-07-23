@@ -187,8 +187,8 @@ Checklist:
 - Local pending/rejected submission diagnostics. Implemented for public respondents.
 - Owner workspace health diagnostics. Implemented from local Kora data.
 - Server health and side-effect delivery diagnostics. Implemented as a protected operator endpoint.
-- Clear logs for public acceptance failures.
-- No answer payloads or secrets in diagnostics.
+- Clear logs for public acceptance failures. Implemented with structured, payload-free rejection events.
+- No answer payloads or secrets in diagnostics. Implemented in diagnostics snapshots and public rejection log formatting.
 
 Acceptance criteria:
 

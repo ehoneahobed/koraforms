@@ -20,6 +20,7 @@ import type { UserStore } from '@korajs/auth/server'
 import type { ProductionHttpRouteContext, ProductionHttpRouteRequest, ProductionHttpRouteResponse } from '@korajs/server'
 import { parseFormFields, parseFormSettings, safeJsonParse, serializeFormSettings } from './src/domain/forms'
 import { hasFormAccessPasswordSecret, stripFormAccessSecrets, verifyFormAccessPasswordSecret } from './src/domain/formPassword'
+import { buildPublicResponseRejectionLogEvent } from './src/domain/publicResponseDiagnostics'
 import { evaluatePublicResponseAcceptance } from './src/domain/responseAcceptance'
 import { validatePublishedResponsePayload } from './src/domain/responseValidation'
 import { buildSideEffectDeliveryJobs, isDeliverableWebhookUrl, isPublicWebhookIpAddress, normalizeWebhookConfig } from './src/domain/responseSideEffects'
@@ -712,7 +713,16 @@ async function main(): Promise<void> {
 						if (!formId || !data) {
 							return withCors({ status: 400, body: { error: 'formId and data are required' } })
 						}
-						if (Buffer.byteLength(data, 'utf8') > MAX_PUBLIC_RESPONSE_BODY_BYTES) {
+						const responseBytes = Buffer.byteLength(data, 'utf8')
+						if (responseBytes > MAX_PUBLIC_RESPONSE_BODY_BYTES) {
+							logPublicResponseRejection({
+								reason: 'payload_invalid',
+								status: 413,
+								formId,
+								clientSubmissionId,
+								responseBytes,
+								error: 'Response payload is too large',
+							})
 							return withCors({ status: 413, body: { error: 'Response payload is too large' } })
 						}
 						// Look up form by ID or slug
@@ -727,6 +737,14 @@ async function main(): Promise<void> {
 							})
 						}
 						if (!form) {
+							logPublicResponseRejection({
+								reason: 'form_not_found',
+								status: 404,
+								formId,
+								clientSubmissionId,
+								responseBytes,
+								error: 'Form not found',
+							})
 							return withCors({ status: 404, body: { error: 'Form not found' } })
 						}
 						if (clientSubmissionId) {
@@ -741,11 +759,32 @@ async function main(): Promise<void> {
 						const formFields = parseFormFields(form.fields)
 						const validation = validatePublishedResponsePayload(formFields, data)
 						if (!validation.valid) {
+							logPublicResponseRejection({
+								reason: 'payload_invalid',
+								status: 422,
+								formId,
+								resolvedFormId: form.id,
+								slug: form.slug,
+								clientSubmissionId,
+								responseBytes,
+								error: 'Response failed validation',
+								issues: validation.issues,
+							})
 							return withCors({ status: 422, body: { error: 'Response failed validation', issues: validation.issues } })
 						}
 						const settings = parseFormSettings(form.settings)
 						const acceptance = evaluatePublicResponseAcceptance(settings, Number(form.responseCount || 0))
 						if (!acceptance.accepted) {
+							logPublicResponseRejection({
+								reason: 'response_not_accepted',
+								status: acceptance.status,
+								formId,
+								resolvedFormId: form.id,
+								slug: form.slug,
+								clientSubmissionId,
+								responseBytes,
+								error: acceptance.error,
+							})
 							return withCors({ status: acceptance.status, body: { error: acceptance.error } })
 						}
 						const responseId = randomUUID()
@@ -902,6 +941,14 @@ async function updateServerRecord(
 		schemaVersion: SCHEMA_VERSION,
 	}, clock)
 	await store.applyRemoteOperation(op)
+}
+
+function logPublicResponseRejection(input: Parameters<typeof buildPublicResponseRejectionLogEvent>[0]): void {
+	try {
+		console.warn(JSON.stringify(buildPublicResponseRejectionLogEvent(input)))
+	} catch {
+		console.warn('{"event":"public_response_rejected","reason":"diagnostic_logging_failed"}')
+	}
 }
 
 function parseRoutePath(path: string): { path: string; query: URLSearchParams } {
