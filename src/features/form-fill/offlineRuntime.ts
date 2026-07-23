@@ -53,8 +53,9 @@ export async function savePublicFormVersion(
 	now = Date.now(),
 ): Promise<PublicFormVersionRecord | null> {
 	if (!isCacheablePublicForm(form)) return null
-	await publicApp.ready
 	const record = buildPublicFormVersionRecord(slug, form, now)
+	writePublicFormRecoverySnapshot(record)
+	await publicApp.ready
 	const existing = await publicApp.public_form_versions
 		.where({ slug: record.slug, versionHash: record.versionHash })
 		.limit(1)
@@ -73,6 +74,195 @@ export async function readLatestPublicFormVersion(slug: string): Promise<PublicF
 		.limit(1)
 		.exec()
 	return records[0] ?? null
+}
+
+const PUBLIC_FORM_PEER_CHANNEL = 'koraforms-public-form-cache'
+const PUBLIC_FORM_RECOVERY_PREFIX = 'koraforms-public-form-recovery:'
+const PUBLIC_SUBMISSION_HINT_PREFIX = 'koraforms-public-submission-hints:'
+
+interface PublicFormPeerRequest {
+	type: 'request-public-form'
+	requestId: string
+	slug: string
+}
+
+interface PublicFormPeerResponse {
+	type: 'public-form'
+	requestId: string
+	slug: string
+	form: Record<string, unknown>
+	versionHash?: string
+}
+
+type PublicFormPeerMessage = PublicFormPeerRequest | PublicFormPeerResponse
+
+interface PublicFormRecoverySnapshot {
+	slug: string
+	form: Record<string, unknown>
+	versionHash: string
+	cachedAt: number
+}
+
+interface PublicSubmissionStatusHint {
+	formId: string
+	pending: number
+	rejected: number
+	updatedAt: number
+}
+
+function publicFormRecoveryKey(slug: string): string {
+	return `${PUBLIC_FORM_RECOVERY_PREFIX}${slug}`
+}
+
+function writePublicFormRecoverySnapshot(record: PublicFormVersionRecord): void {
+	if (typeof window === 'undefined') return
+	try {
+		const snapshot: PublicFormRecoverySnapshot = {
+			slug: record.slug,
+			form: publicFormRecordToForm(record),
+			versionHash: record.versionHash,
+			cachedAt: record.cachedAt,
+		}
+		window.localStorage.setItem(publicFormRecoveryKey(record.slug), JSON.stringify(snapshot))
+	} catch {
+		// Recovery snapshots are best-effort because Kora remains the primary local data plane.
+	}
+}
+
+function readPublicFormRecoverySnapshot(slug: string): PublicFormRecoverySnapshot | null {
+	if (typeof window === 'undefined') return null
+	try {
+		const raw = window.localStorage.getItem(publicFormRecoveryKey(slug))
+		if (!raw) return null
+		const snapshot = JSON.parse(raw) as Partial<PublicFormRecoverySnapshot>
+		if (
+			snapshot.slug !== slug ||
+			typeof snapshot.versionHash !== 'string' ||
+			typeof snapshot.cachedAt !== 'number' ||
+			!snapshot.form ||
+			!isCacheablePublicForm(snapshot.form)
+		) {
+			return null
+		}
+		return {
+			slug,
+			form: snapshot.form,
+			versionHash: snapshot.versionHash,
+			cachedAt: snapshot.cachedAt,
+		}
+	} catch {
+		return null
+	}
+}
+
+function publicSubmissionHintKey(formId: string): string {
+	return `${PUBLIC_SUBMISSION_HINT_PREFIX}${formId}`
+}
+
+function readPublicSubmissionStatusHint(formId: string): PublicSubmissionStatusHint {
+	if (typeof window === 'undefined') {
+		return { formId, pending: 0, rejected: 0, updatedAt: 0 }
+	}
+	try {
+		const raw = window.localStorage.getItem(publicSubmissionHintKey(formId))
+		if (!raw) return { formId, pending: 0, rejected: 0, updatedAt: 0 }
+		const hint = JSON.parse(raw) as Partial<PublicSubmissionStatusHint>
+		return {
+			formId,
+			pending: Math.max(0, Number(hint.pending || 0)),
+			rejected: Math.max(0, Number(hint.rejected || 0)),
+			updatedAt: Number(hint.updatedAt || 0),
+		}
+	} catch {
+		return { formId, pending: 0, rejected: 0, updatedAt: 0 }
+	}
+}
+
+function adjustPublicSubmissionStatusHint(
+	formId: string,
+	delta: { pending?: number; rejected?: number },
+	now = Date.now(),
+): void {
+	if (typeof window === 'undefined' || !formId) return
+	try {
+		const current = readPublicSubmissionStatusHint(formId)
+		const next: PublicSubmissionStatusHint = {
+			formId,
+			pending: Math.max(0, current.pending + (delta.pending || 0)),
+			rejected: Math.max(0, current.rejected + (delta.rejected || 0)),
+			updatedAt: now,
+		}
+		window.localStorage.setItem(publicSubmissionHintKey(formId), JSON.stringify(next))
+	} catch {
+		// Hints are metadata-only and best-effort; Kora remains the source of truth.
+	}
+}
+
+export function startPublicFormPeerResponder(params: {
+	slug: string
+	getForm: () => Record<string, unknown> | null
+	getVersionHash?: () => string
+}): () => void {
+	if (typeof window === 'undefined' || !('BroadcastChannel' in window)) return () => {}
+	const channel = new BroadcastChannel(PUBLIC_FORM_PEER_CHANNEL)
+	channel.addEventListener('message', (event: MessageEvent<PublicFormPeerMessage>) => {
+		const message = event.data
+		if (!message || message.type !== 'request-public-form' || message.slug !== params.slug) return
+		const form = params.getForm()
+		if (!form || !isCacheablePublicForm(form)) return
+		channel.postMessage({
+			type: 'public-form',
+			requestId: message.requestId,
+			slug: params.slug,
+			form,
+			versionHash: params.getVersionHash?.() || stableHash(form),
+		} satisfies PublicFormPeerResponse)
+	})
+	return () => channel.close()
+}
+
+export async function requestPublicFormFromPeer(
+	slug: string,
+	timeoutMs = 1_500,
+): Promise<{ form: Record<string, unknown>; versionHash: string } | null> {
+	if (typeof window === 'undefined' || !('BroadcastChannel' in window)) return null
+	const requestId = `form_peer_${Date.now()}_${Math.random().toString(36).slice(2)}`
+	const channel = new BroadcastChannel(PUBLIC_FORM_PEER_CHANNEL)
+	return await new Promise((resolve) => {
+		const timeout = window.setTimeout(() => {
+			channel.close()
+			resolve(null)
+		}, timeoutMs)
+		channel.addEventListener('message', (event: MessageEvent<PublicFormPeerMessage>) => {
+			const message = event.data
+			if (
+				!message ||
+				message.type !== 'public-form' ||
+				message.requestId !== requestId ||
+				message.slug !== slug ||
+				!isCacheablePublicForm(message.form)
+			) {
+				return
+			}
+			window.clearTimeout(timeout)
+			channel.close()
+			resolve({ form: message.form, versionHash: message.versionHash || stableHash(message.form) })
+		})
+		channel.postMessage({ type: 'request-public-form', requestId, slug } satisfies PublicFormPeerRequest)
+	})
+}
+
+export function readPublicFormRecovery(
+	slug: string,
+): { form: Record<string, unknown>; versionHash: string } | null {
+	const snapshot = readPublicFormRecoverySnapshot(slug)
+	if (!snapshot) return null
+	return { form: snapshot.form, versionHash: snapshot.versionHash }
+}
+
+export function getPublicSubmissionStatusHint(formId: string): { pending: number; rejected: number } {
+	const hint = readPublicSubmissionStatusHint(formId)
+	return { pending: hint.pending, rejected: hint.rejected }
 }
 
 export async function enqueueResponseSubmission(
@@ -98,7 +288,9 @@ export async function enqueueResponseSubmission(
 		countPendingResponseSubmissions(),
 	])
 	assertPendingSubmissionLimit({ formPendingCount, totalPendingCount })
-	return await publicApp.response_submissions.insert(record)
+	const inserted = await publicApp.response_submissions.insert(record)
+	adjustPublicSubmissionStatusHint(record.formId, { pending: 1 }, record.submittedAt)
+	return inserted
 }
 
 export async function savePublicFormProgress(
@@ -260,11 +452,13 @@ export async function flushResponseSubmissions(
 				lastError: '',
 				updatedAt: Date.now(),
 			})
+			adjustPublicSubmissionStatusHint(item.formId, { pending: -1 })
 			synced += 1
 		} catch (error) {
 			const localStatus = isPermanentSubmissionError(error) ? 'rejected' : 'failed'
 			if (localStatus === 'rejected') {
 				rejected += 1
+				adjustPublicSubmissionStatusHint(item.formId, { pending: -1, rejected: 1 })
 			} else {
 				failed += 1
 			}

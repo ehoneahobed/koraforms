@@ -144,12 +144,22 @@ KoraForms has separate authenticated and public respondent runtimes on the same 
 
 During earlier testing, multiple browser Kora runtimes could run into storage lifecycle/locking confusion when they were not deliberately isolated by database name/runtime setup.
 
+During the production-hardening E2E pass, KoraForms also reproduced an active-tab case with a single public runtime database:
+
+- Tab A loaded a public form online, cached it in Kora's local SQLite WASM database, went offline, and queued a response.
+- Tab B opened the same public form while Tab A remained open and the browser context was offline.
+- The cached form survived browser/profile restart, so durability was correct.
+- The active multi-tab case could hang on `publicApp.ready` in Tab B before app-level fallback code could run, consistent with local database contention or unavailable cross-tab coordination.
+
+KoraForms added bounded local reads and metadata-only same-device recovery hints for public form definitions and queue counts so respondents are not blocked. That product workaround does not store answer payloads outside Kora, but it should ideally become unnecessary once Kora provides a first-class multi-tab browser runtime story.
+
 Suggested framework work:
 
 - Document recommended patterns for multiple Kora clients on one origin.
 - Provide diagnostics for OPFS/database lock conflicts.
 - Make database naming and runtime isolation conventions explicit.
 - Consider helper APIs for common app shapes such as authenticated workspace runtime plus public/anonymous respondent runtime.
+- Consider a browser multi-tab coordinator, shared worker, lock timeout, or explicit read-only fallback mode so a second tab can read durable local data while another tab owns the SQLite runtime.
 
 ## Confirmed Non-Issues in `1.0.0-beta.1`
 

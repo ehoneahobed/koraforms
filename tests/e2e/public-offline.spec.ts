@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { chromium, expect, test, type BrowserContext, type Page } from '@playwright/test'
 
 const PUBLIC_FORM_SLUG = 'offline-rsvp'
 const PUBLIC_FORM_ID = 'form_e2e_offline_rsvp'
@@ -322,6 +322,101 @@ test('offline queued submissions survive tab close before reconnect', async ({ p
 	await expect.poll(() => submissions.length, { timeout: 15_000 }).toBe(1)
 })
 
+test('offline queued submissions survive browser profile restart before reconnect', async ({}, testInfo) => {
+	const userDataDir = testInfo.outputPath('offline-profile')
+	const submissions: Array<Record<string, unknown>> = []
+	let apiOnline = true
+
+	let context = await chromium.launchPersistentContext(userDataDir, {
+		baseURL: 'http://127.0.0.1:4175',
+	})
+	await routeOfflineFormScenario(context, REJECTED_FORM_SLUG, rejectedSyncForm, () => apiOnline, submissions)
+	let page = await context.newPage()
+
+	await page.goto(`/f/${REJECTED_FORM_SLUG}`)
+	await expect(page.getByRole('heading', { name: 'Closed Field Report' })).toBeVisible({ timeout: 15_000 })
+	await expect(page.getByText('Available offline')).toBeVisible({ timeout: 15_000 })
+	await waitForServiceWorkerControl(page)
+	await waitForOfflineRouteCache(page)
+
+	apiOnline = false
+	await context.setOffline(true)
+	await page.getByRole('button', { name: /start/i }).click()
+	await fillTextQuestion(page, /your name/i, 'Restart Durable')
+	await expect(page.getByRole('heading', { name: /email address/i })).toBeVisible()
+	await page.locator('input:not([type="file"]), textarea').first().fill('restart@example.com')
+	await page.getByRole('button', { name: /submit/i }).click()
+	await expect(page.getByRole('heading', { name: 'Saved on this device' })).toBeVisible()
+	expect(submissions).toHaveLength(0)
+	await context.close()
+
+	context = await chromium.launchPersistentContext(userDataDir, {
+		baseURL: 'http://127.0.0.1:4175',
+	})
+	await routeOfflineFormScenario(context, REJECTED_FORM_SLUG, rejectedSyncForm, () => apiOnline, submissions)
+	await context.setOffline(true)
+	page = await context.newPage()
+	await page.goto(`/f/${REJECTED_FORM_SLUG}`, { waitUntil: 'domcontentloaded' })
+	await expect(page.getByRole('heading', { name: 'Closed Field Report' })).toBeVisible({ timeout: 15_000 })
+	await expect(page.getByText('Loaded from this device')).toBeVisible()
+	await expect(page.getByText('1 response waiting to sync', { exact: true })).toBeVisible()
+
+	apiOnline = true
+	await context.setOffline(false)
+	await expect.poll(() => submissions.length, { timeout: 15_000 }).toBe(1)
+	await context.close()
+})
+
+test('offline queued submissions are visible in another tab on the same device', async ({ page, context }) => {
+	const submissions: Array<Record<string, unknown>> = []
+	let apiOnline = true
+
+	await routeOfflineFormScenario(context, REJECTED_FORM_SLUG, rejectedSyncForm, () => apiOnline, submissions)
+
+	await page.goto(`/f/${REJECTED_FORM_SLUG}`)
+	await expect(page.getByRole('heading', { name: 'Closed Field Report' })).toBeVisible({ timeout: 15_000 })
+	await expect(page.getByText('Available offline')).toBeVisible({ timeout: 15_000 })
+	await waitForServiceWorkerControl(page)
+	await waitForOfflineRouteCache(page)
+
+	apiOnline = false
+	await context.setOffline(true)
+	await page.getByRole('button', { name: /start/i }).click()
+	await fillTextQuestion(page, /your name/i, 'Second Tab')
+	await expect(page.getByRole('heading', { name: /email address/i })).toBeVisible()
+	await page.locator('input:not([type="file"]), textarea').first().fill('second.tab@example.com')
+	await page.getByRole('button', { name: /submit/i }).click()
+	await expect(page.getByRole('heading', { name: 'Saved on this device' })).toBeVisible()
+	expect(submissions).toHaveLength(0)
+	const recoverySnapshot = await page.evaluate((slug) => {
+		return window.localStorage.getItem(`koraforms-public-form-recovery:${slug}`)
+	}, REJECTED_FORM_SLUG)
+	expect(recoverySnapshot).not.toBeNull()
+
+	const secondTab = await context.newPage()
+	await secondTab.goto(`/f/${REJECTED_FORM_SLUG}`, { waitUntil: 'domcontentloaded' })
+	try {
+		await expect(secondTab.getByRole('heading', { name: 'Closed Field Report' })).toBeVisible({ timeout: 15_000 })
+	} catch (error) {
+		const bodyText = await secondTab.locator('body').innerText({ timeout: 1_000 }).catch(() => '')
+		const secondTabRecoverySnapshot = await secondTab.evaluate((slug) => {
+			return window.localStorage.getItem(`koraforms-public-form-recovery:${slug}`)
+		}, REJECTED_FORM_SLUG).catch(() => null)
+		throw new Error([
+			error instanceof Error ? error.message : String(error),
+			`body: ${bodyText.slice(0, 1000)}`,
+			`recovery-present-first-tab: ${Boolean(recoverySnapshot)}`,
+			`recovery-present-second-tab: ${Boolean(secondTabRecoverySnapshot)}`,
+		].join('\n\n'))
+	}
+	await expect(secondTab.getByText('Loaded from this device')).toBeVisible()
+	await expect(secondTab.getByText('1 response waiting to sync', { exact: true })).toBeVisible()
+
+	apiOnline = true
+	await context.setOffline(false)
+	await expect.poll(() => submissions.length, { timeout: 15_000 }).toBe(1)
+})
+
 test('public respondents can complete complex field types offline', async ({ page, context }) => {
 	const submissions: Array<Record<string, unknown>> = []
 	let apiOnline = true
@@ -468,6 +563,36 @@ async function chooseOptionQuestion(page: Page, heading: RegExp, option: string)
 	await expect(page.getByRole('heading', { name: heading })).toBeVisible()
 	await page.getByRole('button', { name: option }).click()
 	await page.getByRole('button', { name: /ok/i }).click()
+}
+
+async function routeOfflineFormScenario(
+	context: BrowserContext,
+	slug: string,
+	form: Record<string, unknown>,
+	apiOnline: () => boolean,
+	submissions: Array<Record<string, unknown>>,
+): Promise<void> {
+	await context.route(`**/api/public/forms/${slug}`, async route => {
+		if (!apiOnline()) {
+			await route.abort('internetdisconnected')
+			return
+		}
+		await route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify(form),
+		})
+	})
+
+	await context.route('**/api/public/responses', async route => {
+		const payload = route.request().postDataJSON() as Record<string, unknown>
+		submissions.push(payload)
+		await route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify({ ok: true }),
+		})
+	})
 }
 
 async function waitForServiceWorkerControl(page: Page): Promise<void> {

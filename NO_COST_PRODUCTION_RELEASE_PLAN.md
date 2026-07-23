@@ -51,7 +51,7 @@ Acceptance criteria:
 
 ### 3. Pending Submission Visibility
 
-Status: implemented for public respondents; owner/admin diagnostics remain part of Phase 4.
+Status: implemented for public respondents and first-pass owner workspace diagnostics.
 
 Goal: queued local submissions should be visible and understandable.
 
@@ -60,6 +60,7 @@ Checklist:
 - Show counts for waiting, syncing, accepted, rejected, and failed local submissions. Implemented through public offline diagnostics and readiness state.
 - Surface recent rejected/failed submission reasons without exposing sensitive answer data. Implemented in diagnostics payload.
 - Keep diagnostics copyable for support/debugging. Implemented from the public form readiness panel and submitted screen.
+- Surface owner-facing local workspace health without exposing protected operator tokens. Implemented on the dashboard.
 
 Acceptance criteria:
 
@@ -103,7 +104,7 @@ Acceptance criteria:
 
 ### 6. Browser Restart and Multi-Tab Coverage
 
-Status: partially implemented.
+Status: implemented.
 
 Goal: prove local durability outside the happy path.
 
@@ -111,8 +112,8 @@ Checklist:
 
 - Offline reload after preload. Implemented.
 - Browser/tab close before reconnect. Implemented.
-- Browser/context restart before reconnect.
-- Multi-tab with pending submission created in one tab and visible in another.
+- Browser/context restart before reconnect. Implemented with persistent-profile E2E.
+- Multi-tab with pending submission created in one tab and visible in another. Implemented with bounded Kora reads plus metadata-only same-device recovery hints for active-tab local database contention.
 - Reconnect during queued file/signature sync.
 
 Acceptance criteria:
@@ -176,8 +177,9 @@ Goal: support production use without buying observability tooling first.
 
 Checklist:
 
-- Local pending/rejected submission diagnostics.
-- Server health and side-effect delivery diagnostics.
+- Local pending/rejected submission diagnostics. Implemented for public respondents.
+- Owner workspace health diagnostics. Implemented from local Kora data.
+- Server health and side-effect delivery diagnostics. Implemented as a protected operator endpoint.
 - Clear logs for public acceptance failures.
 - No answer payloads or secrets in diagnostics.
 

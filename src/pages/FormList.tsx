@@ -1,4 +1,4 @@
-import { useQuery, useMutation } from '@korajs/react'
+import { useQuery, useMutation, useSyncStatus } from '@korajs/react'
 import { app } from '../kora'
 import { setPageMeta } from '../utils/meta'
 import {
@@ -25,6 +25,9 @@ import {
 	Download,
 	FileText,
 	ChevronDown,
+	ShieldCheck,
+	Activity,
+	AlertCircle,
 } from 'lucide-react'
 import { useState, useRef, useEffect, useMemo } from 'react'
 import { FORM_TEMPLATES, TEMPLATE_CATEGORIES, createFieldsFromTemplate } from '../templates'
@@ -42,6 +45,7 @@ import {
 	buildFormExportPayload,
 	buildLastSeenMap,
 	buildTemplateFormPayload,
+	buildWorkspaceHealthSnapshot,
 	filterDashboardForms,
 	formExportFilename,
 	groupDashboardForms,
@@ -93,6 +97,7 @@ export function FormList({ navigate, userId }: Props) {
 			: app.forms.where({}).orderBy('createdAt', 'desc'),
 	)
 	const allResponses = useQuery(app.responses.where({}).orderBy('submittedAt', 'desc'))
+	const syncStatus = useSyncStatus()
 	const { mutate: deleteForm } = useMutation((id: string) => app.forms.delete(id))
 	const { mutate: createForm } = useMutation(
 		(data: Record<string, unknown>) => app.forms.insert(data),
@@ -150,10 +155,17 @@ export function FormList({ navigate, userId }: Props) {
 
 	const lastSeenKey = 'koraforms-last-seen'
 	const userFormIds = useMemo(() => allForms.map((form) => String(form.id)), [allForms])
+	const lastSeen = useMemo(
+		() => readJsonFromStorage<Record<string, number>>(lastSeenKey, {}),
+		[allForms.length, allResponses.length],
+	)
 	const responseStats = useMemo(() => {
-		const lastSeen = readJsonFromStorage<Record<string, number>>(lastSeenKey, {})
 		return buildDashboardResponseStats(allForms, allResponses, lastSeen)
-	}, [allForms, allResponses])
+	}, [allForms, allResponses, lastSeen])
+	const workspaceHealth = useMemo(
+		() => buildWorkspaceHealthSnapshot(allForms, allResponses, lastSeen),
+		[allForms, allResponses, lastSeen],
+	)
 
 	// Update last seen timestamps when viewing dashboard
 	useEffect(() => {
@@ -189,18 +201,7 @@ export function FormList({ navigate, userId }: Props) {
 				</button>
 			</div>
 
-			{/* Sync Status Banner */}
-			<div className="mb-5 rounded-2xl bg-emerald-50/35 dark:bg-emerald-950/20 border border-emerald-200/70 dark:border-emerald-900/30 px-5 py-3.5 flex items-center gap-4">
-				<span className="h-3 w-3 rounded-full bg-emerald-500 shrink-0" />
-				<div className="min-w-0">
-					<p className="text-[15px] font-semibold text-slate-950 dark:text-emerald-200">
-						Everything is saved on this device
-					</p>
-					<p className="text-[13px] text-slate-500 dark:text-emerald-400/70 mt-1">
-						Changes sync automatically when you're online.
-					</p>
-				</div>
-			</div>
+			<WorkspaceHealthPanel health={workspaceHealth} syncStatus={syncStatus.status} />
 
 			{/* Stat Cards */}
 			{allForms.length > 0 && (
@@ -368,6 +369,120 @@ export function FormList({ navigate, userId }: Props) {
 			)}
 		</div>
 	)
+}
+
+function WorkspaceHealthPanel({
+	health,
+	syncStatus,
+}: {
+	health: ReturnType<typeof buildWorkspaceHealthSnapshot>
+	syncStatus: string
+}) {
+	const syncCopy = getDashboardSyncCopy(syncStatus)
+	const healthIcon =
+		health.tone === 'review' ? <AlertCircle className="h-4.5 w-4.5" />
+		: health.tone === 'active' ? <Activity className="h-4.5 w-4.5" />
+		: <ShieldCheck className="h-4.5 w-4.5" />
+	const healthToneClass =
+		health.tone === 'review'
+			? 'bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300'
+			: health.tone === 'active'
+				? 'bg-brand-50 text-brand-700 dark:bg-brand-950/30 dark:text-brand-300'
+				: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300'
+
+	return (
+		<section
+			className="mb-5 rounded-2xl border border-slate-200 bg-white/80 px-5 py-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/70"
+			aria-label="Workspace health"
+			aria-live="polite"
+		>
+			<div className="grid gap-4 lg:grid-cols-[1.25fr_1fr_1fr] lg:items-center">
+				<div className="flex min-w-0 items-center gap-3.5">
+					<div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${healthToneClass}`}>
+						{healthIcon}
+					</div>
+					<div className="min-w-0">
+						<div className="flex flex-wrap items-center gap-2">
+							<p className="text-[15px] font-semibold text-slate-950 dark:text-gray-100">
+								{health.title}
+							</p>
+							{health.newResponses > 0 && (
+								<span className="rounded-full bg-brand-50 px-2 py-0.5 text-[11px] font-semibold text-brand-700 dark:bg-brand-950/30 dark:text-brand-300">
+									{health.newResponses} new
+								</span>
+							)}
+						</div>
+						<p className="mt-1 text-[13px] leading-relaxed text-slate-500 dark:text-gray-400">
+							{health.description}
+						</p>
+					</div>
+				</div>
+
+				<div className="grid grid-cols-3 gap-2 rounded-xl bg-slate-50 p-2 dark:bg-slate-950/45">
+					<HealthMetric value={health.publishedForms} label="Published" />
+					<HealthMetric value={health.draftForms} label="Drafts" />
+					<HealthMetric value={health.totalResponses} label="Responses" />
+				</div>
+
+				<div className="flex min-w-0 items-center justify-between gap-3 rounded-xl bg-slate-50 px-3.5 py-3 dark:bg-slate-950/45">
+					<div className="min-w-0">
+						<p className="text-[12px] font-semibold uppercase tracking-wide text-slate-400 dark:text-gray-500">
+							Local sync
+						</p>
+						<p className="mt-1 truncate text-[13px] font-semibold text-slate-700 dark:text-gray-200">
+							{syncCopy.title}
+						</p>
+						<p className="mt-0.5 truncate text-[12px] text-slate-500 dark:text-gray-500">
+							{syncCopy.description}
+						</p>
+					</div>
+					<span className={`h-2.5 w-2.5 shrink-0 rounded-full ${syncCopy.dotClass}`} />
+				</div>
+			</div>
+		</section>
+	)
+}
+
+function HealthMetric({ value, label }: { value: number; label: string }) {
+	return (
+		<div className="min-w-0 rounded-lg bg-white px-3 py-2 text-center dark:bg-slate-900">
+			<p className="text-[18px] font-bold leading-none tracking-tight text-slate-950 dark:text-gray-100">
+				{value}
+			</p>
+			<p className="mt-1 truncate text-[11px] font-medium text-slate-500 dark:text-gray-500">
+				{label}
+			</p>
+		</div>
+	)
+}
+
+function getDashboardSyncCopy(status: string) {
+	if (status === 'syncing') {
+		return {
+			title: 'Syncing changes',
+			description: 'Keeping this device and server aligned.',
+			dotClass: 'bg-amber-400',
+		}
+	}
+	if (status === 'offline') {
+		return {
+			title: 'Working offline',
+			description: 'Changes remain on this device until reconnect.',
+			dotClass: 'bg-slate-400',
+		}
+	}
+	if (status === 'error' || status === 'schema-mismatch') {
+		return {
+			title: 'Sync needs attention',
+			description: 'Local work is preserved while sync recovers.',
+			dotClass: 'bg-red-400',
+		}
+	}
+	return {
+		title: 'Saved locally',
+		description: 'Changes sync automatically when online.',
+		dotClass: 'bg-emerald-400',
+	}
 }
 
 function FormCard({

@@ -15,6 +15,7 @@ export interface FormRecord extends Record<string, unknown> {
 	theme?: string
 	slug?: string
 	createdAt?: number
+	responseCount?: number
 }
 
 export interface ResponseRecord extends Record<string, unknown> {
@@ -34,6 +35,22 @@ export interface DashboardResponseStats {
 	responseCountMap: Map<string, number>
 	newResponseCountMap: Map<string, number>
 	totalResponses: number
+	newResponses: number
+}
+
+export type WorkspaceHealthTone = 'ready' | 'active' | 'review'
+
+export interface WorkspaceHealthSnapshot {
+	tone: WorkspaceHealthTone
+	title: string
+	description: string
+	totalForms: number
+	publishedForms: number
+	draftForms: number
+	totalResponses: number
+	newResponses: number
+	responseCountDrift: number
+	formsWithResponseCountDrift: number
 }
 
 export interface FormExportPayload {
@@ -101,6 +118,7 @@ export function buildDashboardResponseStats(
 	const responseCountMap = new Map<string, number>()
 	const newResponseCountMap = new Map<string, number>()
 	let totalResponses = 0
+	let newResponses = 0
 
 	for (const response of responses) {
 		const formId = String(response.formId || '')
@@ -110,10 +128,62 @@ export function buildDashboardResponseStats(
 		const submittedAt = Number(response.submittedAt || 0)
 		if (submittedAt > (lastSeen[formId] || 0)) {
 			newResponseCountMap.set(formId, (newResponseCountMap.get(formId) || 0) + 1)
+			newResponses++
 		}
 	}
 
-	return { responseCountMap, newResponseCountMap, totalResponses }
+	return { responseCountMap, newResponseCountMap, totalResponses, newResponses }
+}
+
+export function buildWorkspaceHealthSnapshot(
+	forms: readonly FormRecord[],
+	responses: readonly ResponseRecord[],
+	lastSeen: Record<string, number>,
+): WorkspaceHealthSnapshot {
+	const groups = groupDashboardForms(forms)
+	const stats = buildDashboardResponseStats(forms, responses, lastSeen)
+	let responseCountDrift = 0
+	let formsWithResponseCountDrift = 0
+
+	for (const form of forms) {
+		if (typeof form.responseCount !== 'number') continue
+		const actual = stats.responseCountMap.get(String(form.id)) || 0
+		const drift = Math.abs(form.responseCount - actual)
+		if (drift > 0) {
+			responseCountDrift += drift
+			formsWithResponseCountDrift++
+		}
+	}
+
+	const tone: WorkspaceHealthTone =
+		formsWithResponseCountDrift > 0 ? 'review'
+		: stats.newResponses > 0 ? 'active'
+		: 'ready'
+
+	const title =
+		tone === 'review' ? 'Workspace needs review'
+		: tone === 'active' ? 'New responses ready'
+		: 'Workspace ready'
+
+	const description =
+		tone === 'review'
+			? 'Local response totals need reconciliation before release reporting.'
+			: tone === 'active'
+				? 'New submissions are saved locally and ready to inspect.'
+				: 'Forms and responses are available from this device.'
+
+	return {
+		tone,
+		title,
+		description,
+		totalForms: forms.length,
+		publishedForms: groups.published.length,
+		draftForms: groups.drafts.length,
+		totalResponses: stats.totalResponses,
+		newResponses: stats.newResponses,
+		responseCountDrift,
+		formsWithResponseCountDrift,
+	}
 }
 
 export function buildLastSeenMap(formIds: readonly string[], previous: Record<string, number>, now: number): Record<string, number> {

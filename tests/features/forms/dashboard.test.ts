@@ -6,6 +6,7 @@ import {
 	buildFormExportPayload,
 	buildLastSeenMap,
 	buildTemplateFormPayload,
+	buildWorkspaceHealthSnapshot,
 	filterDashboardForms,
 	formExportFilename,
 	groupDashboardForms,
@@ -50,8 +51,50 @@ test('dashboard response stats count only owned forms and mark unseen responses'
 		{ id: 'r3', formId: 'missing', submittedAt: 300 },
 	], { a: 150 })
 	assert.equal(stats.totalResponses, 2)
+	assert.equal(stats.newResponses, 1)
 	assert.equal(stats.responseCountMap.get('a'), 2)
 	assert.equal(stats.newResponseCountMap.get('a'), 1)
+})
+
+test('workspace health summarizes local readiness and unseen response activity', () => {
+	const health = buildWorkspaceHealthSnapshot(
+		[
+			{ id: 'a', title: 'RSVP', status: 'published', responseCount: 2, settings: '{}' },
+			{ id: 'b', title: 'Survey', status: 'draft', responseCount: 0, settings: '{}' },
+		],
+		[
+			{ id: 'r1', formId: 'a', submittedAt: 100 },
+			{ id: 'r2', formId: 'a', submittedAt: 200 },
+		],
+		{ a: 150 },
+	)
+
+	assert.equal(health.tone, 'active')
+	assert.equal(health.totalForms, 2)
+	assert.equal(health.publishedForms, 1)
+	assert.equal(health.draftForms, 1)
+	assert.equal(health.totalResponses, 2)
+	assert.equal(health.newResponses, 1)
+	assert.equal(health.responseCountDrift, 0)
+})
+
+test('workspace health flags response counter drift without treating missing counters as drift', () => {
+	const health = buildWorkspaceHealthSnapshot(
+		[
+			{ id: 'a', title: 'RSVP', status: 'published', responseCount: 1, settings: '{}' },
+			{ id: 'b', title: 'Legacy', status: 'published', settings: '{}' },
+		],
+		[
+			{ id: 'r1', formId: 'a', submittedAt: 100 },
+			{ id: 'r2', formId: 'a', submittedAt: 200 },
+			{ id: 'r3', formId: 'b', submittedAt: 300 },
+		],
+		{ a: 300, b: 300 },
+	)
+
+	assert.equal(health.tone, 'review')
+	assert.equal(health.responseCountDrift, 1)
+	assert.equal(health.formsWithResponseCountDrift, 1)
 })
 
 test('last seen helper updates current form ids without dropping existing keys', () => {

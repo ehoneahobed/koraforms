@@ -39,12 +39,16 @@ import {
 	flushResponseSubmissions,
 	getPublicOfflineDiagnostics,
 	getPublicOfflineReadiness,
+	getPublicSubmissionStatusHint,
 	publicFormRecordToForm,
 	readLatestPublicFormVersion,
+	readPublicFormRecovery,
 	readPublicFormProgress,
+	requestPublicFormFromPeer,
 	savePublicFormVersion,
 	savePublicFormProgress,
 	shouldQueueSubmission,
+	startPublicFormPeerResponder,
 	type PublicOfflineReadiness,
 	type PublicFormSource,
 } from '../features/form-fill/offlineRuntime'
@@ -61,6 +65,13 @@ type PendingDuplicateSubmission = {
 	duplicateKey: string
 	clientSubmissionId: string
 	clientSubmittedAt: number
+}
+
+function resolveWithTimeout<T>(promise: Promise<T>, timeoutMs: number, fallback: T): Promise<T> {
+	return Promise.race([
+		promise,
+		new Promise<T>(resolve => window.setTimeout(() => resolve(fallback), timeoutMs)),
+	])
 }
 
 interface Props {
@@ -175,54 +186,89 @@ export function FormFill({ formId, navigate }: Props) {
 	useEffect(() => {
 		const controller = new AbortController()
 		let mounted = true
-		readLatestPublicFormVersion(formId)
-			.then((local) => {
-				if (!mounted || !local) return
-				setForm(publicFormRecordToForm(local))
-				setFormVersionHash(local.versionHash)
-				setFormSource('local')
-				setFormPersistedOffline(true)
-			})
-			.catch(() => {
-				setOfflinePersistenceError(true)
+
+		const loadForm = async () => {
+			let hasUsableForm = false
+			try {
+				const local = await resolveWithTimeout(readLatestPublicFormVersion(formId), 1_200, null)
+				if (mounted && local) {
+					setForm(publicFormRecordToForm(local))
+					setFormVersionHash(local.versionHash)
+					setFormSource('local')
+					setFormPersistedOffline(true)
+					hasUsableForm = true
+				}
+			} catch {
+				if (mounted) setOfflinePersistenceError(true)
 				// Local Kora store is unavailable; network fetch below can still load the form.
-			})
-		fetch(`/api/public/forms/${encodeURIComponent(formId)}`, { signal: controller.signal })
-			.then((res) => {
-				if (res.ok) return res.json()
-				return null
-			})
-			.then((data) => {
+			}
+
+			try {
+				const res = await fetch(`/api/public/forms/${encodeURIComponent(formId)}`, { signal: controller.signal })
+				const data = res.ok ? await res.json() : null
 				if (mounted && data && !data.error) {
 					setForm(data)
 					setFormSource('network')
-					savePublicFormVersion(formId, data)
-						.then((record) => {
-							if (!record || !mounted) return
+					hasUsableForm = true
+					try {
+						const record = await savePublicFormVersion(formId, data)
+						if (record && mounted) {
 							setFormVersionHash(record.versionHash)
 							setFormPersistedOffline(true)
 							setOfflinePersistenceError(false)
-						})
-						.catch((error) => {
-							if (mounted) setOfflinePersistenceError(true)
-							console.warn(
-								'[koraforms] Public form could not be persisted in Kora local database.',
-								error instanceof Error ? error.message : error,
-							)
-						})
+						}
+					} catch (error) {
+						if (mounted) setOfflinePersistenceError(true)
+						console.warn(
+							'[koraforms] Public form could not be persisted in Kora local database.',
+							error instanceof Error ? error.message : error,
+						)
+					}
 				}
-			})
-			.catch(() => {
+			} catch {
 				// Fetch failed (offline, network error)
-			})
-			.finally(() => {
-				if (mounted) setRemoteFetched(true)
-			})
+			}
+
+			if (!hasUsableForm) {
+				const peer = await requestPublicFormFromPeer(formId)
+				if (mounted && peer) {
+					setForm(peer.form)
+					setFormVersionHash(peer.versionHash)
+					setFormSource('local')
+					setFormPersistedOffline(true)
+					setOfflinePersistenceError(false)
+					hasUsableForm = true
+				}
+			}
+
+			if (!hasUsableForm) {
+				const recovery = readPublicFormRecovery(formId)
+				if (mounted && recovery) {
+					setForm(recovery.form)
+					setFormVersionHash(recovery.versionHash)
+					setFormSource('local')
+					setFormPersistedOffline(true)
+					setOfflinePersistenceError(false)
+				}
+			}
+
+			if (mounted) setRemoteFetched(true)
+		}
+
+		void loadForm()
 		return () => {
 			mounted = false
 			controller.abort()
 		}
 	}, [formId])
+
+	useEffect(() => {
+		return startPublicFormPeerResponder({
+			slug: formId,
+			getForm: () => form,
+			getVersionHash: () => formVersionHash,
+		})
+	}, [form, formId, formVersionHash])
 
 	// Set page meta when form loads (for client-side navigation and tab title)
 	useEffect(() => {
@@ -258,19 +304,21 @@ export function FormFill({ formId, navigate }: Props) {
 	}, [])
 
 	const refreshPendingOfflineCount = useCallback(() => {
+		const hintFormId = String(form?.id || formId)
+		const hint = getPublicSubmissionStatusHint(hintFormId)
 		Promise.all([
-			countPendingResponseSubmissions(),
-			countRejectedResponseSubmissions(),
+			resolveWithTimeout(countPendingResponseSubmissions(), 1_200, null),
+			resolveWithTimeout(countRejectedResponseSubmissions(), 1_200, null),
 		])
 			.then(([pending, rejected]) => {
-				setPendingOfflineSubmissions(pending)
-				setRejectedOfflineSubmissions(rejected)
+				setPendingOfflineSubmissions(pending ?? hint.pending)
+				setRejectedOfflineSubmissions(rejected ?? hint.rejected)
 			})
 			.catch(() => {
-				setPendingOfflineSubmissions(0)
-				setRejectedOfflineSubmissions(0)
+				setPendingOfflineSubmissions(hint.pending)
+				setRejectedOfflineSubmissions(hint.rejected)
 			})
-	}, [])
+	}, [form, formId])
 
 	const refreshOfflineReadiness = useCallback(() => {
 		getPublicOfflineReadiness(formId, formSource)
@@ -285,7 +333,7 @@ export function FormFill({ formId, navigate }: Props) {
 			refreshPendingOfflineCount()
 			return
 		}
-		const before = await countPendingResponseSubmissions()
+		const before = await resolveWithTimeout(countPendingResponseSubmissions(), 1_200, 0)
 		if (before === 0) {
 			refreshPendingOfflineCount()
 			return
