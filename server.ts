@@ -20,6 +20,7 @@ import type { UserStore } from '@korajs/auth/server'
 import type { ProductionHttpRouteContext, ProductionHttpRouteRequest, ProductionHttpRouteResponse } from '@korajs/server'
 import { parseFormFields, parseFormSettings, safeJsonParse, serializeFormSettings } from './src/domain/forms'
 import { hasFormAccessPasswordSecret, stripFormAccessSecrets, verifyFormAccessPasswordSecret } from './src/domain/formPassword'
+import { evaluatePublicResponseAcceptance } from './src/domain/responseAcceptance'
 import { validatePublishedResponsePayload } from './src/domain/responseValidation'
 import { buildSideEffectDeliveryJobs, isDeliverableWebhookUrl, isPublicWebhookIpAddress, normalizeWebhookConfig } from './src/domain/responseSideEffects'
 import { buildOpsDiagnosticsSnapshot } from './src/domain/opsDiagnostics'
@@ -742,25 +743,10 @@ async function main(): Promise<void> {
 						if (!validation.valid) {
 							return withCors({ status: 422, body: { error: 'Response failed validation', issues: validation.issues } })
 						}
-						// Enforce response limits and scheduling
-						try {
-							const settings = parseFormSettings(form.settings)
-							if (settings.closesAt && Date.now() > settings.closesAt) {
-								return withCors({ status: 403, body: { error: settings.closedMessage || 'This form is no longer accepting responses.' } })
-							}
-							if (settings.opensAt && Date.now() < settings.opensAt) {
-								return withCors({ status: 403, body: { error: 'This form is not yet open for responses.' } })
-							}
-							if (settings.maxResponses && settings.maxResponses > 0) {
-								const existing = await req.kora.query('responses', {
-									where: { formId: String(form.id) },
-								})
-								if (existing.length >= settings.maxResponses) {
-									return withCors({ status: 403, body: { error: settings.closedMessage || 'This form has reached its maximum number of responses.' } })
-								}
-							}
-						} catch {
-							// settings parse error - allow submission
+						const settings = parseFormSettings(form.settings)
+						const acceptance = evaluatePublicResponseAcceptance(settings, Number(form.responseCount || 0))
+						if (!acceptance.accepted) {
+							return withCors({ status: acceptance.status, body: { error: acceptance.error } })
 						}
 						const responseId = randomUUID()
 						const responseData = safeJsonParse<Record<string, unknown>>(validation.data, {})

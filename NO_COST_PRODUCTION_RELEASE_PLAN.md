@@ -88,17 +88,22 @@ Acceptance criteria:
 
 ### 5. Atomic Counters and Derived Analytics
 
+Status: implemented for accepted response counters; framework-level conditional admission is still needed for perfect hard quotas in multi-instance deployments.
+
 Goal: avoid read-modify-write races.
 
 Checklist:
 
-- Accepted response counts use Kora atomic operations.
+- Accepted response counts use Kora atomic operations. Implemented with `op.increment(1)`.
+- Max-response admission reads the Kora counter as the source of truth before accepting a response. Implemented.
+- Hard max-response quotas should become a single conditional accept-and-increment operation when Kora exposes a transaction or compare-and-swap style API.
 - Analytics are derived from accepted responses and immutable form versions.
 - Client-maintained totals are treated as hints, not truth.
 
 Acceptance criteria:
 
 - Concurrent submissions cannot lose counter updates.
+- Production deployments do not rely on process-local locks for quota correctness.
 
 ## Phase 3 - Offline Test Matrix
 

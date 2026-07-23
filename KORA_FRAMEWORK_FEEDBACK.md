@@ -60,7 +60,43 @@ syncServer.findById(...)
 - Reuse the same validation, previous-data capture, materialization, and fan-out behavior as `req.kora.apply()`.
 - Keep `applyLocalOperation()` for advanced callers that intentionally want to build operations themselves.
 
-## 3. Sync Operation Size and Rate Limits at Server Config Level
+## 3. Conditional Atomic Admission for Quotas
+
+KoraForms now uses Kora counter merge semantics and `op.increment(1)` for accepted response counts. That solves lost counter updates after a response is accepted.
+
+The remaining quota problem is stricter: max-response enforcement needs to accept a response and increment the counter only if the form is still below its limit at commit time. A normal precheck against `responseCount` is correct for most single-instance operation, but multiple production instances can still race unless Kora provides conditional mutation semantics.
+
+Suggested framework work:
+
+- Add a first-class conditional mutation or transaction API that can express:
+
+```ts
+await kora.transaction(async tx => {
+  const form = await tx.findById('forms', formId, { forUpdate: true })
+  if (form.responseCount >= form.settings.maxResponses) {
+    throw new KoraDomainRejection('max_responses_reached')
+  }
+  await tx.insert('responses', responseId, response)
+  await tx.update('forms', formId, { responseCount: op.increment(1) })
+})
+```
+
+or:
+
+```ts
+await kora.apply({
+  collection: 'forms',
+  id: formId,
+  if: { responseCount: { $lt: maxResponses } },
+  update: { responseCount: op.increment(1) },
+  also: [{ collection: 'responses', op: 'insert', id: responseId, data: response }],
+})
+```
+
+- Preserve operation-log semantics, HLC ordering, validation, fan-out, replay safety, and structured rejection details.
+- Avoid recommending process-local locks as the production pattern; they do not work across multiple Node processes, containers, or regions.
+
+## 4. Sync Operation Size and Rate Limits at Server Config Level
 
 `ClientSessionOptions` includes:
 
@@ -80,7 +116,7 @@ Requested framework work:
 
 Note: `maxConnections` and `batchSize` already exist on `KoraSyncServerConfig`; they are not part of this request.
 
-## 4. Production Server Access to Blob Live-Refs and Garbage Collection
+## 5. Production Server Access to Blob Live-Refs and Garbage Collection
 
 Kora `1.0.0-beta.1` already includes blob support:
 
@@ -127,7 +163,7 @@ createProductionServer({
 
 plus a scheduled GC flow that uses live refs safely.
 
-## 5. SQL Identifier Safety for Collection Names
+## 6. SQL Identifier Safety for Collection Names
 
 KoraForms moved public/offline collection names to snake_case after camelCase collection names created invalid SQL in browser SQLite.
 
@@ -138,7 +174,7 @@ Suggested framework work:
 
 Schema-definition-time validation may be clearer for developers because invalid collection names fail early before runtime storage setup.
 
-## 6. Multi-Runtime Browser Storage Guidance and Diagnostics
+## 7. Multi-Runtime Browser Storage Guidance and Diagnostics
 
 KoraForms has separate authenticated and public respondent runtimes on the same origin.
 

@@ -227,13 +227,8 @@ test('public respondents can complete a form with keyboard only', async ({ page,
 	await page.getByRole('button', { name: /start/i }).focus()
 	await page.keyboard.press('Enter')
 
-	await expect(page.getByRole('heading', { name: /your name/i })).toBeVisible()
-	await page.keyboard.type('Keyboard User')
-	await page.keyboard.press('Enter')
-
-	await expect(page.getByRole('heading', { name: /email address/i })).toBeVisible()
-	await page.keyboard.type('keyboard@example.com')
-	await page.keyboard.press('Enter')
+	await typeFocusedTextQuestion(page, /your name/i, 'Keyboard User')
+	await typeFocusedTextQuestion(page, /email address/i, 'keyboard@example.com')
 
 	await expect(page.getByRole('heading', { name: 'Thank you!' })).toBeVisible({ timeout: 15_000 })
 	await expect.poll(() => submissions.length, { timeout: 15_000 }).toBe(1)
@@ -589,6 +584,14 @@ async function fillTextQuestion(page: Page, heading: RegExp, value: string): Pro
 	await expect(page.getByRole('heading', { name: heading })).toBeVisible()
 	await page.locator('input:not([type="file"]), textarea').first().fill(value)
 	await page.getByRole('button', { name: /ok/i }).click()
+}
+
+async function typeFocusedTextQuestion(page: Page, heading: RegExp, value: string): Promise<void> {
+	await expect(page.getByRole('heading', { name: heading })).toBeVisible()
+	const input = page.locator('input:not([type="file"]), textarea').first()
+	await expect(input).toBeFocused({ timeout: 5_000 })
+	await page.keyboard.type(value)
+	await page.keyboard.press('Enter')
 }
 
 async function chooseOptionQuestion(page: Page, heading: RegExp, option: string): Promise<void> {
