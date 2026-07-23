@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import { ArrowLeft, ArrowRight, Check, Send, X, RotateCcw, Link, Copy, Bookmark } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Check, Send, X, RotateCcw, Link, Copy, Bookmark, ShieldCheck, AlertCircle, RefreshCw } from 'lucide-react'
 import type { FormField, FormSettings } from '../types'
 import { isFieldVisible, pipeValues, getFieldText, isRtlLanguage, LANGUAGES } from '../types'
 import { evaluateFormula } from '../utils/formula'
@@ -37,12 +37,14 @@ import {
 	clearPublicFormProgress,
 	enqueueResponseSubmission,
 	flushResponseSubmissions,
+	getPublicOfflineReadiness,
 	publicFormRecordToForm,
 	readLatestPublicFormVersion,
 	readPublicFormProgress,
 	savePublicFormVersion,
 	savePublicFormProgress,
 	shouldQueueSubmission,
+	type PublicOfflineReadiness,
 	type PublicFormSource,
 } from '../features/form-fill/offlineRuntime'
 import { createSubmissionId } from '../features/form-fill/offlineModel'
@@ -65,6 +67,71 @@ interface Props {
 	navigate: (path: string) => void
 }
 
+function OfflineReadinessPanel({
+	readiness,
+	isPreparing,
+	onPrepare,
+}: {
+	readiness: PublicOfflineReadiness | null
+	isPreparing: boolean
+	onPrepare: () => void
+}) {
+	const ready = readiness?.ready ?? false
+	return (
+		<div className="mt-8 rounded-2xl border border-gray-200 bg-white/80 p-4 text-left shadow-sm shadow-gray-900/5 backdrop-blur dark:border-gray-800 dark:bg-gray-900/70">
+			<div className="flex items-start justify-between gap-4">
+				<div className="flex items-start gap-3">
+					<div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl ${
+						ready
+							? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-300'
+							: 'bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-300'
+					}`}>
+						{ready ? <ShieldCheck className="h-4 w-4" /> : <AlertCircle className="h-4 w-4" />}
+					</div>
+					<div>
+						<p className="text-sm font-semibold text-gray-950 dark:text-gray-50">
+							{ready ? 'Ready offline' : 'Prepare before going offline'}
+						</p>
+						<p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">
+							{ready
+								? 'This device has what it needs to open, fill, and submit locally.'
+								: 'Run the checks while online so field work can continue without service.'}
+						</p>
+					</div>
+				</div>
+				<button
+					type="button"
+					onClick={onPrepare}
+					disabled={isPreparing}
+					className="inline-flex shrink-0 items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-700 shadow-sm shadow-gray-900/5 transition-smooth hover:border-gray-300 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-200 dark:hover:bg-gray-900"
+				>
+					<RefreshCw className={`h-3.5 w-3.5 ${isPreparing ? 'animate-spin' : ''}`} />
+					{isPreparing ? 'Checking' : 'Prepare'}
+				</button>
+			</div>
+			{readiness && (
+				<div className="mt-4 grid gap-2 sm:grid-cols-2">
+					{readiness.checks.map(check => (
+						<div key={check.id} className="flex items-start gap-2 rounded-xl bg-gray-50 px-3 py-2 dark:bg-gray-950/60">
+							<span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${
+								check.status === 'ready'
+									? 'bg-emerald-500'
+									: check.status === 'pending'
+										? 'bg-amber-400'
+										: 'bg-red-500'
+							}`} />
+							<div className="min-w-0">
+								<p className="truncate text-xs font-medium text-gray-800 dark:text-gray-200">{check.label}</p>
+								<p className="mt-0.5 line-clamp-2 text-[11px] leading-4 text-gray-500 dark:text-gray-500">{check.detail}</p>
+							</div>
+						</div>
+					))}
+				</div>
+			)}
+		</div>
+	)
+}
+
 export function FormFill({ formId, navigate }: Props) {
 	// Fetch form from the public API (no Kora sync required)
 	const [form, setForm] = useState<Record<string, unknown> | null>(null)
@@ -76,6 +143,8 @@ export function FormFill({ formId, navigate }: Props) {
 	const [formVersionHash, setFormVersionHash] = useState('')
 	const [formPersistedOffline, setFormPersistedOffline] = useState(false)
 	const [offlinePersistenceError, setOfflinePersistenceError] = useState(false)
+	const [offlineReadiness, setOfflineReadiness] = useState<PublicOfflineReadiness | null>(null)
+	const [isPreparingOffline, setIsPreparingOffline] = useState(false)
 
 	useEffect(() => {
 		const controller = new AbortController()
@@ -177,6 +246,14 @@ export function FormFill({ formId, navigate }: Props) {
 			})
 	}, [])
 
+	const refreshOfflineReadiness = useCallback(() => {
+		getPublicOfflineReadiness(formId, formSource)
+			.then(setOfflineReadiness)
+			.catch(() => {
+				setOfflineReadiness(null)
+			})
+	}, [formId, formSource])
+
 	const flushOfflineSubmissions = useCallback(async () => {
 		if (typeof navigator !== 'undefined' && !navigator.onLine) {
 			refreshPendingOfflineCount()
@@ -211,6 +288,10 @@ export function FormFill({ formId, navigate }: Props) {
 			window.removeEventListener('online', handleOnline)
 		}
 	}, [flushOfflineSubmissions, refreshPendingOfflineCount])
+
+	useEffect(() => {
+		refreshOfflineReadiness()
+	}, [formPersistedOffline, pendingOfflineSubmissions, rejectedOfflineSubmissions, remoteFetched, refreshOfflineReadiness])
 
 	const submitResponse = useCallback(async (
 		realFormId: string,
@@ -249,6 +330,31 @@ export function FormFill({ formId, navigate }: Props) {
 			throw error
 		}
 	}, [formId, formVersionHash, refreshPendingOfflineCount, submitResponseToServer])
+
+	const prepareOfflineUse = useCallback(async () => {
+		setIsPreparingOffline(true)
+		try {
+			if (form) {
+				const record = await savePublicFormVersion(formId, form)
+				if (record) {
+					setFormVersionHash(record.versionHash)
+					setFormPersistedOffline(true)
+					setOfflinePersistenceError(false)
+				}
+			}
+			const shellPromise = (window as Window & { __KORAFORMS_OFFLINE_SHELL_READY__?: Promise<void> }).__KORAFORMS_OFFLINE_SHELL_READY__
+			if (shellPromise) await shellPromise.catch(() => undefined)
+			await refreshOfflineReadiness()
+		} catch (error) {
+			setOfflinePersistenceError(true)
+			console.warn(
+				'[koraforms] Offline preparation failed.',
+				error instanceof Error ? error.message : error,
+			)
+		} finally {
+			setIsPreparingOffline(false)
+		}
+	}, [form, formId, refreshOfflineReadiness])
 
 	const [currentIndex, setCurrentIndex] = useState(-1) // -1 = welcome screen
 	const [values, setValues] = useState<Record<string, string>>({})
@@ -865,6 +971,11 @@ export function FormFill({ formId, navigate }: Props) {
 									: lastSyncMessage}
 							</p>
 						)}
+						<OfflineReadinessPanel
+							readiness={offlineReadiness}
+							isPreparing={isPreparingOffline}
+							onPrepare={prepareOfflineUse}
+						/>
 					</div>
 				</div>
 			</div>

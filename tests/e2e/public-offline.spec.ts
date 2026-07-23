@@ -138,6 +138,8 @@ test('public respondents can load, complete, queue, and sync a form offline', as
 	await expectVisibleWithPageDiagnostics(page, page.getByText('Available offline'), diagnostics)
 	await waitForServiceWorkerControl(page)
 	await waitForOfflineRouteCache(page)
+	await page.getByRole('button', { name: /prepare/i }).click()
+	await expect(page.getByText('Ready offline')).toBeVisible({ timeout: 10_000 })
 
 	apiOnline = false
 	await context.setOffline(true)
@@ -264,6 +266,60 @@ test('offline submissions move to needs review when server later rejects sync', 
 	await context.setOffline(false)
 	await expect.poll(() => submissionAttempts, { timeout: 15_000 }).toBe(1)
 	await expect(page.getByText(/1 response needs review/i)).toBeVisible({ timeout: 15_000 })
+})
+
+test('offline queued submissions survive tab close before reconnect', async ({ page, context }) => {
+	const submissions: Array<Record<string, unknown>> = []
+	let apiOnline = true
+
+	await context.route(`**/api/public/forms/${REJECTED_FORM_SLUG}`, async route => {
+		if (!apiOnline) {
+			await route.abort('internetdisconnected')
+			return
+		}
+		await route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify(rejectedSyncForm),
+		})
+	})
+
+	await context.route('**/api/public/responses', async route => {
+		const payload = route.request().postDataJSON() as Record<string, unknown>
+		submissions.push(payload)
+		await route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify({ ok: true }),
+		})
+	})
+
+	await page.goto(`/f/${REJECTED_FORM_SLUG}`)
+	await expect(page.getByRole('heading', { name: 'Closed Field Report' })).toBeVisible({ timeout: 15_000 })
+	await expect(page.getByText('Available offline')).toBeVisible({ timeout: 15_000 })
+	await waitForServiceWorkerControl(page)
+	await waitForOfflineRouteCache(page)
+
+	apiOnline = false
+	await context.setOffline(true)
+	await page.getByRole('button', { name: /start/i }).click()
+	await fillTextQuestion(page, /your name/i, 'Grace Hopper')
+	await expect(page.getByRole('heading', { name: /email address/i })).toBeVisible()
+	await page.locator('input:not([type="file"]), textarea').first().fill('grace@example.com')
+	await page.getByRole('button', { name: /submit/i }).click()
+	await expect(page.getByRole('heading', { name: 'Saved on this device' })).toBeVisible()
+	expect(submissions).toHaveLength(0)
+	await page.close()
+
+	const reopened = await context.newPage()
+	await reopened.goto(`/f/${REJECTED_FORM_SLUG}`, { waitUntil: 'domcontentloaded' })
+	await expect(reopened.getByRole('heading', { name: 'Closed Field Report' })).toBeVisible({ timeout: 15_000 })
+	await expect(reopened.getByText('Loaded from this device')).toBeVisible()
+	await expect(reopened.getByText('1 response waiting to sync', { exact: true })).toBeVisible()
+
+	apiOnline = true
+	await context.setOffline(false)
+	await expect.poll(() => submissions.length, { timeout: 15_000 }).toBe(1)
 })
 
 test('public respondents can complete complex field types offline', async ({ page, context }) => {

@@ -1,6 +1,7 @@
 import {
 	buildPublicFormVersionRecord,
 	buildPublicFormProgressRecord,
+	buildPublicOfflineReadiness,
 	buildResponseSubmissionRecord,
 	assertPendingSubmissionLimit,
 	isCacheablePublicForm,
@@ -10,6 +11,7 @@ import {
 	stableHash,
 	type FlushResult,
 	type PublicOfflineDiagnostics,
+	type PublicOfflineReadiness,
 	type PublicOfflineSubmissionIssue,
 	type PublicFormSource,
 	type PublicFormProgressRecord,
@@ -25,6 +27,7 @@ import { serializeJsonForTransport } from '../../domain/forms'
 export {
 	buildPublicFormVersionRecord,
 	buildPublicFormProgressRecord,
+	buildPublicOfflineReadiness,
 	buildResponseSubmissionRecord,
 	assertPendingSubmissionLimit,
 	isCacheablePublicForm,
@@ -34,6 +37,7 @@ export {
 	stableHash,
 	type FlushResult,
 	type PublicOfflineDiagnostics,
+	type PublicOfflineReadiness,
 	type PublicOfflineSubmissionIssue,
 	type PublicFormSource,
 	type PublicFormProgressRecord,
@@ -186,6 +190,44 @@ export async function getPublicOfflineDiagnostics(now = Date.now()): Promise<Pub
 	}
 }
 
+export async function getPublicOfflineReadiness(
+	slug: string,
+	formSource: PublicFormSource | null = null,
+): Promise<PublicOfflineReadiness> {
+	let localDatabaseReady = true
+	let cachedVersionHash = ''
+	try {
+		await publicApp.ready
+		const local = await readLatestPublicFormVersion(slug)
+		cachedVersionHash = local?.versionHash || ''
+	} catch {
+		localDatabaseReady = false
+	}
+
+	const [shell, diagnostics, blobUsage] = await Promise.all([
+		getOfflineShellStatus(),
+		getPublicOfflineDiagnostics().catch(() => null),
+		getLocalBlobStorageUsage().then(
+			usage => ({ ready: true, bytes: usage.bytes, count: usage.count }),
+			() => ({ ready: false, bytes: 0, count: 0 }),
+		),
+	])
+
+	return buildPublicOfflineReadiness({
+		hasCachedForm: Boolean(cachedVersionHash),
+		cachedVersionHash,
+		formSource,
+		appShellSupported: shell.supported,
+		appShellReady: shell.ready,
+		localDatabaseReady,
+		blobStorageReady: blobUsage.ready,
+		pendingSubmissionCount: diagnostics?.pendingSubmissionCount ?? 0,
+		rejectedSubmissionCount: diagnostics?.submissions.rejected ?? 0,
+		localBlobBytes: blobUsage.bytes,
+		localBlobCount: blobUsage.count,
+	})
+}
+
 export async function flushResponseSubmissions(
 	submit: (item: ResponseSubmissionRecord & { data: string }) => Promise<void>,
 	now = Date.now(),
@@ -249,5 +291,29 @@ function toSubmissionIssue(record: ResponseSubmissionRecord): PublicOfflineSubmi
 		attempts: Number(record.attempts || 0),
 		lastError: record.lastError,
 		updatedAt: Number(record.updatedAt || 0),
+	}
+}
+
+async function getOfflineShellStatus(): Promise<{ supported: boolean; ready: boolean }> {
+	if (typeof window === 'undefined' || typeof navigator === 'undefined') {
+		return { supported: false, ready: false }
+	}
+	if (!('serviceWorker' in navigator)) {
+		return { supported: false, ready: false }
+	}
+
+	const shellPromise = (window as Window & { __KORAFORMS_OFFLINE_SHELL_READY__?: Promise<void> }).__KORAFORMS_OFFLINE_SHELL_READY__
+	try {
+		await Promise.race([
+			shellPromise ?? navigator.serviceWorker.ready.then(() => undefined),
+			new Promise<void>(resolve => window.setTimeout(resolve, 2_500)),
+		])
+	} catch {
+		return { supported: true, ready: false }
+	}
+
+	return {
+		supported: true,
+		ready: Boolean(navigator.serviceWorker.controller || shellPromise),
 	}
 }

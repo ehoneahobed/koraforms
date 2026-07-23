@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
 	buildPublicFormVersionRecord,
 	buildPublicFormProgressRecord,
+	buildPublicOfflineReadiness,
 	buildResponseSubmissionRecord,
 	assertLocalBlobStorageLimit,
 	assertPendingSubmissionLimit,
@@ -103,6 +104,44 @@ test('public form progress records preserve respondent resume state', () => {
 		savedAt: 456,
 		updatedAt: 456,
 	})
+})
+
+test('offline readiness model reports ready only when every required capability is ready', () => {
+	const ready = buildPublicOfflineReadiness({
+		hasCachedForm: true,
+		cachedVersionHash: 'v1',
+		formSource: 'network',
+		appShellSupported: true,
+		appShellReady: true,
+		localDatabaseReady: true,
+		blobStorageReady: true,
+		pendingSubmissionCount: 0,
+		rejectedSubmissionCount: 0,
+		localBlobBytes: 0,
+		localBlobCount: 0,
+	})
+
+	assert.equal(ready.ready, true)
+	assert.equal(ready.cachedVersionHash, 'v1')
+	assert.deepEqual(ready.checks.map(check => check.status), ['ready', 'ready', 'ready', 'ready'])
+
+	const notReady = buildPublicOfflineReadiness({
+		hasCachedForm: false,
+		formSource: 'local',
+		appShellSupported: true,
+		appShellReady: false,
+		localDatabaseReady: true,
+		blobStorageReady: true,
+		pendingSubmissionCount: 2,
+		rejectedSubmissionCount: 1,
+		localBlobBytes: 1024,
+		localBlobCount: 1,
+	})
+
+	assert.equal(notReady.ready, false)
+	assert.deepEqual(notReady.checks.map(check => check.status), ['pending', 'pending', 'ready', 'unavailable'])
+	assert.equal(notReady.pendingSubmissionCount, 2)
+	assert.equal(notReady.rejectedSubmissionCount, 1)
 })
 
 test('queue decision distinguishes offline/network failures from server rejections', () => {

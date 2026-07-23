@@ -90,6 +90,27 @@ export interface PublicOfflineDiagnostics {
 	recentIssues: PublicOfflineSubmissionIssue[]
 }
 
+export type PublicOfflineReadinessStatus = 'ready' | 'pending' | 'unavailable'
+export type PublicOfflineReadinessCheckId = 'form-version' | 'app-shell' | 'local-storage' | 'submission-queue'
+
+export interface PublicOfflineReadinessCheck {
+	id: PublicOfflineReadinessCheckId
+	label: string
+	status: PublicOfflineReadinessStatus
+	detail: string
+}
+
+export interface PublicOfflineReadiness {
+	ready: boolean
+	formSource: PublicFormSource | null
+	cachedVersionHash: string
+	pendingSubmissionCount: number
+	rejectedSubmissionCount: number
+	localBlobBytes: number
+	localBlobCount: number
+	checks: PublicOfflineReadinessCheck[]
+}
+
 export function stableHash(value: unknown): string {
 	const json = JSON.stringify(value)
 	let hash = 0
@@ -104,6 +125,76 @@ export function isCacheablePublicForm(form: Record<string, unknown>): boolean {
 	if ((form as { passwordProtected?: unknown }).passwordProtected) return false
 	if (!form.id || !form.fields) return false
 	return true
+}
+
+export function buildPublicOfflineReadiness(params: {
+	hasCachedForm: boolean
+	cachedVersionHash?: string
+	formSource?: PublicFormSource | null
+	appShellSupported: boolean
+	appShellReady: boolean
+	localDatabaseReady: boolean
+	blobStorageReady: boolean
+	pendingSubmissionCount: number
+	rejectedSubmissionCount: number
+	localBlobBytes: number
+	localBlobCount: number
+}): PublicOfflineReadiness {
+	const checks: PublicOfflineReadinessCheck[] = [
+		{
+			id: 'form-version',
+			label: 'Form saved on this device',
+			status: params.hasCachedForm ? 'ready' : 'pending',
+			detail: params.hasCachedForm
+				? 'This published version can open without a network connection.'
+				: 'Open or prepare this form while online before field use.',
+		},
+		{
+			id: 'app-shell',
+			label: 'App shell cached',
+			status: params.appShellReady ? 'ready' : params.appShellSupported ? 'pending' : 'unavailable',
+			detail: params.appShellReady
+				? 'The form runtime is available for offline reloads.'
+				: params.appShellSupported
+					? 'The browser is still preparing the offline app shell.'
+					: 'This browser does not expose service worker offline caching.',
+		},
+		{
+			id: 'local-storage',
+			label: 'Attachment storage ready',
+			status: params.localDatabaseReady && params.blobStorageReady ? 'ready' : 'unavailable',
+			detail: params.localDatabaseReady && params.blobStorageReady
+				? params.localBlobCount > 0
+					? `${params.localBlobCount} local file${params.localBlobCount === 1 ? '' : 's'} saved for sync.`
+					: 'Files and signatures can be saved locally before sync.'
+				: 'This device cannot currently persist offline files safely.',
+		},
+		{
+			id: 'submission-queue',
+			label: 'Submission queue clear',
+			status: params.rejectedSubmissionCount > 0
+				? 'unavailable'
+				: params.pendingSubmissionCount > 0
+					? 'pending'
+					: 'ready',
+			detail: params.rejectedSubmissionCount > 0
+				? `${params.rejectedSubmissionCount} response${params.rejectedSubmissionCount === 1 ? '' : 's'} needs review.`
+				: params.pendingSubmissionCount > 0
+					? `${params.pendingSubmissionCount} response${params.pendingSubmissionCount === 1 ? '' : 's'} waiting to sync.`
+					: 'No local submissions are waiting on this device.',
+		},
+	]
+
+	return {
+		ready: checks.every(check => check.status === 'ready'),
+		formSource: params.formSource ?? null,
+		cachedVersionHash: params.cachedVersionHash || '',
+		pendingSubmissionCount: params.pendingSubmissionCount,
+		rejectedSubmissionCount: params.rejectedSubmissionCount,
+		localBlobBytes: params.localBlobBytes,
+		localBlobCount: params.localBlobCount,
+		checks,
+	}
 }
 
 export function buildPublicFormVersionRecord(
