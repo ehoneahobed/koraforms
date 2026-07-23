@@ -5,7 +5,7 @@
 #   - Production PostgreSQL persistence
 #   - Runtime secrets
 #   - HTTP ingress for app traffic and WebSocket sync
-#   - Conservative autoscaling
+#   - Single-replica launch posture until framework-level conditional admission
 #   - WebSocket transport support
 #
 # Portable: when migrating to AWS/GCP, this file is replaced by their
@@ -52,7 +52,9 @@ properties:
             value: "" # Set to https://your-production-domain
     scale:
       minReplicas: 1
-      maxReplicas: 5
+      # Keep public launch single-replica until Kora exposes conditional
+      # admission/transactions for hard response quotas across instances.
+      maxReplicas: 1
       rules:
         - name: http-rule
           http:

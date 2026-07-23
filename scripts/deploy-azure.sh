@@ -180,7 +180,7 @@ if [ -n "${DATABASE_URL:-}" ]; then
     --name "$APP_NAME" \
     --resource-group "$RG" \
     --min-replicas "${AZURE_MIN_REPLICAS:-1}" \
-    --max-replicas "${AZURE_MAX_REPLICAS:-5}" \
+    --max-replicas "${AZURE_MAX_REPLICAS:-1}" \
     --output none
 else
   az containerapp update \

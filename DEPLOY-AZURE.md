@@ -43,6 +43,12 @@ Required runtime values:
 | `DATABASE_URL` | Yes | PostgreSQL connection string |
 | `PUBLIC_URL` | Recommended | Canonical production origin for links/meta |
 
+Launch scaling:
+
+- KoraForms intentionally deploys with `maxReplicas=1` by default for the first public release.
+- This keeps public response quotas and in-memory request throttles deterministic while Kora adds framework-level conditional admission/transaction support.
+- Do not increase `AZURE_MAX_REPLICAS` for forms that promise hard `maxResponses` limits until that framework support lands.
+
 ## Step 3: Run Initial Deployment Script
 
 ```bash

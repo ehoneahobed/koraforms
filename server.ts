@@ -290,6 +290,10 @@ async function createStores(): Promise<{ store: ServerStore; userStore: UserStor
 		return { store, userStore }
 	}
 
+	if (process.env.NODE_ENV === 'production' && process.env.ALLOW_EPHEMERAL_SQLITE !== 'true') {
+		throw new Error('DATABASE_URL must be set to PostgreSQL for production. Set ALLOW_EPHEMERAL_SQLITE=true only for disposable demos.')
+	}
+
 	const dbPath = process.env.DB_PATH || './koraforms-server.db'
 	console.log(`Using SQLite storage (${dbPath})`)
 	const store = createSqliteServerStore({ filename: dbPath })
