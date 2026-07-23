@@ -67,14 +67,15 @@ syncServer.findById(...)
 - `maxOperationBytes`
 - `maxOpsPerMinute`
 
-However, these options do not appear on `KoraSyncServerConfig`, so they cannot be passed through `createKoraServer()` or `createProductionServer()` today.
+These options are present on `ClientSessionOptions`, but they are not present on `KoraSyncServerConfig`, so they cannot be passed through `createProductionServer({ syncOptions })` in `1.0.0-beta.1` without a type escape.
 
 KoraForms can rate-limit REST acceptance routes, but sync-session hardening should also be configurable at the server boundary.
 
-Suggested framework work:
+Requested framework work:
 
 - Promote `maxOperationBytes` and `maxOpsPerMinute` to `KoraSyncServerConfig`.
 - Ensure `createProductionServer({ syncOptions })` can pass them through.
+- Document recommended production defaults.
 - Return structured rejection details so product UIs can distinguish retryable transport failures from permanent server rejections.
 
 Note: `maxConnections` and `batchSize` already exist on `KoraSyncServerConfig`; they are not part of this request.
@@ -161,3 +162,5 @@ These were checked and should not be reported as missing framework features:
 - `maxConnections` and `batchSize` are available on `KoraSyncServerConfig`.
 - Product-supplied timestamps can use `t.timestamp()` without `.auto()` or a numeric field where domain-specific timestamp semantics are preferred.
 - `t.json()`, `t.object()`, and `t.secret()` are available. KoraForms is now using `t.json()` for dynamic payloads and `t.secret().hashed()` for form access passwords.
+- Atomic operations are available. KoraForms now uses `op.increment(1)` for accepted response counters.
+- Enum transitions are available. KoraForms now constrains `response_submissions.localStatus` transitions in schema.

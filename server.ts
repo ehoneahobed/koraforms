@@ -14,7 +14,7 @@ import {
 	createSqliteUserStore,
 	createPostgresUserStore,
 } from '@korajs/auth/server'
-import { defineSchema, t, createOperation, HybridLogicalClock } from '@korajs/core'
+import { defineSchema, t, op, createOperation, HybridLogicalClock } from '@korajs/core'
 import type { ServerStore } from '@korajs/server'
 import type { UserStore } from '@korajs/auth/server'
 import type { ProductionHttpRouteContext, ProductionHttpRouteRequest, ProductionHttpRouteResponse } from '@korajs/server'
@@ -96,7 +96,13 @@ const koraFormsSchema = defineSchema({
 				formVersionHash: t.string().default(''),
 				data: t.json<Record<string, unknown>>().default({}),
 				clientSubmissionId: t.string(),
-				localStatus: t.enum(['submitted_locally', 'syncing', 'accepted', 'rejected', 'failed']).default('submitted_locally'),
+				localStatus: t.enum(['submitted_locally', 'syncing', 'accepted', 'rejected', 'failed']).default('submitted_locally').transitions({
+					submitted_locally: ['syncing', 'accepted', 'rejected', 'failed'],
+					syncing: ['accepted', 'rejected', 'failed'],
+					failed: ['syncing', 'submitted_locally'],
+					accepted: [],
+					rejected: [],
+				}),
 				attempts: t.number().default(0),
 				lastError: t.string().default(''),
 				submittedAt: t.number(),
@@ -753,6 +759,9 @@ async function main(): Promise<void> {
 							clientSubmissionId,
 							submittedAt: clientSubmittedAt,
 						})
+						await applyRouteUpdate(req.kora, 'forms', String(form.id), {
+							responseCount: op.increment(1),
+						})
 
 						// Persist side-effect delivery jobs before attempting delivery.
 						try {
@@ -821,6 +830,18 @@ async function insertRouteRecord(
 	const result = await kora.apply({ collection, type: 'insert', recordId, data })
 	if (!result.ok) {
 		throw new Error(`Kora route insert rejected for ${collection}/${recordId}: ${result.code} ${result.message}`)
+	}
+}
+
+async function applyRouteUpdate(
+	kora: ProductionHttpRouteContext,
+	collection: string,
+	recordId: string,
+	data: Record<string, unknown>,
+): Promise<void> {
+	const result = await kora.apply({ collection, type: 'update', recordId, data })
+	if (!result.ok) {
+		throw new Error(`Kora route update rejected for ${collection}/${recordId}: ${result.code} ${result.message}`)
 	}
 }
 
