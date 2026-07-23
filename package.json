@@ -25,14 +25,14 @@
     "postinstall": "node scripts/patch-server.js"
   },
   "dependencies": {
-    "@korajs/auth": "1.0.0-beta.1",
-    "@korajs/core": "1.0.0-beta.1",
-    "@korajs/react": "1.0.0-beta.1",
-    "@korajs/server": "1.0.0-beta.1",
-    "@korajs/store": "1.0.0-beta.1",
+    "@korajs/auth": "1.0.0-beta.2",
+    "@korajs/core": "1.0.0-beta.2",
+    "@korajs/react": "1.0.0-beta.2",
+    "@korajs/server": "1.0.0-beta.2",
+    "@korajs/store": "1.0.0-beta.2",
     "@sqlite.org/sqlite-wasm": ">=3.51.0-build1",
     "better-sqlite3": "^12.9.0",
-    "korajs": "1.0.0-beta.1",
+    "korajs": "1.0.0-beta.2",
     "lucide-react": "^0.468.0",
     "postgres": "^3.4.0",
     "qrcode": "^1.5.4",
@@ -51,7 +51,7 @@
     ]
   },
   "devDependencies": {
-    "@korajs/cli": "1.0.0-beta.1",
+    "@korajs/cli": "1.0.0-beta.2",
     "@playwright/test": "^1.61.1",
     "@tailwindcss/vite": "^4.0.0",
     "@types/better-sqlite3": "^7.6.13",

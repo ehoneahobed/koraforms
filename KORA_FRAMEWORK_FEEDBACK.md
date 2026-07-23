@@ -1,77 +1,43 @@
 # Kora Framework Feedback From KoraForms
 
-This feedback is based on KoraForms integration work against Kora.js `1.0.0-beta.1`.
+This feedback is based on KoraForms integration work against Kora.js `1.0.0-beta.2`.
 
 KoraForms is an offline-first forms product. The product bar is that forms work anywhere: authenticated creators can build and manage forms offline, and public respondents can open cached forms, fill every first-party field type, save progress, submit locally, and sync automatically when connectivity returns.
 
-The items below are framework-team follow-ups only. APIs that are already available in `1.0.0-beta.1` are not listed as missing features.
+## Beta.2 Improvements Confirmed
 
-## 1. Server-Side Operation Validators Before Materialization
+Kora `1.0.0-beta.2` resolves most of the framework issues KoraForms previously reported against `1.0.0-beta.1`:
 
-KoraForms needs public respondent submissions to sync as durable offline operations without exposing owner-visible `responses` directly to anonymous clients.
+- `KoraSyncServerConfig` now exposes `maxOperationBytes` and `maxOpsPerMinute`, and `createProductionServer({ syncOptions })` can pass them through.
+- `validateOperation` now runs untrusted sync operations through a pre-materialization domain validation hook.
+- Operation validators can return structured `accept`, `reject`, and `ignore` decisions.
+- Rejected operation state is available client-side through `app.sync.getRejectedOperations()`, `app.sync.clearRejectedOperations()`, and the `sync:operation-rejected` event.
+- `createProductionServer()` now returns `server.kora`, giving background workers the same trusted route-style `apply`, `query`, and `findById` data-plane context as HTTP routes.
+- `createProductionServer()` now exposes `server.getLiveBlobRefs()`, so apps using the production wrapper can garbage-collect central blob storage.
+- SQL generation now uses `quoteIdent(...)` consistently for collection and field identifiers, including camelCase and reserved-word-safe names.
+- Browser SQLite WASM storage now has multi-tab coordination through leader/follower roles, BroadcastChannel RPC, and `navigator.locks` where available.
+- OPFS fallback is now observable through `store:opfs-unavailable` diagnostics with classified reasons such as `lock-conflict`, `timeout`, and `unsupported`.
+- KoraForms has updated its server integration to use beta.2 sync limits, the production `server.kora` context for side-effect delivery status updates, and `server.getLiveBlobRefs()` with `collectBlobGarbage()` for scheduled central blob cleanup.
 
-The required workflow is:
+## Remaining Framework-Level Gaps
 
-- A respondent opens a published form while online.
-- The immutable form version is cached locally.
-- The respondent fills and submits offline.
-- A durable local submission operation is created.
-- When online, Kora sync sends that operation to the server.
-- The server validates it against the published form version, schedule, max-response limit, duplicate policy, access policy, and payload limits.
-- Only accepted submissions become owner-visible `responses`.
-- Rejected submissions remain recoverable and explainable on the respondent device.
+### 1. Conditional Atomic Admission for Server Routes
 
-Kora `1.0.0-beta.1` has structural schema validation, constraints, state transitions, auth scopes, and route-level `req.kora.apply()`. Those are useful, but they do not appear to provide a first-class sync-time domain validation hook that can reject or transform anonymous submitted operations before owner-visible materialization.
+KoraForms uses Kora counter merge semantics and `op.increment(1)` for accepted response counts. That prevents lost counter updates after a response is accepted.
 
-Suggested framework work:
-
-- Add server-side operation validators that run before materialization.
-- Allow accepted operations to produce derived/materialized records.
-- Allow rejected operations to return structured rejection details to the originating client.
-- Support pending public-submission collections that can be synced anonymously while keeping accepted owner-visible collections private.
-- Make this work with Kora's existing operation log, HLC ordering, scopes, replay, and diagnostics.
-
-## 2. Route-Style Mutation API Outside HTTP Route Handlers
-
-`req.kora.apply()`, `req.kora.query()`, and `req.kora.findById()` are a strong improvement in `1.0.0-beta.1`.
-
-The gap is that the same route-style API is available only inside `ProductionHttpRouteRequest`. Background jobs and scheduled tasks do not receive a request object.
-
-KoraForms has a background side-effect processor for webhook/email delivery status. `KoraSyncServer.applyLocalOperation()` exists, but it requires a fully formed operation. The higher-level mutation builder used by `req.kora.apply()` is not exposed for non-route jobs, and `createProductionServer()` returns only `start()` and `stop()`.
+The remaining quota problem is stricter: max-response enforcement needs to accept a response and increment the counter only if the form is still below its limit at commit time. A precheck against `responseCount` is fine for single-instance launch, but multiple production instances can still race unless Kora provides conditional server-route mutation semantics.
 
 Suggested framework work:
 
-- Expose a production-server or sync-server mutation context outside request handlers:
+- Add a first-class conditional mutation or transaction API on `ProductionHttpRouteContext`.
+- Let the route read current state and commit multiple mutations atomically.
+- Preserve operation-log semantics, HLC ordering, validation, fan-out, replay safety, and structured rejection details.
+- Avoid recommending process-local locks as the production pattern; they do not work across multiple Node processes, containers, or regions.
+
+Possible shapes:
 
 ```ts
-server.kora.apply(...)
-server.kora.query(...)
-server.kora.findById(...)
-```
-
-or:
-
-```ts
-syncServer.applyMutation(...)
-syncServer.query(...)
-syncServer.findById(...)
-```
-
-- Reuse the same validation, previous-data capture, materialization, and fan-out behavior as `req.kora.apply()`.
-- Keep `applyLocalOperation()` for advanced callers that intentionally want to build operations themselves.
-
-## 3. Conditional Atomic Admission for Quotas
-
-KoraForms now uses Kora counter merge semantics and `op.increment(1)` for accepted response counts. That solves lost counter updates after a response is accepted.
-
-The remaining quota problem is stricter: max-response enforcement needs to accept a response and increment the counter only if the form is still below its limit at commit time. A normal precheck against `responseCount` is correct for most single-instance operation, but multiple production instances can still race unless Kora provides conditional mutation semantics.
-
-Suggested framework work:
-
-- Add a first-class conditional mutation or transaction API that can express:
-
-```ts
-await kora.transaction(async tx => {
+await kora.transaction(async (tx) => {
   const form = await tx.findById('forms', formId, { forUpdate: true })
   if (form.responseCount >= form.settings.maxResponses) {
     throw new KoraDomainRejection('max_responses_reached')
@@ -93,120 +59,21 @@ await kora.apply({
 })
 ```
 
-- Preserve operation-log semantics, HLC ordering, validation, fan-out, replay safety, and structured rejection details.
-- Avoid recommending process-local locks as the production pattern; they do not work across multiple Node processes, containers, or regions.
-
-## 4. Sync Operation Size and Rate Limits at Server Config Level
-
-`ClientSessionOptions` includes:
-
-- `maxOperationBytes`
-- `maxOpsPerMinute`
-
-These options are present on `ClientSessionOptions`, but they are not present on `KoraSyncServerConfig`, so they cannot be passed through `createProductionServer({ syncOptions })` in `1.0.0-beta.1` without a type escape.
-
-KoraForms can rate-limit REST acceptance routes, but sync-session hardening should also be configurable at the server boundary.
-
-Requested framework work:
-
-- Promote `maxOperationBytes` and `maxOpsPerMinute` to `KoraSyncServerConfig`.
-- Ensure `createProductionServer({ syncOptions })` can pass them through.
-- Document recommended production defaults.
-- Return structured rejection details so product UIs can distinguish retryable transport failures from permanent server rejections.
-
-Note: `maxConnections` and `batchSize` already exist on `KoraSyncServerConfig`; they are not part of this request.
-
-## 5. Production Server Access to Blob Live-Refs and Garbage Collection
-
-Kora `1.0.0-beta.1` already includes blob support:
-
-- `t.blob()`
-- `BlobRef`
-- `createBlobRef()`
-- `isBlobRef()`
-- `ContentAddressedBlobStore`
-- `MemoryBlobStore`
-- `OpfsBlobStore`
-- `putBlobForTransfer()`
-- `extractBlobRefs()`
-- `collectBlobGarbage()`
-- `toServerBlobCallbacks()`
-- `KoraSyncServer.getLiveBlobRefs()`
-- server `resolveBlobChunk` / `persistBlobChunk` hooks
-
-Those should not be treated as missing.
-
-The remaining framework issue is production-server ergonomics: `createProductionServer()` internally owns a `KoraSyncServer`, but the returned `ProductionServer` exposes only `start()` and `stop()`. A product using `createProductionServer()` can configure central blob persistence, but does not get direct access to `getLiveBlobRefs()` for garbage collection unless it avoids the production server wrapper or duplicates lower-level setup.
-
-Suggested framework work:
-
-- Expose a production-server method or handle for live blob refs:
-
-```ts
-server.getLiveBlobRefs()
-server.collectBlobGarbage(blobStore, options)
-```
-
-or expose the underlying sync server in a controlled way.
-
-- Add a canonical production example for central blob storage:
-
-```ts
-const blobStore = new FilesystemBlobStore('/var/kora/blobs')
-
-createProductionServer({
-  syncOptions: {
-    ...toServerBlobCallbacks(blobStore),
-  },
-})
-```
-
-plus a scheduled GC flow that uses live refs safely.
-
-## 6. SQL Identifier Safety for Collection Names
-
-KoraForms moved public/offline collection names to snake_case after camelCase collection names created invalid SQL in browser SQLite.
-
-Suggested framework work:
-
-- Validate collection names at schema-definition time, or
-- Quote generated SQL identifiers consistently across adapters.
-
-Schema-definition-time validation may be clearer for developers because invalid collection names fail early before runtime storage setup.
-
-## 7. Multi-Runtime Browser Storage Guidance and Diagnostics
-
-KoraForms has separate authenticated and public respondent runtimes on the same origin.
-
-During earlier testing, multiple browser Kora runtimes could run into storage lifecycle/locking confusion when they were not deliberately isolated by database name/runtime setup.
-
-During the production-hardening E2E pass, KoraForms also reproduced an active-tab case with a single public runtime database:
-
-- Tab A loaded a public form online, cached it in Kora's local SQLite WASM database, went offline, and queued a response.
-- Tab B opened the same public form while Tab A remained open and the browser context was offline.
-- The cached form survived browser/profile restart, so durability was correct.
-- The active multi-tab case could hang on `publicApp.ready` in Tab B before app-level fallback code could run, consistent with local database contention or unavailable cross-tab coordination.
-
-KoraForms added bounded local reads and metadata-only same-device recovery hints for public form definitions and queue counts so respondents are not blocked. That product workaround does not store answer payloads outside Kora, but it should ideally become unnecessary once Kora provides a first-class multi-tab browser runtime story.
-
-Suggested framework work:
-
-- Document recommended patterns for multiple Kora clients on one origin.
-- Provide diagnostics for OPFS/database lock conflicts.
-- Make database naming and runtime isolation conventions explicit.
-- Consider helper APIs for common app shapes such as authenticated workspace runtime plus public/anonymous respondent runtime.
-- Consider a browser multi-tab coordinator, shared worker, lock timeout, or explicit read-only fallback mode so a second tab can read durable local data while another tab owns the SQLite runtime.
-
-## Confirmed Non-Issues in `1.0.0-beta.1`
+## Confirmed Non-Issues in `1.0.0-beta.2`
 
 These were checked and should not be reported as missing framework features:
 
-- Blob primitives and blob garbage collection are available.
-- `KoraSyncServer.applyLocalOperation()` is available for callers that already have fully formed operations.
-- `KoraSyncServer.getLiveBlobRefs()` is available on the lower-level sync server.
-- `supportedSchemaVersions` is available on `KoraSyncServerConfig` and can be passed through `createProductionServer({ syncOptions })`.
-- `maxConnections` and `batchSize` are available on `KoraSyncServerConfig`.
+- Blob primitives, server blob persistence callbacks, live blob refs, and blob garbage collection are available.
+- `createProductionServer()` exposes `server.getLiveBlobRefs()`.
+- `createProductionServer()` exposes `server.kora` for background jobs and scheduled tasks.
+- `KoraSyncServer.applyLocalOperation()` is available for advanced callers that already have fully formed operations.
+- `supportedSchemaVersions`, `maxConnections`, `batchSize`, `maxOperationBytes`, and `maxOpsPerMinute` are available on `KoraSyncServerConfig`.
+- `validateOperation` is available on `KoraSyncServerConfig`.
+- Structured operation rejection and client-side rejected-operation inspection are available.
 - Product-supplied timestamps can use `t.timestamp()` without `.auto()` or a numeric field where domain-specific timestamp semantics are preferred.
-- `t.json()`, `t.object()`, and `t.secret()` are available. KoraForms is now using `t.json()` for dynamic payloads and `t.secret().hashed()` for form access passwords.
-- Atomic operations are available. KoraForms now uses `op.increment(1)` for accepted response counters.
-- Enum transitions are available. KoraForms now constrains `response_submissions.localStatus` transitions in schema.
+- `t.json()`, `t.object()`, and `t.secret()` are available. KoraForms uses `t.json()` for dynamic payloads and `t.secret().hashed()` for form access passwords.
+- Generated SQL identifiers are quoted consistently through `quoteIdent(...)`; camelCase collection and field names are supported by the framework. KoraForms can keep snake_case for product readability, but this is no longer a framework gap.
+- Browser SQLite WASM includes multi-tab storage coordination and OPFS fallback diagnostics. KoraForms still isolates public and authenticated runtimes intentionally, but active same-origin tabs are no longer an unresolved framework issue.
+- Atomic operations are available. KoraForms uses `op.increment(1)` for accepted response counters.
+- Client-side transactions are available on `KoraApp` and the local store. The remaining transaction request is specifically for conditional server-route admission.
+- Enum transitions are available. KoraForms constrains `response_submissions.localStatus` transitions in schema.

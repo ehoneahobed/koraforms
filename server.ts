@@ -7,15 +7,15 @@ import {
 	createProductionServer,
 	MixedAuthProvider,
 } from '@korajs/server'
-import { toServerBlobCallbacks } from '@korajs/store'
+import { collectBlobGarbage, toServerBlobCallbacks } from '@korajs/store'
 import { FilesystemBlobStore } from '@korajs/store/blob-fs'
 import {
 	createKoraAuthServer,
 	createSqliteUserStore,
 	createPostgresUserStore,
 } from '@korajs/auth/server'
-import { defineSchema, t, op, createOperation, HybridLogicalClock } from '@korajs/core'
-import type { ServerStore } from '@korajs/server'
+import { defineSchema, t, op } from '@korajs/core'
+import type { ProductionServer, ServerStore } from '@korajs/server'
 import type { UserStore } from '@korajs/auth/server'
 import type { ProductionHttpRouteContext, ProductionHttpRouteRequest, ProductionHttpRouteResponse } from '@korajs/server'
 import { parseFormFields, parseFormSettings, safeJsonParse, serializeFormSettings } from './src/domain/forms'
@@ -221,6 +221,10 @@ const WEBHOOK_TIMEOUT_MS = 10_000
 const WEBHOOK_ERROR_BODY_LIMIT = 2048
 const DEVELOPMENT_AUTH_SECRET = 'koraforms-dev-secret-change-in-production'
 const DEFAULT_BLOB_DIR = './koraforms-blobs'
+const DEFAULT_SYNC_MAX_OPERATION_BYTES = 512 * 1024
+const DEFAULT_SYNC_MAX_OPS_PER_MINUTE = 600
+const DEFAULT_BLOB_GC_INTERVAL_HOURS = 24
+const DEFAULT_BLOB_GC_START_DELAY_MINUTES = 15
 
 type RateLimitBucket =
 	| 'auth'
@@ -273,6 +277,13 @@ function cleanupExpiredRateLimitBuckets(
 	for (const [key, value] of buckets) {
 		if (value.resetAt <= now) buckets.delete(key)
 	}
+}
+
+function readPositiveIntegerEnv(name: string, fallback: number): number {
+	const raw = process.env[name]?.trim()
+	if (!raw) return fallback
+	const parsed = Number(raw)
+	return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback
 }
 
 // ---------------------------------------------------------------------------
@@ -332,8 +343,7 @@ async function main(): Promise<void> {
 
 	const port = Number(process.env.PORT) || 3001
 	const distDir = resolve('./dist')
-	const sideEffectProcessor = createSideEffectProcessor(store)
-	sideEffectProcessor.start()
+	let sideEffectProcessor: ReturnType<typeof createSideEffectProcessor> | null = null
 
 	// CORS headers for dev mode (client on different port)
 	const corsHeaders: Record<string, string> = process.env.NODE_ENV !== 'production'
@@ -390,6 +400,8 @@ async function main(): Promise<void> {
 			}),
 			schemaVersion: SCHEMA_VERSION,
 			supportedSchemaVersions: { min: SCHEMA_VERSION, max: SCHEMA_VERSION },
+			maxOperationBytes: readPositiveIntegerEnv('KORA_SYNC_MAX_OPERATION_BYTES', DEFAULT_SYNC_MAX_OPERATION_BYTES),
+			maxOpsPerMinute: readPositiveIntegerEnv('KORA_SYNC_MAX_OPS_PER_MINUTE', DEFAULT_SYNC_MAX_OPS_PER_MINUTE),
 			...toServerBlobCallbacks(blobStore),
 		},
 		httpRoutes: [
@@ -839,7 +851,7 @@ async function main(): Promise<void> {
 									updatedAt: Date.now(),
 								})
 							}
-							sideEffectProcessor.runSoon()
+							sideEffectProcessor?.runSoon()
 						} catch {
 							// webhook/notification error — don't block response
 						}
@@ -858,7 +870,11 @@ async function main(): Promise<void> {
 		},
 	})
 
+	sideEffectProcessor = createSideEffectProcessor(server.kora)
+	sideEffectProcessor.start()
+
 	const url = await server.start()
+	createCentralBlobGarbageCollector(server, blobStore).start()
 	console.log(`KoraForms running at ${url}`)
 }
 
@@ -896,55 +912,6 @@ async function updateRouteRecord(
 	if (!result.ok) {
 		throw new Error(`Kora route update rejected for ${collection}/${recordId}: ${result.code} ${result.message}`)
 	}
-}
-
-async function insertServerRecord(
-	store: ServerStore,
-	collection: string,
-	recordId: string,
-	data: Record<string, unknown>,
-): Promise<void> {
-	const nodeId = store.getNodeId()
-	const clock = new HybridLogicalClock(nodeId)
-	const vv = store.getVersionVector()
-	const seqNum = (vv.get(nodeId) ?? 0) + 1
-	const op = await createOperation({
-		nodeId,
-		type: 'insert',
-		collection,
-		recordId,
-		data,
-		previousData: null,
-		sequenceNumber: seqNum,
-		causalDeps: [],
-		schemaVersion: SCHEMA_VERSION,
-	}, clock)
-	await store.applyRemoteOperation(op)
-}
-
-async function updateServerRecord(
-	store: ServerStore,
-	collection: string,
-	recordId: string,
-	data: Record<string, unknown>,
-): Promise<void> {
-	const previousData = await store.findRecord(collection, recordId)
-	const nodeId = store.getNodeId()
-	const clock = new HybridLogicalClock(nodeId)
-	const vv = store.getVersionVector()
-	const seqNum = (vv.get(nodeId) ?? 0) + 1
-	const op = await createOperation({
-		nodeId,
-		type: 'update',
-		collection,
-		recordId,
-		data,
-		previousData,
-		sequenceNumber: seqNum,
-		causalDeps: [],
-		schemaVersion: SCHEMA_VERSION,
-	}, clock)
-	await store.applyRemoteOperation(op)
 }
 
 function logPublicResponseRejection(input: Parameters<typeof buildPublicResponseRejectionLogEvent>[0]): void {
@@ -1062,14 +1029,14 @@ interface WebhookConfig {
 	active?: boolean
 }
 
-function createSideEffectProcessor(store: ServerStore): { start: () => void; runSoon: () => void } {
+function createSideEffectProcessor(kora: ProductionHttpRouteContext): { start: () => void; runSoon: () => void } {
 	let timer: NodeJS.Timeout | null = null
 	let running = false
 
 	const runSoon = () => {
 		if (timer) clearTimeout(timer)
 		timer = setTimeout(() => {
-			processDueDeliveries(store).catch(err => console.warn('Side-effect delivery processor failed:', err))
+			processDueDeliveries().catch(err => console.warn('Side-effect delivery processor failed:', err))
 		}, 50)
 	}
 
@@ -1078,22 +1045,22 @@ function createSideEffectProcessor(store: ServerStore): { start: () => void; run
 		setInterval(runSoon, 30_000)
 	}
 
-	async function processDueDeliveries(currentStore: ServerStore): Promise<void> {
+	async function processDueDeliveries(): Promise<void> {
 		if (running) return
 		running = true
 		try {
 			const now = Date.now()
 			const records = [
-				...await currentStore.queryCollection('side_effect_deliveries', { where: { status: 'pending' }, limit: 50 }),
-				...await currentStore.queryCollection('side_effect_deliveries', { where: { status: 'failed' }, limit: 50 }),
-				...await currentStore.queryCollection('side_effect_deliveries', { where: { status: 'delivering' }, limit: 50 }),
+				...await kora.query('side_effect_deliveries', { where: { status: 'pending' }, limit: 50 }),
+				...await kora.query('side_effect_deliveries', { where: { status: 'failed' }, limit: 50 }),
+				...await kora.query('side_effect_deliveries', { where: { status: 'delivering' }, limit: 50 }),
 			] as SideEffectDeliveryRecord[]
 			const due = records
 				.filter(record => Number(record.nextAttemptAt || 0) <= now)
 				.slice(0, 50)
 
 			for (const delivery of due) {
-				await processDelivery(currentStore, delivery)
+				await processDelivery(kora, delivery)
 			}
 		} finally {
 			running = false
@@ -1103,9 +1070,9 @@ function createSideEffectProcessor(store: ServerStore): { start: () => void; run
 	return { start, runSoon }
 }
 
-async function processDelivery(store: ServerStore, delivery: SideEffectDeliveryRecord): Promise<void> {
+async function processDelivery(kora: ProductionHttpRouteContext, delivery: SideEffectDeliveryRecord): Promise<void> {
 	const attempts = Number(delivery.attempts || 0) + 1
-	await updateServerRecord(store, 'side_effect_deliveries', delivery.id, {
+	await updateRouteRecord(kora, 'side_effect_deliveries', delivery.id, {
 		status: 'delivering',
 		attempts,
 		updatedAt: Date.now(),
@@ -1118,7 +1085,7 @@ async function processDelivery(store: ServerStore, delivery: SideEffectDeliveryR
 		} else {
 			await deliverWebhookNotification(delivery.payload)
 		}
-		await updateServerRecord(store, 'side_effect_deliveries', delivery.id, {
+		await updateRouteRecord(kora, 'side_effect_deliveries', delivery.id, {
 			status: 'delivered',
 			attempts,
 			lastError: '',
@@ -1126,7 +1093,7 @@ async function processDelivery(store: ServerStore, delivery: SideEffectDeliveryR
 		})
 	} catch (error) {
 		const nextAttemptAt = Date.now() + retryDelayMs(attempts)
-		await updateServerRecord(store, 'side_effect_deliveries', delivery.id, {
+		await updateRouteRecord(kora, 'side_effect_deliveries', delivery.id, {
 			status: 'failed',
 			attempts,
 			lastError: error instanceof Error ? error.message : 'Delivery failed',
@@ -1139,6 +1106,64 @@ async function processDelivery(store: ServerStore, delivery: SideEffectDeliveryR
 function retryDelayMs(attempts: number): number {
 	const capped = Math.min(Math.max(attempts, 1), 8)
 	return Math.min(60 * 60 * 1000, 1000 * Math.pow(2, capped - 1))
+}
+
+// ---------------------------------------------------------------------------
+// Central blob garbage collection
+// ---------------------------------------------------------------------------
+
+function createCentralBlobGarbageCollector(
+	server: ProductionServer,
+	blobStore: FilesystemBlobStore,
+): { start: () => void; runSoon: () => void } {
+	let running = false
+
+	const runSoon = () => {
+		if (running) return
+		running = true
+		processCentralBlobGarbage(server, blobStore)
+			.catch(err => console.warn('Blob garbage collection failed:', err))
+			.finally(() => {
+				running = false
+			})
+	}
+
+	const start = () => {
+		if (process.env.KORA_BLOB_GC_DISABLED === 'true') return
+
+		const startDelayMs = readPositiveIntegerEnv(
+			'KORA_BLOB_GC_START_DELAY_MINUTES',
+			DEFAULT_BLOB_GC_START_DELAY_MINUTES,
+		) * 60_000
+		const intervalMs = readPositiveIntegerEnv(
+			'KORA_BLOB_GC_INTERVAL_HOURS',
+			DEFAULT_BLOB_GC_INTERVAL_HOURS,
+		) * 60 * 60_000
+
+		const initialTimer = setTimeout(runSoon, startDelayMs)
+		initialTimer.unref?.()
+
+		const interval = setInterval(runSoon, intervalMs)
+		interval.unref?.()
+	}
+
+	return { start, runSoon }
+}
+
+async function processCentralBlobGarbage(
+	server: ProductionServer,
+	blobStore: FilesystemBlobStore,
+): Promise<void> {
+	const liveRefs = await server.getLiveBlobRefs()
+	const result = await collectBlobGarbage(blobStore, liveRefs)
+	if (result.collected > 0) {
+		console.log(JSON.stringify({
+			event: 'blob_gc_completed',
+			scanned: result.scanned,
+			live: result.live,
+			collected: result.collected,
+		}))
+	}
 }
 
 // ---------------------------------------------------------------------------

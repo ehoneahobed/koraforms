@@ -4,7 +4,7 @@
 
 KoraForms is an offline-first form builder and response product, not a traditional always-online web app.
 
-This plan should align with Kora.js `1.0.0-beta.1` as currently installed in this project and with the official Kora.js docs at <https://korajs.dev>. The relevant Kora philosophy is:
+This plan should align with Kora.js `1.0.0-beta.2` as currently installed in this project and with the official Kora.js docs at <https://korajs.dev>. The relevant Kora philosophy is:
 
 - Offline is the normal state. Every core code path should work without a network connection; connectivity enables sync and side effects, but it should not gate user action.
 - Kora owns the data plane. The product should define schemas and mutations, then let Kora handle local storage, operation logs, conflict resolution, sync, replay, and diagnostics.
@@ -112,11 +112,11 @@ The Kora.js repository at <https://github.com/ehoneahobed/kora> confirms several
 
 Confirmed gap for KoraForms:
 
-- Kora's built-in server constraint validation is structural and schema-driven. It does not replace KoraForms domain validation for published form version rules, required answers, conditional visibility, schedules, response limits, password access, duplicate policy, unknown field ids, and anti-abuse checks. That validation should be implemented as a clean domain module now and fed back into Kora as a possible operation-validator extension point.
+- Kora's built-in schema validation and beta.2 operation validators provide the right ingestion boundary, but they do not replace KoraForms domain validation for published form version rules, required answers, conditional visibility, schedules, response limits, password access, duplicate policy, unknown field ids, and anti-abuse checks. That validation lives in a clean domain module today and is the source of truth for any future Kora sync-operation submission path.
 
 ## Current Release Gate
 
-Latest local verification passed on Kora.js `1.0.0-beta.1`:
+Latest local verification passed on Kora.js `1.0.0-beta.2`:
 
 - `pnpm run check`
 - `pnpm run test:e2e`
@@ -155,7 +155,7 @@ The first production-readiness implementation slices now align the respondent-cr
 - The service worker remains only an app-shell/runtime asset cache. It is not the product data plane.
 - Pure model tests cover public form sanitization, stable version hashes, response submission outbox shape, and respondent progress records.
 - Browser E2E now verifies that a public respondent can load a form online, reload that same public URL offline, complete required text/email/file fields offline, complete complex first-party field types offline, persist the submission locally, sync hydrated attachment data after reconnect, and request resume links with slug binding.
-- Kora `1.0.0-beta.1` route handlers now expose `req.kora.apply()`, `req.kora.query()`, and `req.kora.findById()`. KoraForms public form, public results, save/resume, and public response submission routes now use that request-scoped data-plane API for route reads and writes, so accepted responses, resume links, and side-effect jobs pass through Kora's validated apply/materialization/fan-out path instead of route-local hand-built operations.
+- Kora `1.0.0-beta.2` route handlers and production server handles now expose the same trusted data-plane API through `req.kora` and `server.kora`. KoraForms public form, public results, save/resume, public response submission routes, and background side-effect delivery jobs now use Kora's validated apply/materialization/fan-out path instead of route-local or hand-built operations.
 - The sync server now declares an explicit accepted schema-version range of `{ min: 13, max: 13 }`, keeping beta clients with incompatible schema versions out of the sync session before they can send operations.
 - Form access passwords now live on the top-level `forms.accessPassword` Kora `t.secret().hashed()` field. Settings JSON stays free of password material, and public form responses strip the secret field before returning full form payloads.
 - Respondent submission lifecycle state is encoded as Kora enum transitions on `response_submissions.localStatus`, so invalid local outbox status jumps are rejected by the data plane instead of left to UI convention.
@@ -163,15 +163,12 @@ The first production-readiness implementation slices now align the respondent-cr
 
 Remaining framework-aligned gap:
 
-- KoraForms still uses a REST acceptance bridge for final online response acceptance because public submissions require domain validation against published form versions, schedules, max-response limits, duplicate policy, password access, and abuse rules before owner-visible `responses` are materialized. Kora `1.0.0-beta.1` removes the route-write bypass by giving routes `req.kora.apply()`, but the next framework-level step is first-class anonymous submission sync: scoped anonymous sessions, server-side operation validators, and validated materialization from pending submission operations into accepted records.
-- Kora's production server does not yet expose the route mutation context or an equivalent validated local mutation API to background workers created outside HTTP route handlers. KoraForms still uses hand-built operations for side-effect delivery status updates. Framework improvement: expose a production-server-level `apply()` helper so scheduled jobs, webhooks, and maintenance tasks can use the same validated/fan-out data plane without depending on a request object.
-- Kora `1.0.0-beta.1` exposes lower-level session limits such as `maxOperationBytes` and `maxOpsPerMinute` on `ClientSessionOptions`, but not on `KoraSyncServerConfig`, so they still cannot be passed through `createProductionServer({ syncOptions })` without a type escape. KoraForms enforces public REST body/rate limits in product code today. Framework improvement: promote those limits to the sync-server config so products can harden sync sessions at the same boundary.
-- Kora's collection names currently need SQL-safe identifiers for browser SQLite. CamelCase collection names created invalid SQL, so KoraForms now uses snake_case for public/offline collections. Framework improvement: validate or quote generated table names consistently.
+- KoraForms still uses a REST acceptance bridge for final online response acceptance because public submissions require domain validation against published form versions, schedules, max-response limits, duplicate policy, password access, and abuse rules before owner-visible `responses` are materialized. Kora `1.0.0-beta.2` adds server-side operation validators and client-side rejected-operation inspection, so the framework now has the primitives needed for a future anonymous sync acceptance path. The remaining product migration is to model pending public submissions as Kora sync operations once we can preserve the same acceptance semantics and E2E coverage.
 - Kora's timestamp helpers distinguish server-managed values from product-owned values. KoraForms uses product-supplied numeric timestamps for public cache times, local submission times, progress update times, and side-effect retry times so offline respondent state can be created and replayed deterministically.
-- KoraForms uses Kora's primary browser database target, `sqlite-wasm`, for respondent form versions, progress, and queued submissions. Kora `1.0.0-beta.1` also exposes OPFS-backed blob primitives; KoraForms now uses those for newly captured file/signature bytes with an IndexedDB compatibility fallback for browsers or older local data.
-- Kora's SQLite WASM worker OPFS lifecycle can conflict when multiple app runtimes open the same browser origin/database path. KoraForms now isolates public and authenticated runtimes, but Kora should eventually provide clearer multi-runtime/multi-database guidance and diagnostics.
-- Kora `1.0.0-beta.1` includes browser/server blob storage primitives and garbage-collection helpers. KoraForms has adopted the browser OPFS blob store and configured server blob persistence callbacks, but the current dynamic response schema still stores answer values as JSON manifests for compatibility with the existing REST acceptance bridge. The remaining KoraForms product migration is to model submission attachments as explicit Kora blob fields or a companion `submission_blobs` collection once anonymous validated submission materialization is available.
-- Kora `1.0.0-beta.1` includes `t.json()`, `t.object()`, and `t.secret()`. KoraForms now uses `t.json()` for dynamic form and response payloads and `t.secret().hashed()` for form access passwords. `t.object()` should be used for future fixed-shape nested records; current form definitions, answers, settings, and side-effect payloads are intentionally dynamic and belong on `t.json()`.
+- KoraForms uses Kora's primary browser database target, `sqlite-wasm`, for respondent form versions, progress, and queued submissions. Kora `1.0.0-beta.2` also exposes OPFS-backed blob primitives, multi-tab storage coordination, and OPFS fallback diagnostics; KoraForms now uses Kora blobs for newly captured file/signature bytes with an IndexedDB compatibility fallback for browsers or older local data.
+- Kora `1.0.0-beta.2` includes browser/server blob storage primitives and production-server live-ref access for garbage collection. KoraForms has adopted the browser OPFS blob store and configured server blob persistence callbacks, but the current dynamic response schema still stores answer values as JSON manifests for compatibility with the existing REST acceptance bridge. The remaining KoraForms product migration is to model submission attachments as explicit Kora blob fields or a companion `submission_blobs` collection once anonymous validated submission materialization is available.
+- Kora `1.0.0-beta.2` includes `t.json()`, `t.object()`, and `t.secret()`. KoraForms now uses `t.json()` for dynamic form and response payloads and `t.secret().hashed()` for form access passwords. `t.object()` should be used for future fixed-shape nested records; current form definitions, answers, settings, and side-effect payloads are intentionally dynamic and belong on `t.json()`.
+- Kora `1.0.0-beta.2` quotes generated SQL identifiers consistently through `quoteIdent(...)`. KoraForms can keep snake_case collection names for readability, but camelCase collection names are no longer a framework blocker.
 
 ## P0 - Must Fix Before Public Launch
 

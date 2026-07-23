@@ -77,7 +77,7 @@ Goal: move status rules into Kora schema whenever they are product invariants.
 Checklist:
 
 - Public submission lifecycle transitions. Implemented.
-- Side-effect delivery status transitions. Implemented in schema; background worker still needs framework-level production `apply()` support to use the full route data plane.
+- Side-effect delivery status transitions. Implemented in schema; background worker now uses Kora `1.0.0-beta.2` production `server.kora.apply()` so delivery state changes pass through the same validated data plane as routes.
 - Published form version status transitions. Implemented.
 - Resume link status transitions. Implemented.
 
@@ -198,14 +198,10 @@ Acceptance criteria:
 
 - Support/debug data can be copied safely without leaking respondent answers.
 
-## Remaining Framework-Dependent Items
+## Remaining Framework-Dependent Item
 
-These items are intentionally tracked for the Kora framework rather than patched in KoraForms with process-local workarounds:
+This item is intentionally tracked for the Kora framework rather than patched in KoraForms with process-local workarounds:
 
-1. Sync-time public submission validators before owner-visible materialization.
-2. Route-style mutation context for background jobs.
-3. Server-level sync operation size and rate limits.
-4. Production-server live blob refs and garbage collection ergonomics.
-5. SQL identifier safety for collection names.
-6. Multi-runtime browser storage diagnostics and coordination.
-7. Conditional atomic admission for max-response quotas across multiple production instances.
+1. Conditional atomic admission for max-response quotas across multiple production instances.
+
+Kora `1.0.0-beta.2` now provides sync-time operation validators, client-side rejected-operation inspection, SQL identifier quoting, browser multi-tab storage coordination, and OPFS fallback diagnostics. KoraForms still needs a deliberate product migration before public submissions move from the REST acceptance bridge to anonymous sync operations, because that path must preserve the same validation semantics, offline diagnostics, and E2E coverage.
