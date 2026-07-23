@@ -78,6 +78,7 @@ export async function readLatestPublicFormVersion(slug: string): Promise<PublicF
 
 const PUBLIC_FORM_PEER_CHANNEL = 'koraforms-public-form-cache'
 const PUBLIC_FORM_RECOVERY_PREFIX = 'koraforms-public-form-recovery:'
+const PUBLIC_FORM_PROGRESS_CLEARED_PREFIX = 'koraforms-public-form-progress-cleared:'
 const PUBLIC_SUBMISSION_HINT_PREFIX = 'koraforms-public-submission-hints:'
 
 interface PublicFormPeerRequest {
@@ -112,6 +113,37 @@ interface PublicSubmissionStatusHint {
 
 function publicFormRecoveryKey(slug: string): string {
 	return `${PUBLIC_FORM_RECOVERY_PREFIX}${slug}`
+}
+
+function publicFormProgressClearedKey(slug: string): string {
+	return `${PUBLIC_FORM_PROGRESS_CLEARED_PREFIX}${slug}`
+}
+
+function readPublicFormProgressClearedAt(slug: string): number {
+	if (typeof window === 'undefined') return 0
+	try {
+		return Number(window.localStorage.getItem(publicFormProgressClearedKey(slug)) || 0)
+	} catch {
+		return 0
+	}
+}
+
+function forgetPublicFormProgressClearedAt(slug: string): void {
+	if (typeof window === 'undefined') return
+	try {
+		window.localStorage.removeItem(publicFormProgressClearedKey(slug))
+	} catch {
+		// Tombstones are a recovery aid; Kora remains the primary progress store.
+	}
+}
+
+function markPublicFormProgressCleared(slug: string, now = Date.now()): void {
+	if (typeof window === 'undefined') return
+	try {
+		window.localStorage.setItem(publicFormProgressClearedKey(slug), String(now))
+	} catch {
+		// Tombstones are a recovery aid; Kora remains the primary progress store.
+	}
 }
 
 function writePublicFormRecoverySnapshot(record: PublicFormVersionRecord): void {
@@ -304,6 +336,7 @@ export async function savePublicFormProgress(
 		now?: number
 	},
 ): Promise<PublicFormProgressRecord> {
+	forgetPublicFormProgressClearedAt(params.slug)
 	await publicApp.ready
 	const record = buildPublicFormProgressRecord(params)
 	const existing = await publicApp.public_form_progress.where({ slug: params.slug }).limit(1).exec()
@@ -327,10 +360,14 @@ export async function readPublicFormProgress(slug: string): Promise<PublicFormPr
 		.orderBy('updatedAt', 'desc')
 		.limit(1)
 		.exec()
-	return records[0] ?? null
+	const record = records[0] ?? null
+	if (!record) return null
+	const clearedAt = readPublicFormProgressClearedAt(slug)
+	return clearedAt >= record.updatedAt ? null : record
 }
 
 export async function clearPublicFormProgress(slug: string): Promise<void> {
+	markPublicFormProgressCleared(slug)
 	await publicApp.ready
 	const records = await publicApp.public_form_progress.where({ slug }).limit(20).exec()
 	await Promise.all(records.map(record => record.id ? publicApp.public_form_progress.delete(record.id) : Promise.resolve()))

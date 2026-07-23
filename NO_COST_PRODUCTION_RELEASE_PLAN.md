@@ -141,13 +141,13 @@ Acceptance criteria:
 
 ### 8. Accessibility Pass
 
-Status: partially implemented for the public respondent flow.
+Status: implemented for the critical public respondent flow.
 
 Goal: form filling must be usable without a mouse and understandable to assistive tech.
 
 Checklist:
 
-- Keyboard-only navigation.
+- Keyboard-only navigation. Implemented and covered by public form E2E.
 - Visible focus states.
 - Field errors announced near the active question. Implemented for public question validation.
 - Buttons and icon-only actions have accessible names.

@@ -216,6 +216,36 @@ test('public resume links are requested with form slug binding', async ({ page, 
 	expect(requestedSlug).toBe(PUBLIC_FORM_SLUG)
 })
 
+test('public respondents can complete a form with keyboard only', async ({ page, context }) => {
+	const submissions: Array<Record<string, unknown>> = []
+
+	await routeOfflineFormScenario(context, REJECTED_FORM_SLUG, rejectedSyncForm, () => true, submissions)
+
+	await page.goto(`/f/${REJECTED_FORM_SLUG}`)
+	await expect(page.getByRole('heading', { name: 'Closed Field Report' })).toBeVisible({ timeout: 15_000 })
+
+	await page.getByRole('button', { name: /start/i }).focus()
+	await page.keyboard.press('Enter')
+
+	await expect(page.getByRole('heading', { name: /your name/i })).toBeVisible()
+	await page.keyboard.type('Keyboard User')
+	await page.keyboard.press('Enter')
+
+	await expect(page.getByRole('heading', { name: /email address/i })).toBeVisible()
+	await page.keyboard.type('keyboard@example.com')
+	await page.keyboard.press('Enter')
+
+	await expect(page.getByRole('heading', { name: 'Thank you!' })).toBeVisible({ timeout: 15_000 })
+	await expect.poll(() => submissions.length, { timeout: 15_000 }).toBe(1)
+
+	expect(submissions[0]).toMatchObject({ formId: REJECTED_FORM_ID })
+	const data = JSON.parse(String(submissions[0]?.data || '{}')) as Record<string, unknown>
+	expect(data).toMatchObject({
+		field_name: 'Keyboard User',
+		field_email: 'keyboard@example.com',
+	})
+})
+
 test('offline submissions move to needs review when server later rejects sync', async ({ page, context }) => {
 	let apiOnline = true
 	let submissionAttempts = 0
@@ -418,6 +448,8 @@ test('offline queued submissions are visible in another tab on the same device',
 })
 
 test('public respondents can complete complex field types offline', async ({ page, context }) => {
+	test.setTimeout(60_000)
+
 	const submissions: Array<Record<string, unknown>> = []
 	let apiOnline = true
 

@@ -627,8 +627,17 @@ export function FormFill({ formId, navigate }: Props) {
 	}, [fields, form, formId])
 	// Focus input when question changes
 	useEffect(() => {
-		if (currentIndex >= 0) {
-			setTimeout(() => inputRef.current?.focus(), 350)
+		if (currentIndex < 0) return
+
+		let retryTimer: number | undefined
+		const animationFrame = window.requestAnimationFrame(() => {
+			inputRef.current?.focus()
+			retryTimer = window.setTimeout(() => inputRef.current?.focus(), 200)
+		})
+
+		return () => {
+			window.cancelAnimationFrame(animationFrame)
+			if (retryTimer) window.clearTimeout(retryTimer)
 		}
 	}, [currentIndex])
 
@@ -655,12 +664,12 @@ export function FormFill({ formId, navigate }: Props) {
 		submitResponse(draft.realFormId, draft.responseJson, draft.clientSubmissionId, draft.clientSubmittedAt)
 			.then((status) => {
 				setSubmissionStatus(status)
-				setSubmitted(true)
 				if (status === 'accepted') {
 					deleteLocalBlobsFromResponseJson(draft.responseJson).catch(() => {})
 				}
 				clearPublicFormProgress(formId).catch(() => {})
 				writeJsonToStorage(draft.duplicateKey, { hash: hashString(draft.responseJson), time: Date.now() })
+				setSubmitted(true)
 			})
 			.catch((err) => setSubmitError(err.message || 'Failed to submit. Please try again.'))
 			.finally(() => setIsSubmitting(false))
