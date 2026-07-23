@@ -74,12 +74,6 @@ export interface FormSettings {
 	customCSS?: string
 	// Email notifications
 	notifyEmail?: string
-	// Password protection
-	password?: string
-	passwordHash?: string
-	passwordSalt?: string
-	passwordAlgorithm?: 'pbkdf2-sha256'
-	passwordIterations?: number
 	// Archived flag
 	archived?: boolean
 }

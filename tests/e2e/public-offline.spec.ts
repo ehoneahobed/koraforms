@@ -12,7 +12,7 @@ const publicForm = {
 	slug: PUBLIC_FORM_SLUG,
 	title: 'Field Visit Report',
 	description: 'Submit reports anywhere, even away from service.',
-	fields: JSON.stringify([
+	fields: [
 		{
 			id: 'field_name',
 			type: 'text',
@@ -33,11 +33,11 @@ const publicForm = {
 			accept: 'text/plain',
 			maxSize: 1,
 		},
-	]),
-	settings: JSON.stringify({
+	],
+	settings: {
 		allowMultiple: true,
 		thankYouMessage: 'Report received.',
-	}),
+	},
 	theme: 'red',
 	status: 'published',
 	createdAt: 1_785_000_000_000,
@@ -48,7 +48,7 @@ const complexPublicForm = {
 	slug: COMPLEX_FORM_SLUG,
 	title: 'Offline Inspection',
 	description: 'A multi-step form for field teams.',
-	fields: JSON.stringify([
+	fields: [
 		{ id: 'intro_section', type: 'section', label: 'Inspection basics', required: false, placeholder: 'Collect the required site details.' },
 		{ id: 'inspector', type: 'text', label: 'Inspector name', required: true },
 		{ id: 'email', type: 'email', label: 'Inspector email', required: true },
@@ -71,8 +71,8 @@ const complexPublicForm = {
 		{ id: 'matrix', type: 'matrix', label: 'Area condition', required: true, matrixRows: 'Roof, Storage', matrixColumns: 'Good, Review, Critical' },
 		{ id: 'signature', type: 'signature', label: 'Signature', required: true },
 		{ id: 'attachment', type: 'file', label: 'Attachment', required: true, accept: 'text/plain', maxSize: 1 },
-	]),
-	settings: JSON.stringify({ allowMultiple: true }),
+	],
+	settings: { allowMultiple: true },
 	theme: 'emerald',
 	status: 'published',
 	createdAt: 1_785_000_000_001,
@@ -83,11 +83,11 @@ const rejectedSyncForm = {
 	slug: REJECTED_FORM_SLUG,
 	title: 'Closed Field Report',
 	description: 'A form that closes before queued responses sync.',
-	fields: JSON.stringify([
+	fields: [
 		{ id: 'field_name', type: 'text', label: 'Your name', required: true },
 		{ id: 'field_email', type: 'email', label: 'Email address', required: true },
-	]),
-	settings: JSON.stringify({ allowMultiple: true }),
+	],
+	settings: { allowMultiple: true },
 	theme: 'red',
 	status: 'published',
 	createdAt: 1_785_000_000_002,

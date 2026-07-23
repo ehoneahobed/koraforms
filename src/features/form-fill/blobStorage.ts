@@ -1,3 +1,5 @@
+import type { BlobRef } from '@korajs/core'
+import { createOpfsBlobStore, putBlobForTransfer } from '@korajs/store'
 import { assertLocalBlobStorageLimit } from './offlineModel'
 
 export const LOCAL_BLOB_STORAGE_KIND = 'koraforms-local-blob'
@@ -5,6 +7,7 @@ export const LOCAL_BLOB_STORAGE_KIND = 'koraforms-local-blob'
 const DATABASE_NAME = 'koraforms-public-blobs'
 const DATABASE_VERSION = 1
 const STORE_NAME = 'blobs'
+const KORA_BLOB_STORE_NAME = 'koraforms-public-response-blobs'
 
 export interface LocalBlobManifest {
 	kind: typeof LOCAL_BLOB_STORAGE_KIND
@@ -13,11 +16,15 @@ export interface LocalBlobManifest {
 	type: string
 	size: number
 	createdAt: number
+	storage?: 'kora-opfs' | 'indexeddb'
+	ref?: BlobRef
 }
 
 interface StoredLocalBlob extends LocalBlobManifest {
 	blob: Blob
 }
+
+let koraBlobStorePromise: ReturnType<typeof createOpfsBlobStore> | null = null
 
 export function isLocalBlobManifest(value: unknown): value is LocalBlobManifest {
 	if (!value || typeof value !== 'object') return false
@@ -56,8 +63,8 @@ export async function saveLocalBlob(
 	const db = await openBlobDatabase()
 	try {
 		const [currentBytes, replacingBytes] = await Promise.all([
-			getLocalBlobStorageBytes(db),
-			options.replacingBlobId ? getLocalBlobBytes(db, options.replacingBlobId) : Promise.resolve(0),
+			getTotalLocalBlobBytes(db),
+			options.replacingBlobId ? getLocalBlobBytes(options.replacingBlobId, db) : Promise.resolve(0),
 		])
 		assertLocalBlobStorageLimit({
 			currentBytes,
@@ -68,6 +75,9 @@ export async function saveLocalBlob(
 		db.close()
 	}
 
+	const saved = await saveKoraLocalBlob(blob, options).catch(() => null)
+	if (saved) return saved
+
 	const manifest: LocalBlobManifest = {
 		kind: LOCAL_BLOB_STORAGE_KIND,
 		blobId: createBlobId(),
@@ -75,6 +85,7 @@ export async function saveLocalBlob(
 		type: options.type || blob.type || 'application/octet-stream',
 		size: blob.size,
 		createdAt: options.now ?? Date.now(),
+		storage: 'indexeddb',
 	}
 	const writeDb = await openBlobDatabase()
 	try {
@@ -86,6 +97,9 @@ export async function saveLocalBlob(
 }
 
 export async function readLocalBlob(blobId: string): Promise<StoredLocalBlob | null> {
+	const koraRecord = await readKoraLocalBlob(blobId).catch(() => null)
+	if (koraRecord) return koraRecord
+
 	const db = await openBlobDatabase()
 	try {
 		const record = await runStoreRequest(db, 'readonly', store => store.get(blobId))
@@ -96,6 +110,7 @@ export async function readLocalBlob(blobId: string): Promise<StoredLocalBlob | n
 }
 
 export async function deleteLocalBlob(blobId: string): Promise<void> {
+	await deleteKoraLocalBlob(blobId).catch(() => {})
 	const db = await openBlobDatabase()
 	try {
 		await runStoreRequest(db, 'readwrite', store => store.delete(blobId))
@@ -112,10 +127,13 @@ export async function deleteLocalBlobsFromResponseJson(responseJson: string): Pr
 export async function getLocalBlobStorageUsage(): Promise<{ bytes: number; count: number }> {
 	const db = await openBlobDatabase()
 	try {
-		const records = await getAllLocalBlobRecords(db)
+		const [records, koraUsage] = await Promise.all([
+			getAllLocalBlobRecords(db),
+			getKoraLocalBlobUsage().catch(() => ({ bytes: 0, count: 0 })),
+		])
 		return {
-			bytes: sumBlobBytes(records),
-			count: records.length,
+			bytes: sumBlobBytes(records) + koraUsage.bytes,
+			count: records.length + koraUsage.count,
 		}
 	} finally {
 		db.close()
@@ -159,11 +177,83 @@ export async function hydrateLocalBlobValues(responseJson: string): Promise<stri
 		if (!record) {
 			throw new Error(`Attachment "${manifest.name}" is no longer available on this device.`)
 		}
-		hydrated[key] = await blobToDataUrl(record.blob)
+		hydrated[key] = await blobToDataUrl(withManifestMimeType(record.blob, manifest))
 		changed = true
 	}
 
 	return changed ? JSON.stringify(hydrated) : responseJson
+}
+
+async function saveKoraLocalBlob(
+	blob: Blob,
+	options: {
+		name: string
+		type?: string
+		now?: number
+		replacingBlobId?: string | null
+	},
+): Promise<LocalBlobManifest> {
+	const store = await getKoraBlobStore()
+	const bytes = new Uint8Array(await blob.arrayBuffer())
+	const { ref } = await putBlobForTransfer(store, bytes, {
+		filename: options.name || 'attachment',
+		mimeType: options.type || blob.type || 'application/octet-stream',
+	})
+	if (options.replacingBlobId && options.replacingBlobId !== ref.hash) {
+		await deleteLocalBlob(options.replacingBlobId).catch(() => {})
+	}
+	return {
+		kind: LOCAL_BLOB_STORAGE_KIND,
+		blobId: ref.hash,
+		name: ref.filename || options.name || 'attachment',
+		type: ref.mimeType || options.type || blob.type || 'application/octet-stream',
+		size: ref.size,
+		createdAt: options.now ?? Date.now(),
+		storage: 'kora-opfs',
+		ref,
+	}
+}
+
+async function readKoraLocalBlob(blobId: string): Promise<StoredLocalBlob | null> {
+	const store = await getKoraBlobStore()
+	const bytes = await store.get(blobId)
+	if (!bytes) return null
+	return {
+		kind: LOCAL_BLOB_STORAGE_KIND,
+		blobId,
+		name: 'attachment',
+		type: 'application/octet-stream',
+		size: bytes.byteLength,
+		createdAt: 0,
+		storage: 'kora-opfs',
+		ref: { hash: blobId, size: bytes.byteLength },
+		blob: new Blob([bytesToArrayBuffer(bytes)]),
+	}
+}
+
+async function deleteKoraLocalBlob(blobId: string): Promise<void> {
+	const store = await getKoraBlobStore()
+	await store.delete(blobId)
+}
+
+async function getKoraLocalBlobUsage(): Promise<{ bytes: number; count: number }> {
+	const store = await getKoraBlobStore()
+	const hashes = await store.list()
+	const sizes = await Promise.all(hashes.map(async (hash) => {
+		const bytes = await store.get(hash)
+		return bytes?.byteLength || 0
+	}))
+	return {
+		bytes: sizes.reduce((total, size) => total + size, 0),
+		count: hashes.length,
+	}
+}
+
+function getKoraBlobStore(): ReturnType<typeof createOpfsBlobStore> {
+	if (!koraBlobStorePromise) {
+		koraBlobStorePromise = createOpfsBlobStore(KORA_BLOB_STORE_NAME)
+	}
+	return koraBlobStorePromise
 }
 
 function openBlobDatabase(): Promise<IDBDatabase> {
@@ -198,11 +288,21 @@ function isStoredLocalBlob(value: unknown): value is StoredLocalBlob {
 	return isLocalBlobManifest(value) && (value as { blob?: unknown }).blob instanceof Blob
 }
 
-async function getLocalBlobStorageBytes(db: IDBDatabase): Promise<number> {
+async function getTotalLocalBlobBytes(db: IDBDatabase): Promise<number> {
+	const [indexedDbBytes, koraUsage] = await Promise.all([
+		getIndexedDbBlobStorageBytes(db),
+		getKoraLocalBlobUsage().catch(() => ({ bytes: 0, count: 0 })),
+	])
+	return indexedDbBytes + koraUsage.bytes
+}
+
+async function getIndexedDbBlobStorageBytes(db: IDBDatabase): Promise<number> {
 	return sumBlobBytes(await getAllLocalBlobRecords(db))
 }
 
-async function getLocalBlobBytes(db: IDBDatabase, blobId: string): Promise<number> {
+async function getLocalBlobBytes(blobId: string, db: IDBDatabase): Promise<number> {
+	const koraRecord = await readKoraLocalBlob(blobId).catch(() => null)
+	if (koraRecord) return koraRecord.size
 	const record = await runStoreRequest(db, 'readonly', store => store.get(blobId))
 	return isStoredLocalBlob(record) ? record.size : 0
 }
@@ -214,6 +314,18 @@ function getAllLocalBlobRecords(db: IDBDatabase): Promise<StoredLocalBlob[]> {
 
 function sumBlobBytes(records: StoredLocalBlob[]): number {
 	return records.reduce((total, record) => total + Math.max(0, Number(record.size) || 0), 0)
+}
+
+function bytesToArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+	const buffer = new ArrayBuffer(bytes.byteLength)
+	new Uint8Array(buffer).set(bytes)
+	return buffer
+}
+
+function withManifestMimeType(blob: Blob, manifest: LocalBlobManifest): Blob {
+	const type = manifest.type || blob.type || 'application/octet-stream'
+	if (blob.type === type) return blob
+	return blob.slice(0, blob.size, type)
 }
 
 function blobToDataUrl(blob: Blob): Promise<string> {

@@ -1,16 +1,18 @@
 import { defineSchema, t } from 'korajs'
+import type { FormField, FormSettings } from './types'
+
+type ResponseData = Record<string, unknown>
+type SideEffectPayload = Record<string, unknown>
 
 export default defineSchema({
-	version: 12,
+	version: 13,
 	collections: {
 		// A form definition (e.g. "Customer Feedback", "Event Registration")
 		forms: {
 			fields: {
 				title: t.string(),
 				description: t.string().default(''),
-				// JSON-encoded array of field definitions
-				// Each field: { id, type, label, required, options?, conditions? }
-				fields: t.string().default('[]'),
+				fields: t.json<FormField[]>().default([]),
 				status: t.enum(['draft', 'published', 'closed']).default('draft').transitions({
 					draft: ['published', 'closed'],
 					published: ['draft', 'closed'],
@@ -24,8 +26,8 @@ export default defineSchema({
 				ownerId: t.string().default(''),
 				// URL-friendly slug for shareable links
 				slug: t.string().default(''),
-				// JSON-encoded form settings (thank-you page, limits, scheduling, etc.)
-				settings: t.string().default('{}'),
+				accessPassword: t.secret().hashed().optional(),
+				settings: t.json<FormSettings>().default({}),
 				createdAt: t.timestamp().auto(),
 			},
 			indexes: ['status', 'createdAt', 'ownerId', 'slug'],
@@ -41,8 +43,7 @@ export default defineSchema({
 		responses: {
 			fields: {
 				formId: t.string(),
-				// JSON-encoded key-value pairs: { fieldId: value }
-				data: t.string().default('{}'),
+				data: t.json<ResponseData>().default({}),
 				submittedBy: t.string().default(''),
 				clientSubmissionId: t.string().default(''),
 				submittedAt: t.number(),
@@ -59,8 +60,8 @@ export default defineSchema({
 				versionHash: t.string(),
 				title: t.string(),
 				description: t.string().default(''),
-				fields: t.string().default('[]'),
-				settings: t.string().default('{}'),
+				fields: t.json<FormField[]>().default([]),
+				settings: t.json<FormSettings>().default({}),
 				theme: t.string().default('red'),
 				status: t.enum(['published', 'revoked']).default('published'),
 				cachedAt: t.number(),
@@ -81,7 +82,7 @@ export default defineSchema({
 				formId: t.string(),
 				slug: t.string().default(''),
 				formVersionHash: t.string().default(''),
-				data: t.string().default('{}'),
+				data: t.json<ResponseData>().default({}),
 				clientSubmissionId: t.string(),
 				localStatus: t.enum(['submitted_locally', 'syncing', 'accepted', 'rejected', 'failed']).default('submitted_locally'),
 				attempts: t.number().default(0),
@@ -101,7 +102,7 @@ export default defineSchema({
 			fields: {
 				slug: t.string(),
 				formId: t.string(),
-				answers: t.string().default('{}'),
+				answers: t.json<ResponseData>().default({}),
 				currentIndex: t.number().default(-1),
 				resumeId: t.string().default(''),
 				resumeUrl: t.string().default(''),
@@ -121,7 +122,7 @@ export default defineSchema({
 				token: t.string(),
 				formId: t.string(),
 				slug: t.string(),
-				data: t.string().default('{}'),
+				data: t.json<ResponseData>().default({}),
 				status: t.enum(['active', 'expired', 'revoked']).default('active'),
 				createdAt: t.number(),
 				updatedAt: t.number(),
@@ -141,7 +142,7 @@ export default defineSchema({
 				formId: t.string(),
 				type: t.enum(['webhook', 'email']),
 				target: t.string(),
-				payload: t.string().default('{}'),
+				payload: t.json<SideEffectPayload>().default({}),
 				status: t.enum(['pending', 'delivering', 'delivered', 'failed']).default('pending'),
 				attempts: t.number().default(0),
 				lastError: t.string().default(''),

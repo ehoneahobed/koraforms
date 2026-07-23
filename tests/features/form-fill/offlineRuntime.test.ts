@@ -19,8 +19,9 @@ const form = {
 	slug: 'field-survey',
 	title: 'Field survey',
 	description: 'Works anywhere',
-	fields: '[{"id":"name","type":"text","label":"Name","required":true}]',
-	settings: '{"password":"secret","publicResults":true}',
+	fields: [{ id: 'name', type: 'text', label: 'Name', required: true }],
+	accessPassword: 'secret:v1:hash',
+	settings: { publicResults: true },
 	theme: 'red',
 	status: 'published',
 }
@@ -40,11 +41,11 @@ test('public form versions are stable and exclude password metadata stubs', () =
 		title: form.title,
 		description: form.description,
 		fields: form.fields,
-		settings: '{"publicResults":true}',
+		settings: { publicResults: true },
 		theme: form.theme,
 		status: form.status,
 	}))
-	assert.equal(first.settings.includes('secret'), false)
+	assert.equal(JSON.stringify(first.settings).includes('secret'), false)
 })
 
 test('public form version records reconstruct public form payloads', () => {
@@ -53,8 +54,8 @@ test('public form version records reconstruct public form payloads', () => {
 
 	assert.equal(payload.id, 'form-1')
 	assert.equal(payload.slug, 'field-survey')
-	assert.equal(payload.fields, form.fields)
-	assert.equal(payload.settings, '{"publicResults":true}')
+	assert.deepEqual(payload.fields, form.fields)
+	assert.deepEqual(payload.settings, { publicResults: true })
 })
 
 test('response submissions are stored as Kora outbox records', () => {
@@ -95,7 +96,7 @@ test('public form progress records preserve respondent resume state', () => {
 	assert.deepEqual(record, {
 		slug: 'field-survey',
 		formId: 'form-1',
-		answers: '{"name":"Ada"}',
+		answers: { name: 'Ada' },
 		currentIndex: 2,
 		resumeId: 'resume-1',
 		resumeUrl: 'https://forms.korajs.dev/f/field-survey?resume=resume-1',

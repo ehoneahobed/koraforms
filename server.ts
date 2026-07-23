@@ -1,12 +1,14 @@
 import { resolve } from 'node:path'
 import { lookup } from 'node:dns/promises'
-import { pbkdf2Sync, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
+import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import {
 	createSqliteServerStore,
 	createPostgresServerStore,
 	createProductionServer,
 	MixedAuthProvider,
 } from '@korajs/server'
+import { toServerBlobCallbacks } from '@korajs/store'
+import { FilesystemBlobStore } from '@korajs/store/blob-fs'
 import {
 	createKoraAuthServer,
 	createSqliteUserStore,
@@ -15,25 +17,26 @@ import {
 import { defineSchema, t, createOperation, HybridLogicalClock } from '@korajs/core'
 import type { ServerStore } from '@korajs/server'
 import type { UserStore } from '@korajs/auth/server'
-import type { ProductionHttpRouteRequest, ProductionHttpRouteResponse } from '@korajs/server'
+import type { ProductionHttpRouteContext, ProductionHttpRouteRequest, ProductionHttpRouteResponse } from '@korajs/server'
 import { parseFormFields, parseFormSettings, safeJsonParse, serializeFormSettings } from './src/domain/forms'
-import { FORM_PASSWORD_ALGORITHM, hasFormAccessPassword, stripFormAccessSecrets } from './src/domain/formPassword'
+import { hasFormAccessPasswordSecret, stripFormAccessSecrets, verifyFormAccessPasswordSecret } from './src/domain/formPassword'
 import { validatePublishedResponsePayload } from './src/domain/responseValidation'
 import { buildSideEffectDeliveryJobs, isDeliverableWebhookUrl, isPublicWebhookIpAddress, normalizeWebhookConfig } from './src/domain/responseSideEffects'
 import { buildOpsDiagnosticsSnapshot } from './src/domain/opsDiagnostics'
+import type { FormField, FormSettings } from './src/types'
 
 // ---------------------------------------------------------------------------
 // KoraForms schema (shared between client and server for materialized tables)
 // ---------------------------------------------------------------------------
 
 const koraFormsSchema = defineSchema({
-	version: 12,
+	version: 13,
 	collections: {
 		forms: {
 			fields: {
 				title: t.string(),
 				description: t.string().default(''),
-				fields: t.string().default('[]'),
+				fields: t.json<FormField[]>().default([]),
 				status: t.enum(['draft', 'published', 'closed']).default('draft').transitions({
 					draft: ['published', 'closed'],
 					published: ['draft', 'closed'],
@@ -43,7 +46,8 @@ const koraFormsSchema = defineSchema({
 				responseCount: t.number().default(0).merge('counter'),
 				ownerId: t.string().default(''),
 				slug: t.string().default(''),
-				settings: t.string().default('{}'),
+				accessPassword: t.secret().hashed().optional(),
+				settings: t.json<FormSettings>().default({}),
 				createdAt: t.timestamp().auto(),
 			},
 			indexes: ['status', 'createdAt', 'ownerId', 'slug'],
@@ -57,7 +61,7 @@ const koraFormsSchema = defineSchema({
 		responses: {
 			fields: {
 				formId: t.string(),
-				data: t.string().default('{}'),
+				data: t.json<Record<string, unknown>>().default({}),
 				submittedBy: t.string().default(''),
 				clientSubmissionId: t.string().default(''),
 				submittedAt: t.number(),
@@ -71,8 +75,8 @@ const koraFormsSchema = defineSchema({
 				versionHash: t.string(),
 				title: t.string(),
 				description: t.string().default(''),
-				fields: t.string().default('[]'),
-				settings: t.string().default('{}'),
+				fields: t.json<FormField[]>().default([]),
+				settings: t.json<FormSettings>().default({}),
 				theme: t.string().default('red'),
 				status: t.enum(['published', 'revoked']).default('published'),
 				cachedAt: t.number(),
@@ -90,7 +94,7 @@ const koraFormsSchema = defineSchema({
 				formId: t.string(),
 				slug: t.string().default(''),
 				formVersionHash: t.string().default(''),
-				data: t.string().default('{}'),
+				data: t.json<Record<string, unknown>>().default({}),
 				clientSubmissionId: t.string(),
 				localStatus: t.enum(['submitted_locally', 'syncing', 'accepted', 'rejected', 'failed']).default('submitted_locally'),
 				attempts: t.number().default(0),
@@ -109,7 +113,7 @@ const koraFormsSchema = defineSchema({
 			fields: {
 				slug: t.string(),
 				formId: t.string(),
-				answers: t.string().default('{}'),
+				answers: t.json<Record<string, unknown>>().default({}),
 				currentIndex: t.number().default(-1),
 				resumeId: t.string().default(''),
 				resumeUrl: t.string().default(''),
@@ -128,7 +132,7 @@ const koraFormsSchema = defineSchema({
 				token: t.string(),
 				formId: t.string(),
 				slug: t.string(),
-				data: t.string().default('{}'),
+				data: t.json<Record<string, unknown>>().default({}),
 				status: t.enum(['active', 'expired', 'revoked']).default('active'),
 				createdAt: t.number(),
 				updatedAt: t.number(),
@@ -147,7 +151,7 @@ const koraFormsSchema = defineSchema({
 				formId: t.string(),
 				type: t.enum(['webhook', 'email']),
 				target: t.string(),
-				payload: t.string().default('{}'),
+				payload: t.json<Record<string, unknown>>().default({}),
 				status: t.enum(['pending', 'delivering', 'delivered', 'failed']).default('pending'),
 				attempts: t.number().default(0),
 				lastError: t.string().default(''),
@@ -166,7 +170,7 @@ type SideEffectDeliveryRecord = {
 	formId: string
 	type: 'webhook' | 'email'
 	target: string
-	payload: string
+	payload: Record<string, unknown>
 	status: 'pending' | 'delivering' | 'delivered' | 'failed'
 	attempts: number
 	lastError: string
@@ -180,14 +184,14 @@ type ResumeLinkRecord = {
 	token: string
 	formId: string
 	slug: string
-	data: string
+	data: Record<string, unknown>
 	status: 'active' | 'expired' | 'revoked'
 	createdAt: number
 	updatedAt: number
 	expiresAt: number
 }
 
-const SCHEMA_VERSION = 12
+const SCHEMA_VERSION = 13
 const RESUME_LINK_TTL_MS = 30 * 24 * 60 * 60 * 1000
 const MAX_RESUME_PAYLOAD_BYTES = 128 * 1024
 const MAX_PUBLIC_RESPONSE_BODY_BYTES = 2 * 1024 * 1024
@@ -196,6 +200,7 @@ const MAX_PUBLIC_RESULTS_LIMIT = 500
 const WEBHOOK_TIMEOUT_MS = 10_000
 const WEBHOOK_ERROR_BODY_LIMIT = 2048
 const DEVELOPMENT_AUTH_SECRET = 'koraforms-dev-secret-change-in-production'
+const DEFAULT_BLOB_DIR = './koraforms-blobs'
 
 type RateLimitBucket =
 	| 'auth'
@@ -289,6 +294,7 @@ function resolveAuthSecret(): string {
 
 async function main(): Promise<void> {
 	const { store, userStore } = await createStores()
+	const blobStore = new FilesystemBlobStore(process.env.BLOB_STORE_PATH || DEFAULT_BLOB_DIR)
 	const rateLimiter = createRateLimiter()
 	const jwtSecret = resolveAuthSecret()
 
@@ -334,22 +340,9 @@ async function main(): Promise<void> {
 		})
 	}
 
-	function verifyFormAccessPassword(settings: ReturnType<typeof parseFormSettings>, password: string | undefined): boolean {
-		if (!hasFormAccessPassword(settings)) return true
-		if (!password) return false
-		if (settings.passwordHash && settings.passwordSalt) {
-			if (settings.passwordAlgorithm && settings.passwordAlgorithm !== FORM_PASSWORD_ALGORITHM) return false
-			try {
-				const iterations = settings.passwordIterations || 210_000
-				const expected = Buffer.from(settings.passwordHash, 'base64')
-				const salt = Buffer.from(settings.passwordSalt, 'base64')
-				const actual = pbkdf2Sync(password, salt, iterations, expected.length, 'sha256')
-				return expected.length === actual.length && timingSafeEqual(expected, actual)
-			} catch {
-				return false
-			}
-		}
-		return settings.password === password
+	async function verifyFormAccessPassword(secret: unknown, password: string | undefined): Promise<boolean> {
+		if (!hasFormAccessPasswordSecret(secret)) return true
+		return verifyFormAccessPasswordSecret(secret, password)
 	}
 
 	// -----------------------------------------------------------------------
@@ -363,13 +356,17 @@ async function main(): Promise<void> {
 		syncPath: '/kora-sync',
 		syncOptions: {
 			// Authenticated users get full access. Public respondent submissions
-			// are finalized through the validated public endpoint until Kora has
-			// first-class anonymous operation validation/materialization.
+			// are finalized through validated public routes that now write through
+			// Kora's route data-plane API. Anonymous sync remains closed until the
+			// framework can scope and validate public submission operations before
+			// owner-visible materialization.
 			auth: new MixedAuthProvider({
 				primary: auth.auth,
 				anonymousScopes: {},
 			}),
 			schemaVersion: SCHEMA_VERSION,
+			supportedSchemaVersions: { min: SCHEMA_VERSION, max: SCHEMA_VERSION },
+			...toServerBlobCallbacks(blobStore),
 		},
 		httpRoutes: [
 			// Auth routes — signup, signin, refresh, signout, me, devices
@@ -431,12 +428,12 @@ async function main(): Promise<void> {
 							}
 
 							// Look up form by ID or slug
-							let [form] = await store.queryCollection('forms', {
+							let [form] = await req.kora.query('forms', {
 								where: { id: formId, status: 'published' },
 								limit: 1,
 							})
 							if (!form) {
-								;[form] = await store.queryCollection('forms', {
+								;[form] = await req.kora.query('forms', {
 									where: { slug: formId, status: 'published' },
 									limit: 1,
 								})
@@ -450,7 +447,7 @@ async function main(): Promise<void> {
 							let resumeId = isValidResumeToken(existingId) ? existingId! : ''
 							let existingRecord: ResumeLinkRecord | null = null
 							if (resumeId) {
-								const [record] = await store.queryCollection('resume_links', {
+								const [record] = await req.kora.query('resume_links', {
 									where: { token: resumeId },
 									limit: 1,
 								}) as ResumeLinkRecord[]
@@ -467,21 +464,21 @@ async function main(): Promise<void> {
 								}
 							}
 							if (!resumeId) {
-								resumeId = await createUniqueResumeToken(store)
+								resumeId = await createUniqueResumeToken(req.kora)
 							}
 
 							if (existingRecord) {
-								await updateServerRecord(store, 'resume_links', existingRecord.id, {
-									data,
+								await updateRouteRecord(req.kora, 'resume_links', existingRecord.id, {
+									data: asJsonObject(parsedProgress),
 									updatedAt: now,
 									expiresAt,
 								})
 							} else {
-								await insertServerRecord(store, 'resume_links', randomUUID(), {
+								await insertRouteRecord(req.kora, 'resume_links', randomUUID(), {
 									token: resumeId,
 									formId: formRecordId,
 									slug,
-									data,
+									data: asJsonObject(parsedProgress),
 									status: 'active',
 									createdAt: now,
 									updatedAt: now,
@@ -515,7 +512,7 @@ async function main(): Promise<void> {
 							return withCors({ status: 400, body: { error: 'resumeId and slug required' } })
 						}
 
-						const [entry] = await store.queryCollection('resume_links', {
+						const [entry] = await req.kora.query('resume_links', {
 							where: { token: resumeId, status: 'active' },
 							limit: 1,
 						}) as ResumeLinkRecord[]
@@ -523,7 +520,7 @@ async function main(): Promise<void> {
 							return withCors({ status: 404, body: { error: 'No saved progress found' } })
 						}
 						if (entry.expiresAt <= Date.now()) {
-							await updateServerRecord(store, 'resume_links', entry.id, {
+							await updateRouteRecord(req.kora, 'resume_links', entry.id, {
 								status: 'expired',
 								updatedAt: Date.now(),
 							}).catch(() => {})
@@ -562,19 +559,16 @@ async function main(): Promise<void> {
 							const body = parseRequestBody<{ password?: unknown }>(req)
 							if (!body) return withCors({ status: 400, body: { error: 'Invalid JSON body' } })
 							const password = typeof body.password === 'string' ? body.password : undefined
-							const [form] = await store.queryCollection('forms', {
+							const [form] = await req.kora.query('forms', {
 								where: { slug, status: 'published' },
 								limit: 1,
 							})
 							if (!form) return withCors({ status: 404, body: { error: 'Form not found' } })
 							const formSettings = parseFormSettings(form.settings)
-							if (verifyFormAccessPassword(formSettings, password)) {
+							if (await verifyFormAccessPassword(form.accessPassword, password)) {
 								return withCors({
 									status: 200,
-									body: {
-										...form,
-										settings: serializeFormSettings(stripFormAccessSecrets(formSettings)),
-									},
+									body: publicFormResponse(form, formSettings),
 								})
 							}
 							return withCors({ status: 403, body: { error: 'Incorrect password' } })
@@ -590,7 +584,7 @@ async function main(): Promise<void> {
 					const limited = rateLimit(req, 'public_form_read')
 					if (limited) return limited
 					try {
-						const [form] = await store.queryCollection('forms', {
+						const [form] = await req.kora.query('forms', {
 							where: { slug, status: 'published' },
 							limit: 1,
 						})
@@ -599,7 +593,7 @@ async function main(): Promise<void> {
 						}
 						// Check for password protection
 						const formSettings = parseFormSettings(form.settings)
-						if (hasFormAccessPassword(formSettings)) {
+						if (hasFormAccessPasswordSecret(form.accessPassword)) {
 							// Return only metadata — require POST with password for full form
 							return withCors({
 								status: 200,
@@ -614,7 +608,7 @@ async function main(): Promise<void> {
 						}
 						return withCors({
 							status: 200,
-							body: { ...form, settings: serializeFormSettings(stripFormAccessSecrets(formSettings)) },
+							body: publicFormResponse(form, formSettings),
 						})
 					} catch {
 						return withCors({ status: 500, body: { error: 'Internal server error' } })
@@ -640,7 +634,7 @@ async function main(): Promise<void> {
 						MAX_PUBLIC_RESULTS_LIMIT,
 					)
 					try {
-						const [form] = await store.queryCollection('forms', {
+						const [form] = await req.kora.query('forms', {
 							where: { slug: decodeURIComponent(slug), status: 'published' },
 							limit: 1,
 						})
@@ -651,7 +645,7 @@ async function main(): Promise<void> {
 						if (!formSettings.publicResults) {
 							return withCors({ status: 403, body: { error: 'Results are not public for this form' } })
 						}
-						const responses = await store.queryCollection('responses', {
+						const responses = await req.kora.query('responses', {
 							where: { formId: String(form.id) },
 							limit: resultLimit + 1,
 						})
@@ -687,7 +681,11 @@ async function main(): Promise<void> {
 						const body = parseRequestBody<{ formId?: unknown; data?: unknown; clientSubmissionId?: unknown; clientSubmittedAt?: unknown }>(req)
 						if (!body) return withCors({ status: 400, body: { error: 'Invalid JSON body' } })
 						const formId = typeof body.formId === 'string' ? body.formId : ''
-						const data = typeof body.data === 'string' ? body.data : ''
+						const data = typeof body.data === 'string'
+							? body.data
+							: body.data && typeof body.data === 'object' && !Array.isArray(body.data)
+								? JSON.stringify(body.data)
+								: ''
 						const clientSubmissionId = typeof body.clientSubmissionId === 'string' ? body.clientSubmissionId.trim() : ''
 						const clientSubmittedAt = typeof body.clientSubmittedAt === 'number' && Number.isFinite(body.clientSubmittedAt)
 							? body.clientSubmittedAt
@@ -699,12 +697,12 @@ async function main(): Promise<void> {
 							return withCors({ status: 413, body: { error: 'Response payload is too large' } })
 						}
 						// Look up form by ID or slug
-						let [form] = await store.queryCollection('forms', {
+						let [form] = await req.kora.query('forms', {
 							where: { id: formId, status: 'published' },
 							limit: 1,
 						})
 						if (!form) {
-							;[form] = await store.queryCollection('forms', {
+							;[form] = await req.kora.query('forms', {
 								where: { slug: formId, status: 'published' },
 								limit: 1,
 							})
@@ -713,7 +711,7 @@ async function main(): Promise<void> {
 							return withCors({ status: 404, body: { error: 'Form not found' } })
 						}
 						if (clientSubmissionId) {
-							const [existing] = await store.queryCollection('responses', {
+							const [existing] = await req.kora.query('responses', {
 								where: { formId: String(form.id), clientSubmissionId },
 								limit: 1,
 							})
@@ -736,7 +734,7 @@ async function main(): Promise<void> {
 								return withCors({ status: 403, body: { error: 'This form is not yet open for responses.' } })
 							}
 							if (settings.maxResponses && settings.maxResponses > 0) {
-								const existing = await store.queryCollection('responses', {
+								const existing = await req.kora.query('responses', {
 									where: { formId: String(form.id) },
 								})
 								if (existing.length >= settings.maxResponses) {
@@ -747,9 +745,10 @@ async function main(): Promise<void> {
 							// settings parse error - allow submission
 						}
 						const responseId = randomUUID()
-						await insertServerRecord(store, 'responses', responseId, {
+						const responseData = safeJsonParse<Record<string, unknown>>(validation.data, {})
+						await insertRouteRecord(req.kora, 'responses', responseId, {
 							formId: String(form.id),
-							data: validation.data,
+							data: responseData,
 							submittedBy: '',
 							clientSubmissionId,
 							submittedAt: clientSubmittedAt,
@@ -776,12 +775,12 @@ async function main(): Promise<void> {
 								clientSubmittedAt,
 							)
 							for (const job of jobs) {
-								await insertServerRecord(store, 'side_effect_deliveries', randomUUID(), {
+								await insertRouteRecord(req.kora, 'side_effect_deliveries', randomUUID(), {
 									responseId,
 									formId: String(form.id),
 									type: job.type,
 									target: job.target,
-									payload: JSON.stringify(job.payload),
+									payload: asJsonObject(job.payload),
 									status: 'pending',
 									attempts: 0,
 									lastError: '',
@@ -811,6 +810,30 @@ async function main(): Promise<void> {
 
 	const url = await server.start()
 	console.log(`KoraForms running at ${url}`)
+}
+
+async function insertRouteRecord(
+	kora: ProductionHttpRouteContext,
+	collection: string,
+	recordId: string,
+	data: Record<string, unknown>,
+): Promise<void> {
+	const result = await kora.apply({ collection, type: 'insert', recordId, data })
+	if (!result.ok) {
+		throw new Error(`Kora route insert rejected for ${collection}/${recordId}: ${result.code} ${result.message}`)
+	}
+}
+
+async function updateRouteRecord(
+	kora: ProductionHttpRouteContext,
+	collection: string,
+	recordId: string,
+	data: Record<string, unknown>,
+): Promise<void> {
+	const result = await kora.apply({ collection, type: 'update', recordId, data })
+	if (!result.ok) {
+		throw new Error(`Kora route update rejected for ${collection}/${recordId}: ${result.code} ${result.message}`)
+	}
 }
 
 async function insertServerRecord(
@@ -924,14 +947,27 @@ function clampNumber(value: number, min: number, max: number): number {
 	return Math.min(max, Math.max(min, Math.floor(value)))
 }
 
+function asJsonObject(value: unknown): Record<string, unknown> {
+	if (value && typeof value === 'object' && !Array.isArray(value)) return value as Record<string, unknown>
+	return {}
+}
+
+function publicFormResponse(form: Record<string, unknown>, settings: ReturnType<typeof parseFormSettings>): Record<string, unknown> {
+	const { accessPassword: _accessPassword, ...safeForm } = form
+	return {
+		...safeForm,
+		settings: serializeFormSettings(stripFormAccessSecrets(settings)),
+	}
+}
+
 function isValidResumeToken(token: string | undefined): token is string {
 	return typeof token === 'string' && /^[A-Za-z0-9_-]{32,128}$/.test(token)
 }
 
-async function createUniqueResumeToken(store: ServerStore): Promise<string> {
+async function createUniqueResumeToken(kora: ProductionHttpRouteContext): Promise<string> {
 	for (let attempt = 0; attempt < 5; attempt++) {
 		const token = randomBytes(32).toString('base64url')
-		const [existing] = await store.queryCollection('resume_links', {
+		const [existing] = await kora.query('resume_links', {
 			where: { token },
 			limit: 1,
 		})
@@ -1008,9 +1044,9 @@ async function processDelivery(store: ServerStore, delivery: SideEffectDeliveryR
 
 	try {
 		if (delivery.type === 'email') {
-			await deliverEmailNotification(delivery.target, safeJsonParse<Record<string, unknown>>(delivery.payload, {}))
+			await deliverEmailNotification(delivery.target, delivery.payload)
 		} else {
-			await deliverWebhookNotification(safeJsonParse<Record<string, unknown>>(delivery.payload, {}))
+			await deliverWebhookNotification(delivery.payload)
 		}
 		await updateServerRecord(store, 'side_effect_deliveries', delivery.id, {
 			status: 'delivered',

@@ -20,6 +20,7 @@ import {
 } from './offlineModel'
 import { publicApp } from '../../publicKora'
 import { deleteLocalBlobsFromResponseJson, getLocalBlobStorageUsage } from './blobStorage'
+import { serializeJsonForTransport } from '../../domain/forms'
 
 export {
 	buildPublicFormVersionRecord,
@@ -186,7 +187,7 @@ export async function getPublicOfflineDiagnostics(now = Date.now()): Promise<Pub
 }
 
 export async function flushResponseSubmissions(
-	submit: (item: ResponseSubmissionRecord) => Promise<void>,
+	submit: (item: ResponseSubmissionRecord & { data: string }) => Promise<void>,
 	now = Date.now(),
 ): Promise<FlushResult> {
 	await publicApp.ready
@@ -208,8 +209,9 @@ export async function flushResponseSubmissions(
 			updatedAt: now,
 		})
 		try {
-			await submit({ ...item, attempts, localStatus: 'syncing', updatedAt: now })
-			await deleteLocalBlobsFromResponseJson(item.data).catch(() => {})
+			const data = serializeJsonForTransport(item.data)
+			await submit({ ...item, data, attempts, localStatus: 'syncing', updatedAt: now })
+			await deleteLocalBlobsFromResponseJson(data).catch(() => {})
 			await publicApp.response_submissions.update(item.id, {
 				localStatus: 'accepted',
 				attempts,

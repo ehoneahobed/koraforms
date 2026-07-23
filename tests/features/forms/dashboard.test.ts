@@ -24,11 +24,11 @@ const forms: FormRecord[] = [
 test('archive helpers preserve settings while toggling archive state', () => {
 	assert.equal(isArchivedForm(forms[2]!), true)
 	assert.equal(isArchivedForm(forms[0]!), false)
-	assert.deepEqual(JSON.parse(serializeArchiveSettings('{"publicResults":true}', true)), {
+	assert.deepEqual(serializeArchiveSettings('{"publicResults":true}', true), {
 		publicResults: true,
 		archived: true,
 	})
-	assert.deepEqual(JSON.parse(serializeArchiveSettings('{"archived":true,"publicResults":true}', false)), {
+	assert.deepEqual(serializeArchiveSettings('{"archived":true,"publicResults":true}', false), {
 		publicResults: true,
 	})
 })

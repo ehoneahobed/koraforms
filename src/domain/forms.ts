@@ -31,6 +31,7 @@ const FIELD_TYPES = new Set<FieldType>([
 
 export function safeJsonParse<T>(value: unknown, fallback: T): T {
 	if (value == null || value === '') return fallback
+	if (typeof value === 'object') return value as T
 	if (typeof value !== 'string') return fallback
 	try {
 		return JSON.parse(value) as T
@@ -40,16 +41,16 @@ export function safeJsonParse<T>(value: unknown, fallback: T): T {
 }
 
 export function parseFormSettings(value: unknown): FormSettings {
-	const parsed = safeJsonParse<unknown>(String(value || '{}'), {})
+	const parsed = safeJsonParse<unknown>(value || {}, {})
 	return isPlainObject(parsed) ? parsed as FormSettings : {}
 }
 
-export function serializeFormSettings(settings: FormSettings): string {
-	return JSON.stringify(settings || {})
+export function serializeFormSettings(settings: FormSettings): FormSettings {
+	return { ...(settings || {}) }
 }
 
 export function parseFormFields(value: unknown): FormField[] {
-	const parsed = safeJsonParse<unknown>(String(value || '[]'), [])
+	const parsed = safeJsonParse<unknown>(value || [], [])
 	if (!Array.isArray(parsed)) return []
 
 	const fields: FormField[] = []
@@ -69,7 +70,7 @@ export interface ResponseMeta {
 }
 
 export function parseResponseData(value: unknown): Record<string, string> {
-	const parsed = safeJsonParse<unknown>(String(value || '{}'), {})
+	const parsed = safeJsonParse<unknown>(value || {}, {})
 	if (!isPlainObject(parsed)) return {}
 
 	const data: Record<string, string> = {}
@@ -81,13 +82,18 @@ export function parseResponseData(value: unknown): Record<string, string> {
 }
 
 export function parseResponseMeta(value: unknown): ResponseMeta | undefined {
-	const parsed = safeJsonParse<unknown>(String(value || '{}'), {})
+	const parsed = safeJsonParse<unknown>(value || {}, {})
 	if (!isPlainObject(parsed) || !isPlainObject(parsed._meta)) return undefined
 	return parsed._meta as ResponseMeta
 }
 
-export function serializeFormFields(fields: FormField[]): string {
-	return JSON.stringify(fields)
+export function serializeFormFields(fields: FormField[]): FormField[] {
+	return fields.map(field => ({ ...field }))
+}
+
+export function serializeJsonForTransport(value: unknown): string {
+	if (typeof value === 'string') return value
+	return JSON.stringify(value ?? {})
 }
 
 export function isDisplayOnlyField(field: Pick<FormField, 'type'>): boolean {

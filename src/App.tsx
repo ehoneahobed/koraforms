@@ -54,6 +54,7 @@ import { FORM_TEMPLATES, createFieldsFromTemplate } from './templates'
 import { readStringFromStorage, writeStringToStorage } from './utils/storage'
 import type { FormSettings as FormSettingsType } from './types'
 import { parseFormSettings, serializeFormSettings } from './domain/forms'
+import { hasFormAccessPasswordSecret } from './domain/formPassword'
 import {
 	activeFormShellTab,
 	buildPublishPayload,
@@ -375,6 +376,7 @@ function FormPageShell({ navigate, userId }: { navigate: (path: string) => void;
 	const formTitle = form ? String(form.title || 'Untitled Form') : 'Loading...'
 	const slug = form ? String(form.slug || '') : ''
 	const formTheme = form ? String(form.theme || 'red') : 'red'
+	const formHasPassword = hasFormAccessPasswordSecret(form?.accessPassword)
 	const formSettings = useMemo<FormSettingsType>(() => {
 		if (!form) return {}
 		return parseFormSettings(form.settings)
@@ -384,6 +386,14 @@ function FormPageShell({ navigate, userId }: { navigate: (path: string) => void;
 	const updateSettings = (next: FormSettingsType) => {
 		if (!formId) return
 		updateForm(formId, { settings: serializeFormSettings(next) })
+	}
+	const updatePassword = (password: string) => {
+		if (!formId) return
+		updateForm(formId, { accessPassword: password.trim() })
+	}
+	const clearPassword = () => {
+		if (!formId) return
+		updateForm(formId, { accessPassword: null })
 	}
 
 	// Determine active tab from URL
@@ -578,9 +588,12 @@ function FormPageShell({ navigate, userId }: { navigate: (path: string) => void;
 					status={String(form.status || 'draft')}
 					theme={formTheme}
 					settings={formSettings}
+					hasPassword={formHasPassword}
 					onStatusChange={handleStatusChange}
 					onThemeChange={(theme) => updateForm(formId, { theme })}
 					onSettingsChange={updateSettings}
+					onPasswordChange={updatePassword}
+					onPasswordClear={clearPassword}
 				/>
 			)}
 
@@ -642,7 +655,7 @@ function FormBuilderPage({ navigate, userId }: { navigate: (path: string) => voi
 		const data = {
 			title: template?.title || 'Untitled Form',
 			description: template?.description || '',
-			fields: JSON.stringify(templateKey && template ? createFieldsFromTemplate(templateKey) : []),
+			fields: templateKey && template ? createFieldsFromTemplate(templateKey) : [],
 			status: 'draft',
 			ownerId: userId,
 			theme: 'red',

@@ -1,5 +1,8 @@
-import { parseFormSettings, serializeFormSettings } from '../../domain/forms'
+import { parseFormFields, parseFormSettings, serializeFormFields, serializeFormSettings } from '../../domain/forms'
 import { stripFormAccessSecrets } from '../../domain/formPassword'
+import type { FormField, FormSettings } from '../../types'
+
+export type JsonRecord = Record<string, unknown>
 
 export type PublicFormSource = 'network' | 'local'
 export type PublicSubmissionStatus = 'accepted' | 'queued'
@@ -26,8 +29,8 @@ export interface PublicFormVersionRecord {
 	versionHash: string
 	title: string
 	description: string
-	fields: string
-	settings: string
+	fields: string | FormField[]
+	settings: string | FormSettings
 	theme: string
 	status: 'published' | 'revoked'
 	cachedAt: number
@@ -39,7 +42,7 @@ export interface ResponseSubmissionRecord {
 	formId: string
 	slug: string
 	formVersionHash: string
-	data: string
+	data: string | JsonRecord
 	clientSubmissionId: string
 	localStatus: ResponseSubmissionLocalStatus
 	attempts: number
@@ -52,7 +55,7 @@ export interface PublicFormProgressRecord {
 	id?: string
 	slug: string
 	formId: string
-	answers: string
+	answers: string | JsonRecord
 	currentIndex: number
 	resumeId: string
 	resumeUrl: string
@@ -109,14 +112,14 @@ export function buildPublicFormVersionRecord(
 	now = Date.now(),
 ): PublicFormVersionRecord {
 	const settings = stripFormAccessSecrets(parseFormSettings(form.settings))
-	const fields = typeof form.fields === 'string' ? form.fields : JSON.stringify(form.fields ?? [])
-	const settingsJson = serializeFormSettings(settings)
+	const fields = serializeFormFields(parseFormFields(form.fields))
+	const serializedSettings = serializeFormSettings(settings)
 	const versionHash = stableHash({
 		id: form.id,
 		title: form.title,
 		description: form.description,
 		fields,
-		settings: settingsJson,
+		settings: serializedSettings,
 		theme: form.theme,
 		status: form.status,
 	})
@@ -128,7 +131,7 @@ export function buildPublicFormVersionRecord(
 		title: String(form.title || 'Untitled form'),
 		description: String(form.description || ''),
 		fields,
-		settings: settingsJson,
+		settings: serializedSettings,
 		theme: String(form.theme || 'red'),
 		status: 'published',
 		cachedAt: now,
@@ -155,7 +158,7 @@ export function buildResponseSubmissionRecord(
 		formId: string
 		slug?: string
 		formVersionHash?: string
-		data: string
+		data: string | JsonRecord
 		clientSubmissionId?: string
 		now?: number
 	},
@@ -190,7 +193,7 @@ export function buildPublicFormProgressRecord(
 	return {
 		slug: params.slug,
 		formId: params.formId,
-		answers: JSON.stringify(params.values),
+		answers: { ...params.values },
 		currentIndex: params.currentIndex,
 		resumeId: params.resumeId || '',
 		resumeUrl: params.resumeUrl || '',

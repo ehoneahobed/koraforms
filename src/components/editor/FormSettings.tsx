@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Settings, Link as LinkIcon, Check, Copy, Ban, Globe, ChevronDown, Webhook, Plus, Trash2, X, Mail, Lock, Code, Calendar, Clock } from 'lucide-react'
 import { copyToClipboard } from '../../utils/clipboard'
-import { clearFormAccessPassword, hasFormAccessPassword, withFormAccessPasswordHash } from '../../domain/formPassword'
 import type { FormSettings as FormSettingsType, WebhookConfig } from '../../types'
 import { LANGUAGES } from '../../types'
 
@@ -25,6 +24,9 @@ interface Props {
 	onSlugChange: (slug: string) => void
 	onStatusChange: (status: string) => void
 	onSettingsChange: (settings: FormSettingsType) => void
+	hasPassword?: boolean
+	onPasswordChange?: (password: string) => Promise<void> | void
+	onPasswordClear?: () => void
 	isOpen: boolean
 	onToggle: () => void
 }
@@ -36,6 +38,9 @@ export function FormSettings({
 	onSlugChange,
 	onStatusChange,
 	onSettingsChange,
+	hasPassword = false,
+	onPasswordChange,
+	onPasswordClear,
 	isOpen,
 	onToggle,
 }: Props) {
@@ -507,8 +512,9 @@ export function FormSettings({
 					<div className="border-t border-gray-100 dark:border-gray-800" />
 
 					<PasswordProtectionSettings
-						settings={settings}
-						onSettingsChange={onSettingsChange}
+						hasPassword={hasPassword}
+						onPasswordChange={onPasswordChange}
+						onPasswordClear={onPasswordClear}
 					/>
 
 					{/* Divider */}
@@ -539,27 +545,29 @@ export function FormSettings({
 }
 
 function PasswordProtectionSettings({
-	settings,
-	onSettingsChange,
+	hasPassword,
+	onPasswordChange,
+	onPasswordClear,
 }: {
-	settings: FormSettingsType
-	onSettingsChange: (settings: FormSettingsType) => void
+	hasPassword: boolean
+	onPasswordChange?: (password: string) => Promise<void> | void
+	onPasswordClear?: () => void
 }) {
 	const [draft, setDraft] = useState('')
 	const [status, setStatus] = useState('')
-	const hasPassword = hasFormAccessPassword(settings)
 
 	useEffect(() => {
 		setDraft('')
 		setStatus(hasPassword ? 'Password set' : '')
-	}, [hasPassword, settings.passwordHash, settings.passwordSalt, settings.password])
+	}, [hasPassword])
 
 	const commitDraft = async () => {
 		const nextPassword = draft.trim()
 		if (!nextPassword) return
+		if (!onPasswordChange) return
 		setStatus('Securing password...')
 		try {
-			onSettingsChange(await withFormAccessPasswordHash(settings, nextPassword))
+			await onPasswordChange(nextPassword)
 			setDraft('')
 			setStatus('Password set')
 		} catch {
@@ -578,7 +586,7 @@ function PasswordProtectionSettings({
 					<button
 						type="button"
 						onClick={() => {
-							onSettingsChange(clearFormAccessPassword(settings))
+							onPasswordClear?.()
 							setDraft('')
 							setStatus('')
 						}}

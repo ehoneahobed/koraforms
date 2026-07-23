@@ -35,6 +35,7 @@ import { copyToClipboard } from '../utils/clipboard'
 import { downloadJsonFile } from '../utils/download'
 import { parseFormFields } from '../domain/forms'
 import { readJsonFromStorage, writeJsonToStorage } from '../utils/storage'
+import type { FormSettings } from '../types'
 import {
 	buildDashboardResponseStats,
 	buildDuplicateFormPayload,
@@ -94,16 +95,14 @@ export function FormList({ navigate, userId }: Props) {
 	const allResponses = useQuery(app.responses.where({}).orderBy('submittedAt', 'desc'))
 	const { mutate: deleteForm } = useMutation((id: string) => app.forms.delete(id))
 	const { mutate: createForm } = useMutation(
-		(data: { title: string; description: string; fields: string; status: string; ownerId: string; theme: string }) =>
-			app.forms.insert(data),
+		(data: Record<string, unknown>) => app.forms.insert(data),
 	)
 	const { mutate: duplicateForm } = useMutation(
-		(data: { title: string; description: string; fields: string; status: string; ownerId: string; theme: string; settings: string }) =>
-			app.forms.insert(data),
+		(data: Record<string, unknown>) => app.forms.insert(data),
 	)
 
 	const { mutate: updateForm } = useMutation(
-		(data: { id: string; settings: string }) =>
+		(data: { id: string; settings: FormSettings }) =>
 			app.forms.update(data.id, { settings: data.settings }),
 	)
 

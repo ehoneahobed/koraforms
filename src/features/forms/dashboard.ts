@@ -1,5 +1,6 @@
 import { parseFormFields, parseFormSettings, serializeFormSettings } from '../../domain/forms'
 import { createFieldsFromTemplate, FORM_TEMPLATES } from '../../templates'
+import type { FormField, FormSettings } from '../../types'
 
 export type DashboardFilter = 'all' | 'published' | 'draft' | 'archived'
 
@@ -7,8 +8,8 @@ export interface FormRecord extends Record<string, unknown> {
 	id: string
 	title?: string
 	description?: string
-	fields?: string
-	settings?: string
+	fields?: string | FormField[]
+	settings?: string | FormSettings
 	status?: string
 	ownerId?: string
 	theme?: string
@@ -49,7 +50,7 @@ export function isArchivedForm(form: Pick<FormRecord, 'settings'>): boolean {
 	return parseFormSettings(form.settings).archived === true
 }
 
-export function serializeArchiveSettings(settings: unknown, archived: boolean): string {
+export function serializeArchiveSettings(settings: unknown, archived: boolean): FormSettings {
 	const next = parseFormSettings(settings)
 	if (archived) next.archived = true
 	else delete next.archived
@@ -127,7 +128,7 @@ export function buildTemplateFormPayload(templateKey: string, ownerId: string) {
 	return {
 		title: template.title || 'Untitled Form',
 		description: template.description,
-		fields: JSON.stringify(createFieldsFromTemplate(templateKey)),
+		fields: createFieldsFromTemplate(templateKey),
 		status: 'draft',
 		ownerId,
 		theme: 'red',
@@ -138,11 +139,11 @@ export function buildDuplicateFormPayload(form: FormRecord, ownerId: string) {
 	return {
 		title: `Copy of ${String(form.title || 'Untitled Form')}`,
 		description: String(form.description || ''),
-		fields: String(form.fields || '[]'),
+		fields: parseFormFields(form.fields),
 		status: 'draft',
 		ownerId,
 		theme: String(form.theme || 'blue'),
-		settings: String(form.settings || '{}'),
+		settings: parseFormSettings(form.settings),
 	}
 }
 
