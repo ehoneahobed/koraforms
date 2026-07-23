@@ -7,12 +7,14 @@ import {
 	buildLastSeenMap,
 	buildTemplateFormPayload,
 	buildWorkspaceHealthSnapshot,
+	buildWorkspaceBackupPayload,
 	filterDashboardForms,
 	formExportFilename,
 	groupDashboardForms,
 	isArchivedForm,
 	publicFormIdentifier,
 	serializeArchiveSettings,
+	workspaceBackupFilename,
 	type FormRecord,
 } from '../../../src/features/forms/dashboard'
 
@@ -130,4 +132,39 @@ test('dashboard payload helpers build template, duplicate, export, and public li
 	assert.equal(formExportFilename('RSVP / Event'), 'rsvp---event.koraform.json')
 	assert.equal(publicFormIdentifier({ id: 'form-id', slug: 'custom-slug' }), 'custom-slug')
 	assert.equal(publicFormIdentifier({ id: 'form-id' }), 'form-id')
+})
+
+test('workspace backup payload exports local forms and owned responses', () => {
+	const now = new Date('2026-07-23T10:00:00.000Z')
+	const backup = buildWorkspaceBackupPayload(
+		[
+			{
+				id: 'a',
+				title: 'RSVP',
+				description: 'Event',
+				fields: '[{"id":"name","type":"text","label":"Name","required":true}]',
+				settings: '{"publicResults":true}',
+				status: 'published',
+				slug: 'rsvp',
+				createdAt: 100,
+				accessPassword: 'secret:v1:hash',
+			},
+		],
+		[
+			{ id: 'r1', formId: 'a', data: '{"name":"Ada"}', submittedAt: 200 },
+			{ id: 'r2', formId: 'missing', data: '{"name":"Grace"}', submittedAt: 300 },
+		],
+		now,
+	)
+
+	assert.equal(backup.kind, 'workspace-backup')
+	assert.equal(backup.exportedAt, '2026-07-23T10:00:00.000Z')
+	assert.deepEqual(backup.summary, { forms: 1, responses: 1 })
+	assert.equal(backup.forms[0]?.id, 'a')
+	assert.equal(backup.forms[0]?.settings.publicResults, true)
+	assert.equal(JSON.stringify(backup).includes('secret:v1:hash'), false)
+	assert.deepEqual(backup.responses, [
+		{ id: 'r1', formId: 'a', submittedAt: 200, data: '{"name":"Ada"}' },
+	])
+	assert.equal(workspaceBackupFilename(now), 'koraforms-workspace-backup-2026-07-23.json')
 })

@@ -159,13 +159,15 @@ Acceptance criteria:
 
 ### 9. Local Backup and Export
 
+Status: implemented for creator workspace backup and per-form/per-response exports.
+
 Goal: creators and field teams can preserve work without paid infrastructure.
 
 Checklist:
 
-- Export form definitions.
-- Export accepted responses.
-- Expose a clear backup story for local/offline data.
+- Export form definitions. Implemented per form.
+- Export accepted responses. Implemented from response views.
+- Expose a clear backup story for local/offline data. Implemented with dashboard workspace backup.
 
 Acceptance criteria:
 

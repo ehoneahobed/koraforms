@@ -21,6 +21,7 @@ export interface FormRecord extends Record<string, unknown> {
 export interface ResponseRecord extends Record<string, unknown> {
 	id?: string
 	formId?: string
+	data?: unknown
 	submittedAt?: number
 }
 
@@ -61,6 +62,29 @@ export interface FormExportPayload {
 	fields: ReturnType<typeof parseFormFields>
 	theme: string
 	settings: ReturnType<typeof parseFormSettings>
+}
+
+export interface WorkspaceBackupPayload {
+	koraforms: true
+	kind: 'workspace-backup'
+	version: 1
+	exportedAt: string
+	summary: {
+		forms: number
+		responses: number
+	}
+	forms: Array<FormExportPayload & {
+		id: string
+		status: string
+		slug: string
+		createdAt: number | null
+	}>
+	responses: Array<{
+		id: string
+		formId: string
+		submittedAt: number | null
+		data: unknown
+	}>
 }
 
 export function isArchivedForm(form: Pick<FormRecord, 'settings'>): boolean {
@@ -232,6 +256,46 @@ export function buildFormExportPayload(form: FormRecord): FormExportPayload {
 export function formExportFilename(title: unknown): string {
 	const normalized = String(title || 'form').replace(/[^a-z0-9]/gi, '-').toLowerCase()
 	return `${normalized}.koraform.json`
+}
+
+export function buildWorkspaceBackupPayload(
+	forms: readonly FormRecord[],
+	responses: readonly ResponseRecord[],
+	now = new Date(),
+): WorkspaceBackupPayload {
+	const formIds = new Set(forms.map(form => String(form.id)))
+	const backupResponses = responses
+		.filter(response => formIds.has(String(response.formId || '')))
+		.map(response => ({
+			id: String(response.id || ''),
+			formId: String(response.formId || ''),
+			submittedAt: typeof response.submittedAt === 'number' ? response.submittedAt : null,
+			data: response.data ?? null,
+		}))
+
+	return {
+		koraforms: true,
+		kind: 'workspace-backup',
+		version: 1,
+		exportedAt: now.toISOString(),
+		summary: {
+			forms: forms.length,
+			responses: backupResponses.length,
+		},
+		forms: forms.map(form => ({
+			...buildFormExportPayload(form),
+			id: String(form.id),
+			status: String(form.status || 'draft'),
+			slug: String(form.slug || ''),
+			createdAt: typeof form.createdAt === 'number' ? form.createdAt : null,
+		})),
+		responses: backupResponses,
+	}
+}
+
+export function workspaceBackupFilename(now = new Date()): string {
+	const stamp = now.toISOString().slice(0, 10)
+	return `koraforms-workspace-backup-${stamp}.json`
 }
 
 export function publicFormIdentifier(form: FormRecord): string {

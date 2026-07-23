@@ -46,12 +46,14 @@ import {
 	buildLastSeenMap,
 	buildTemplateFormPayload,
 	buildWorkspaceHealthSnapshot,
+	buildWorkspaceBackupPayload,
 	filterDashboardForms,
 	formExportFilename,
 	groupDashboardForms,
 	isArchivedForm,
 	publicFormIdentifier,
 	serializeArchiveSettings,
+	workspaceBackupFilename,
 	type DashboardFilter,
 	type FormRecord,
 	type ResponseRecord,
@@ -150,6 +152,12 @@ export function FormList({ navigate, userId }: Props) {
 		downloadJsonFile(data, formExportFilename(form.title))
 	}
 
+	const handleBackupWorkspace = () => {
+		const now = new Date()
+		const data = buildWorkspaceBackupPayload(allForms, allResponses, now)
+		downloadJsonFile(data, workspaceBackupFilename(now))
+	}
+
 	const formGroups = useMemo(() => groupDashboardForms(allForms), [allForms])
 	const { activeForms, archivedForms, published, drafts } = formGroups
 
@@ -201,7 +209,11 @@ export function FormList({ navigate, userId }: Props) {
 				</button>
 			</div>
 
-			<WorkspaceHealthPanel health={workspaceHealth} syncStatus={syncStatus.status} />
+			<WorkspaceHealthPanel
+				health={workspaceHealth}
+				syncStatus={syncStatus.status}
+				onBackup={handleBackupWorkspace}
+			/>
 
 			{/* Stat Cards */}
 			{allForms.length > 0 && (
@@ -374,9 +386,11 @@ export function FormList({ navigate, userId }: Props) {
 function WorkspaceHealthPanel({
 	health,
 	syncStatus,
+	onBackup,
 }: {
 	health: ReturnType<typeof buildWorkspaceHealthSnapshot>
 	syncStatus: string
+	onBackup: () => void
 }) {
 	const syncCopy = getDashboardSyncCopy(syncStatus)
 	const healthIcon =
@@ -396,7 +410,7 @@ function WorkspaceHealthPanel({
 			aria-label="Workspace health"
 			aria-live="polite"
 		>
-			<div className="grid gap-4 lg:grid-cols-[1.25fr_1fr_1fr] lg:items-center">
+			<div className="grid gap-4 lg:grid-cols-[1.25fr_1fr_1fr_auto] lg:items-center">
 				<div className="flex min-w-0 items-center gap-3.5">
 					<div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${healthToneClass}`}>
 						{healthIcon}
@@ -438,6 +452,15 @@ function WorkspaceHealthPanel({
 					</div>
 					<span className={`h-2.5 w-2.5 shrink-0 rounded-full ${syncCopy.dotClass}`} />
 				</div>
+
+				<button
+					type="button"
+					onClick={onBackup}
+					className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-[13px] font-semibold text-slate-600 shadow-sm transition-all duration-150 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-950 active:scale-[0.98] dark:border-slate-800 dark:bg-slate-900 dark:text-gray-300 dark:hover:border-slate-700 dark:hover:bg-slate-800 dark:hover:text-gray-100"
+				>
+					<Download className="h-4 w-4" />
+					Backup
+				</button>
 			</div>
 		</section>
 	)
