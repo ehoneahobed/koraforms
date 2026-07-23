@@ -119,7 +119,7 @@ Checklist:
 - Browser/tab close before reconnect. Implemented.
 - Browser/context restart before reconnect. Implemented with persistent-profile E2E.
 - Multi-tab with pending submission created in one tab and visible in another. Implemented with bounded Kora reads plus metadata-only same-device recovery hints for active-tab local database contention.
-- Reconnect during queued file/signature sync.
+- Reconnect during queued file/signature sync. Implemented in the complex public offline E2E.
 
 Acceptance criteria:
 
@@ -127,16 +127,18 @@ Acceptance criteria:
 
 ### 7. Full Field-Type Offline Coverage
 
+Status: implemented for representative first-party fields in public offline E2E.
+
 Goal: every first-party field type behaves offline.
 
 Checklist:
 
-- Text, email, phone, URL, number, date/time.
-- Dropdown, multiple choice, checkboxes, yes/no.
-- Rating, linear scale, matrix/grid, ranking.
-- Statement, section break, hidden/calculated.
-- File upload and signature.
-- Conditional logic and answer piping.
+- Text, email, phone, URL, number, date/time. Implemented.
+- Dropdown, multiple choice, checkboxes, yes/no. Implemented.
+- Rating, linear scale, matrix/grid, ranking. Implemented.
+- Statement, section break, hidden/calculated. Implemented.
+- File upload and signature. Implemented with offline queue and reconnect coverage.
+- Conditional logic and answer piping. Implemented.
 
 Acceptance criteria:
 
@@ -180,6 +182,8 @@ Acceptance criteria:
 
 ### 10. Built-In Diagnostics
 
+Status: implemented for no-cost production support.
+
 Goal: support production use without buying observability tooling first.
 
 Checklist:
@@ -194,12 +198,14 @@ Acceptance criteria:
 
 - Support/debug data can be copied safely without leaking respondent answers.
 
-## Current Priority Order
+## Remaining Framework-Dependent Items
 
-1. Offline readiness panel and prepare flow.
-2. Pending submission visibility improvements.
-3. Remaining schema lifecycle transitions.
-4. Offline restart and multi-tab E2E.
-5. Accessibility pass on public form flow.
-6. Local backup/export polish.
-7. Diagnostics review.
+These items are intentionally tracked for the Kora framework rather than patched in KoraForms with process-local workarounds:
+
+1. Sync-time public submission validators before owner-visible materialization.
+2. Route-style mutation context for background jobs.
+3. Server-level sync operation size and rate limits.
+4. Production-server live blob refs and garbage collection ergonomics.
+5. SQL identifier safety for collection names.
+6. Multi-runtime browser storage diagnostics and coordination.
+7. Conditional atomic admission for max-response quotas across multiple production instances.
