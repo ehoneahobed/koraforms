@@ -1032,6 +1032,8 @@ export function FormFill({ formId, navigate }: Props) {
 	const pipedLabel = pipeValues(fieldText.label, values, fields)
 	// Determine text direction
 	const isRtl = language ? isRtlLanguage(language) : false
+	const fieldErrorId = `field-error-${field.id}`
+	const submitErrorId = 'form-submit-error'
 	const duplicateSubmissionDialog = duplicateSubmissionDraft ? (
 		<div className="fixed inset-0 z-[60] flex items-center justify-center bg-gray-950/35 px-4 backdrop-blur-sm animate-fade-in">
 			<div className="w-full max-w-md rounded-3xl border border-gray-200 bg-white p-6 shadow-2xl shadow-gray-900/15 dark:border-gray-800 dark:bg-gray-950">
@@ -1256,7 +1258,7 @@ export function FormFill({ formId, navigate }: Props) {
 					</div>
 
 					{/* Input */}
-					<div className={error ? 'animate-shake' : ''}>
+					<div className={error ? 'animate-shake' : ''} aria-describedby={error ? fieldErrorId : undefined}>
 						<QuestionInput
 							field={{ ...field, options: fieldText.options || field.options, placeholder: fieldText.placeholder || field.placeholder }}
 							value={values[field.id] || ''}
@@ -1267,7 +1269,7 @@ export function FormFill({ formId, navigate }: Props) {
 
 					{/* Error */}
 					{error && (
-						<p className="mt-3 text-sm text-red-500 animate-fade-in">{error}</p>
+						<p id={fieldErrorId} role="alert" className="mt-3 text-sm text-red-500 animate-fade-in">{error}</p>
 					)}
 
 					{/* Next / Submit + Back buttons */}
@@ -1284,6 +1286,7 @@ export function FormFill({ formId, navigate }: Props) {
 						<button
 							onClick={goNext}
 							disabled={isSubmitting}
+							aria-describedby={submitError ? submitErrorId : undefined}
 							className={`inline-flex items-center gap-2 rounded-xl px-6 py-3 text-sm font-medium text-white shadow-sm transition-smooth active:scale-[0.98] disabled:opacity-60 ${
 								isLast
 									? 'bg-emerald-600 shadow-emerald-600/25 hover:bg-emerald-500'
@@ -1311,7 +1314,7 @@ export function FormFill({ formId, navigate }: Props) {
 
 					{/* Submission error */}
 					{submitError && (
-						<p className="mt-3 text-sm text-red-500 animate-fade-in">{submitError}</p>
+						<p id={submitErrorId} role="alert" className="mt-3 text-sm text-red-500 animate-fade-in">{submitError}</p>
 					)}
 				</div>
 			</div>
