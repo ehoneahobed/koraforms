@@ -20,7 +20,7 @@ createRoot(document.getElementById('root')!).render(
 		<BrowserRouter>
 			<Routes>
 				{/* Public form pages don't need Kora sync — render outside KoraProvider
-				    so they work even if the SharedWorker/OPFS init fails */}
+				    so they work even if browser storage initialization fails */}
 				<Route path="/f/:formId" element={<PublicFormPage />} />
 				<Route path="/f/:slug/results" element={<PublicResultsPage />} />
 

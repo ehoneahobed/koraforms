@@ -7,6 +7,7 @@ export type PublicResponseRejectionReason =
 
 export interface PublicResponseRejectionLogInput {
 	reason: PublicResponseRejectionReason
+	code?: unknown
 	status: number
 	formId?: unknown
 	resolvedFormId?: unknown
@@ -21,6 +22,7 @@ export interface PublicResponseRejectionLogInput {
 export interface PublicResponseRejectionLogEvent {
 	event: 'public_response_rejected'
 	reason: PublicResponseRejectionReason
+	code: string
 	status: number
 	at: number
 	formId: string
@@ -39,6 +41,7 @@ export function buildPublicResponseRejectionLogEvent(input: PublicResponseReject
 	return {
 		event: 'public_response_rejected',
 		reason: input.reason,
+		code: sanitizeLogText(input.code),
 		status: input.status,
 		at: input.now ?? Date.now(),
 		formId: sanitizeLogText(input.formId),

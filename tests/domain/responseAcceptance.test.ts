@@ -5,7 +5,13 @@ import { evaluatePublicResponseAcceptance } from '../../src/domain/responseAccep
 test('public response acceptance allows ordinary open forms', () => {
 	const result = evaluatePublicResponseAcceptance({}, 0, 1_000)
 
-	assert.deepEqual(result, { accepted: true, status: 200, error: '' })
+	assert.deepEqual(result, {
+		accepted: true,
+		code: 'accepted',
+		limitPolicy: 'strict',
+		status: 200,
+		error: '',
+	})
 })
 
 test('public response acceptance rejects forms after close time', () => {
@@ -16,6 +22,8 @@ test('public response acceptance rejects forms after close time', () => {
 
 	assert.deepEqual(result, {
 		accepted: false,
+		code: 'form_closed',
+		limitPolicy: 'strict',
 		status: 403,
 		error: 'Registration has closed.',
 	})
@@ -26,6 +34,8 @@ test('public response acceptance rejects forms before open time', () => {
 
 	assert.deepEqual(result, {
 		accepted: false,
+		code: 'form_not_open',
+		limitPolicy: 'strict',
 		status: 403,
 		error: 'This form is not yet open for responses.',
 	})
@@ -36,6 +46,8 @@ test('public response acceptance uses response counter for max response limits',
 
 	assert.deepEqual(result, {
 		accepted: false,
+		code: 'max_responses_reached',
+		limitPolicy: 'strict',
 		status: 403,
 		error: 'This form has reached its maximum number of responses.',
 	})

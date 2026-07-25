@@ -413,10 +413,6 @@ test('offline queued submissions are visible in another tab on the same device',
 	await page.getByRole('button', { name: /submit/i }).click()
 	await expect(page.getByRole('heading', { name: 'Saved on this device' })).toBeVisible()
 	expect(submissions).toHaveLength(0)
-	const recoverySnapshot = await page.evaluate((slug) => {
-		return window.localStorage.getItem(`koraforms-public-form-recovery:${slug}`)
-	}, REJECTED_FORM_SLUG)
-	expect(recoverySnapshot).not.toBeNull()
 
 	const secondTab = await context.newPage()
 	await secondTab.goto(`/f/${REJECTED_FORM_SLUG}`, { waitUntil: 'domcontentloaded' })
@@ -424,14 +420,9 @@ test('offline queued submissions are visible in another tab on the same device',
 		await expect(secondTab.getByRole('heading', { name: 'Closed Field Report' })).toBeVisible({ timeout: 15_000 })
 	} catch (error) {
 		const bodyText = await secondTab.locator('body').innerText({ timeout: 1_000 }).catch(() => '')
-		const secondTabRecoverySnapshot = await secondTab.evaluate((slug) => {
-			return window.localStorage.getItem(`koraforms-public-form-recovery:${slug}`)
-		}, REJECTED_FORM_SLUG).catch(() => null)
 		throw new Error([
 			error instanceof Error ? error.message : String(error),
 			`body: ${bodyText.slice(0, 1000)}`,
-			`recovery-present-first-tab: ${Boolean(recoverySnapshot)}`,
-			`recovery-present-second-tab: ${Boolean(secondTabRecoverySnapshot)}`,
 		].join('\n\n'))
 	}
 	await expect(secondTab.getByText('Loaded from this device')).toBeVisible()

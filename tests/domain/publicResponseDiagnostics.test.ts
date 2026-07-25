@@ -22,6 +22,7 @@ test('public response rejection diagnostics omit answer payloads', () => {
 	assert.deepEqual(event, {
 		event: 'public_response_rejected',
 		reason: 'payload_invalid',
+		code: '',
 		status: 422,
 		at: 123,
 		formId: 'public-slug',
@@ -44,6 +45,7 @@ test('public response rejection diagnostics omit answer payloads', () => {
 test('public response rejection diagnostics bound issue count and text length', () => {
 	const event = buildPublicResponseRejectionLogEvent({
 		reason: 'response_not_accepted',
+		code: 'max_responses_reached',
 		status: 403,
 		formId: ' x '.repeat(100),
 		clientSubmissionId: '',
@@ -57,6 +59,7 @@ test('public response rejection diagnostics bound issue count and text length', 
 	})
 
 	assert.equal(event.issues.length, 20)
+	assert.equal(event.code, 'max_responses_reached')
 	assert.equal(event.issues[0]?.message.length, 160)
 	assert.equal(event.formId.length, 160)
 	assert.equal(event.clientSubmissionIdPresent, false)

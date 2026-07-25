@@ -793,6 +793,7 @@ async function main(): Promise<void> {
 						if (!acceptance.accepted) {
 							logPublicResponseRejection({
 								reason: 'response_not_accepted',
+								code: acceptance.code,
 								status: acceptance.status,
 								formId,
 								resolvedFormId: form.id,
@@ -801,20 +802,92 @@ async function main(): Promise<void> {
 								responseBytes,
 								error: acceptance.error,
 							})
-							return withCors({ status: acceptance.status, body: { error: acceptance.error } })
+							return withCors({
+								status: acceptance.status,
+								body: {
+									error: acceptance.error,
+									code: acceptance.code,
+									limitPolicy: acceptance.limitPolicy,
+								},
+							})
 						}
-						const responseId = randomUUID()
+						const responseId = clientSubmissionId || randomUUID()
 						const responseData = safeJsonParse<Record<string, unknown>>(validation.data, {})
-						await insertRouteRecord(req.kora, 'responses', responseId, {
-							formId: String(form.id),
-							data: responseData,
-							submittedBy: '',
-							clientSubmissionId,
-							submittedAt: clientSubmittedAt,
+						const maxResponses = Number(settings.maxResponses || 0)
+						const hasStrictCap = Number.isFinite(maxResponses) && maxResponses > 0
+						const admission = await req.kora.applyConditional({
+							collection: 'forms',
+							id: String(form.id),
+							if: {
+								status: { $eq: 'published' },
+								...(hasStrictCap ? { responseCount: { $lt: maxResponses } } : {}),
+							},
+							update: {
+								responseCount: op.increment(1),
+							},
+							also: [{
+								collection: 'responses',
+								type: 'insert',
+								recordId: responseId,
+								data: {
+									formId: String(form.id),
+									data: responseData,
+									submittedBy: '',
+									clientSubmissionId,
+									submittedAt: clientSubmittedAt,
+								},
+							}],
+							reject: {
+								code: hasStrictCap ? 'max_responses_reached' : 'form_closed',
+								message: hasStrictCap
+									? settings.closedMessage || 'This form has reached its maximum number of responses.'
+									: settings.closedMessage || 'This form is no longer accepting responses.',
+							},
+							idempotencyKey: {
+								collection: 'responses',
+								id: responseId,
+							},
 						})
-						await applyRouteUpdate(req.kora, 'forms', String(form.id), {
-							responseCount: op.increment(1),
-						})
+						if (!admission.ok) {
+							const [latestForm] = await req.kora.query('forms', {
+								where: { id: String(form.id) },
+								limit: 1,
+							})
+							const latestSettings = latestForm ? parseFormSettings(latestForm.settings) : settings
+							const latestAcceptance = latestForm
+								? evaluatePublicResponseAcceptance(latestSettings, Number(latestForm.responseCount || 0))
+								: acceptance
+							const latestStatus = latestForm ? String(latestForm.status || '') : String(form.status || '')
+							const statusClosed = latestStatus !== 'published'
+							const rejectionCode = statusClosed
+								? 'form_closed'
+								: latestAcceptance.accepted ? admission.code : latestAcceptance.code
+							const rejectionMessage = statusClosed
+								? latestSettings.closedMessage || 'This form is no longer accepting responses.'
+								: latestAcceptance.accepted ? admission.message : latestAcceptance.error
+							logPublicResponseRejection({
+								reason: 'response_not_accepted',
+								code: rejectionCode,
+								status: 403,
+								formId,
+								resolvedFormId: form.id,
+								slug: form.slug,
+								clientSubmissionId,
+								responseBytes,
+								error: rejectionMessage,
+							})
+							return withCors({
+								status: 403,
+								body: {
+									error: rejectionMessage,
+									code: rejectionCode,
+									limitPolicy: latestAcceptance.accepted ? acceptance.limitPolicy : latestAcceptance.limitPolicy,
+								},
+							})
+						}
+						if (admission.idempotent) {
+							return withCors({ status: 200, body: { success: true, duplicate: true, responseId } })
+						}
 
 						// Persist side-effect delivery jobs before attempting delivery.
 						try {
@@ -855,7 +928,7 @@ async function main(): Promise<void> {
 						} catch {
 							// webhook/notification error — don't block response
 						}
-						return withCors({ status: 201, body: { success: true } })
+						return withCors({ status: 201, body: { success: true, responseId } })
 					} catch (err) {
 						console.error('Public response submission error:', err)
 						return withCors({ status: 500, body: { error: 'Internal server error' } })
@@ -887,18 +960,6 @@ async function insertRouteRecord(
 	const result = await kora.apply({ collection, type: 'insert', recordId, data })
 	if (!result.ok) {
 		throw new Error(`Kora route insert rejected for ${collection}/${recordId}: ${result.code} ${result.message}`)
-	}
-}
-
-async function applyRouteUpdate(
-	kora: ProductionHttpRouteContext,
-	collection: string,
-	recordId: string,
-	data: Record<string, unknown>,
-): Promise<void> {
-	const result = await kora.apply({ collection, type: 'update', recordId, data })
-	if (!result.ok) {
-		throw new Error(`Kora route update rejected for ${collection}/${recordId}: ${result.code} ${result.message}`)
 	}
 }
 

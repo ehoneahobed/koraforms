@@ -16,6 +16,7 @@ import {
 	type PublicFormSource,
 	type PublicFormProgressRecord,
 	type PublicFormVersionRecord,
+	type PublicStoreIssue,
 	type PublicSubmissionStatus,
 	type ResponseSubmissionLocalStatus,
 	type ResponseSubmissionRecord,
@@ -42,9 +43,104 @@ export {
 	type PublicFormSource,
 	type PublicFormProgressRecord,
 	type PublicFormVersionRecord,
+	type PublicStoreIssue,
 	type PublicSubmissionStatus,
 	type ResponseSubmissionLocalStatus,
 	type ResponseSubmissionRecord,
+}
+
+const MAX_STORE_ISSUES = 5
+const PUBLIC_RESPONSE_FLUSH_LOCK = 'koraforms-public-response-flush'
+const publicStoreIssues: PublicStoreIssue[] = []
+
+interface StorageFallbackEvent {
+	type: 'store:storage-fallback'
+	dbName: string
+	from: 'opfs' | 'sqlite-wasm'
+	to: 'indexeddb'
+	reason: 'lock-conflict' | 'timeout' | 'unsupported'
+	message: string
+}
+
+const publicStoreEvents = publicApp.events as typeof publicApp.events & {
+	on(type: 'store:storage-fallback', handler: (event: StorageFallbackEvent) => void): void
+}
+
+interface PublicFlushLocks {
+	request<T>(
+		name: string,
+		options: { ifAvailable: true },
+		callback: (lock: unknown | null) => T | Promise<T>,
+	): Promise<T>
+}
+
+async function withPublicResponseFlushLock<T>(callback: () => Promise<T>): Promise<T | null> {
+	if (typeof navigator === 'undefined') return callback()
+	const locks = (navigator as Navigator & { locks?: PublicFlushLocks }).locks
+	if (!locks) return callback()
+	return locks.request(PUBLIC_RESPONSE_FLUSH_LOCK, { ifAvailable: true }, lock => {
+		if (!lock) return null
+		return callback()
+	})
+}
+
+function rememberPublicStoreIssue(issue: Omit<PublicStoreIssue, 'seenAt'>): void {
+	publicStoreIssues.unshift({ ...issue, seenAt: Date.now() })
+	publicStoreIssues.splice(MAX_STORE_ISSUES)
+}
+
+publicApp.events.on('store:opfs-unavailable', event => {
+	rememberPublicStoreIssue({
+		type: 'opfs-unavailable',
+		dbName: event.dbName,
+		reason: event.reason,
+		message: event.message,
+		blocking: true,
+	})
+})
+
+publicStoreEvents.on('store:storage-fallback', event => {
+	rememberPublicStoreIssue({
+		type: 'storage-fallback',
+		dbName: event.dbName,
+		reason: event.reason,
+		from: event.from,
+		to: event.to,
+		message: event.message,
+		blocking: false,
+	})
+})
+
+publicApp.events.on('store:db-name-collision', event => {
+	rememberPublicStoreIssue({
+		type: 'db-name-collision',
+		dbName: event.dbName,
+		message: event.message,
+		blocking: true,
+	})
+})
+
+publicApp.events.on('store:persistence-error', event => {
+	rememberPublicStoreIssue({
+		type: 'persistence-error',
+		dbName: event.dbName,
+		reason: event.code,
+		message: event.message,
+		blocking: true,
+	})
+})
+
+publicApp.events.on('store:quota-exceeded', event => {
+	rememberPublicStoreIssue({
+		type: 'quota-exceeded',
+		dbName: event.dbName,
+		message: event.message,
+		blocking: true,
+	})
+})
+
+export function getPublicStoreIssues(): PublicStoreIssue[] {
+	return publicStoreIssues.slice()
 }
 
 export async function savePublicFormVersion(
@@ -54,7 +150,6 @@ export async function savePublicFormVersion(
 ): Promise<PublicFormVersionRecord | null> {
 	if (!isCacheablePublicForm(form)) return null
 	const record = buildPublicFormVersionRecord(slug, form, now)
-	writePublicFormRecoverySnapshot(record)
 	await publicApp.ready
 	const existing = await publicApp.public_form_versions
 		.where({ slug: record.slug, versionHash: record.versionHash })
@@ -76,43 +171,16 @@ export async function readLatestPublicFormVersion(slug: string): Promise<PublicF
 	return records[0] ?? null
 }
 
-const PUBLIC_FORM_PEER_CHANNEL = 'koraforms-public-form-cache'
-const PUBLIC_FORM_RECOVERY_PREFIX = 'koraforms-public-form-recovery:'
+// Metadata-only recovery aids. Kora's SQLite store remains the source of truth
+// for public form payloads, respondent progress, and queued submissions.
 const PUBLIC_FORM_PROGRESS_CLEARED_PREFIX = 'koraforms-public-form-progress-cleared:'
 const PUBLIC_SUBMISSION_HINT_PREFIX = 'koraforms-public-submission-hints:'
-
-interface PublicFormPeerRequest {
-	type: 'request-public-form'
-	requestId: string
-	slug: string
-}
-
-interface PublicFormPeerResponse {
-	type: 'public-form'
-	requestId: string
-	slug: string
-	form: Record<string, unknown>
-	versionHash?: string
-}
-
-type PublicFormPeerMessage = PublicFormPeerRequest | PublicFormPeerResponse
-
-interface PublicFormRecoverySnapshot {
-	slug: string
-	form: Record<string, unknown>
-	versionHash: string
-	cachedAt: number
-}
 
 interface PublicSubmissionStatusHint {
 	formId: string
 	pending: number
 	rejected: number
 	updatedAt: number
-}
-
-function publicFormRecoveryKey(slug: string): string {
-	return `${PUBLIC_FORM_RECOVERY_PREFIX}${slug}`
 }
 
 function publicFormProgressClearedKey(slug: string): string {
@@ -143,47 +211,6 @@ function markPublicFormProgressCleared(slug: string, now = Date.now()): void {
 		window.localStorage.setItem(publicFormProgressClearedKey(slug), String(now))
 	} catch {
 		// Tombstones are a recovery aid; Kora remains the primary progress store.
-	}
-}
-
-function writePublicFormRecoverySnapshot(record: PublicFormVersionRecord): void {
-	if (typeof window === 'undefined') return
-	try {
-		const snapshot: PublicFormRecoverySnapshot = {
-			slug: record.slug,
-			form: publicFormRecordToForm(record),
-			versionHash: record.versionHash,
-			cachedAt: record.cachedAt,
-		}
-		window.localStorage.setItem(publicFormRecoveryKey(record.slug), JSON.stringify(snapshot))
-	} catch {
-		// Recovery snapshots are best-effort because Kora remains the primary local data plane.
-	}
-}
-
-function readPublicFormRecoverySnapshot(slug: string): PublicFormRecoverySnapshot | null {
-	if (typeof window === 'undefined') return null
-	try {
-		const raw = window.localStorage.getItem(publicFormRecoveryKey(slug))
-		if (!raw) return null
-		const snapshot = JSON.parse(raw) as Partial<PublicFormRecoverySnapshot>
-		if (
-			snapshot.slug !== slug ||
-			typeof snapshot.versionHash !== 'string' ||
-			typeof snapshot.cachedAt !== 'number' ||
-			!snapshot.form ||
-			!isCacheablePublicForm(snapshot.form)
-		) {
-			return null
-		}
-		return {
-			slug,
-			form: snapshot.form,
-			versionHash: snapshot.versionHash,
-			cachedAt: snapshot.cachedAt,
-		}
-	} catch {
-		return null
 	}
 }
 
@@ -228,68 +255,6 @@ function adjustPublicSubmissionStatusHint(
 	} catch {
 		// Hints are metadata-only and best-effort; Kora remains the source of truth.
 	}
-}
-
-export function startPublicFormPeerResponder(params: {
-	slug: string
-	getForm: () => Record<string, unknown> | null
-	getVersionHash?: () => string
-}): () => void {
-	if (typeof window === 'undefined' || !('BroadcastChannel' in window)) return () => {}
-	const channel = new BroadcastChannel(PUBLIC_FORM_PEER_CHANNEL)
-	channel.addEventListener('message', (event: MessageEvent<PublicFormPeerMessage>) => {
-		const message = event.data
-		if (!message || message.type !== 'request-public-form' || message.slug !== params.slug) return
-		const form = params.getForm()
-		if (!form || !isCacheablePublicForm(form)) return
-		channel.postMessage({
-			type: 'public-form',
-			requestId: message.requestId,
-			slug: params.slug,
-			form,
-			versionHash: params.getVersionHash?.() || stableHash(form),
-		} satisfies PublicFormPeerResponse)
-	})
-	return () => channel.close()
-}
-
-export async function requestPublicFormFromPeer(
-	slug: string,
-	timeoutMs = 1_500,
-): Promise<{ form: Record<string, unknown>; versionHash: string } | null> {
-	if (typeof window === 'undefined' || !('BroadcastChannel' in window)) return null
-	const requestId = `form_peer_${Date.now()}_${Math.random().toString(36).slice(2)}`
-	const channel = new BroadcastChannel(PUBLIC_FORM_PEER_CHANNEL)
-	return await new Promise((resolve) => {
-		const timeout = window.setTimeout(() => {
-			channel.close()
-			resolve(null)
-		}, timeoutMs)
-		channel.addEventListener('message', (event: MessageEvent<PublicFormPeerMessage>) => {
-			const message = event.data
-			if (
-				!message ||
-				message.type !== 'public-form' ||
-				message.requestId !== requestId ||
-				message.slug !== slug ||
-				!isCacheablePublicForm(message.form)
-			) {
-				return
-			}
-			window.clearTimeout(timeout)
-			channel.close()
-			resolve({ form: message.form, versionHash: message.versionHash || stableHash(message.form) })
-		})
-		channel.postMessage({ type: 'request-public-form', requestId, slug } satisfies PublicFormPeerRequest)
-	})
-}
-
-export function readPublicFormRecovery(
-	slug: string,
-): { form: Record<string, unknown>; versionHash: string } | null {
-	const snapshot = readPublicFormRecoverySnapshot(slug)
-	if (!snapshot) return null
-	return { form: snapshot.form, versionHash: snapshot.versionHash }
 }
 
 export function getPublicSubmissionStatusHint(formId: string): { pending: number; rejected: number } {
@@ -416,6 +381,7 @@ export async function getPublicOfflineDiagnostics(now = Date.now()): Promise<Pub
 		localBlobBytes: blobUsage.bytes,
 		localBlobCount: blobUsage.count,
 		recentIssues,
+		storeIssues: getPublicStoreIssues(),
 	}
 }
 
@@ -454,12 +420,27 @@ export async function getPublicOfflineReadiness(
 		rejectedSubmissionCount: diagnostics?.submissions.rejected ?? 0,
 		localBlobBytes: blobUsage.bytes,
 		localBlobCount: blobUsage.count,
+		storeIssues: getPublicStoreIssues(),
 	})
 }
 
 export async function flushResponseSubmissions(
 	submit: (item: ResponseSubmissionRecord & { data: string }) => Promise<void>,
 	now = Date.now(),
+): Promise<FlushResult> {
+	const locked = await withPublicResponseFlushLock(() => drainResponseSubmissions(submit, now))
+	if (locked) return locked
+	return {
+		synced: 0,
+		failed: 0,
+		rejected: 0,
+		remaining: await countPendingResponseSubmissions(),
+	}
+}
+
+async function drainResponseSubmissions(
+	submit: (item: ResponseSubmissionRecord & { data: string }) => Promise<void>,
+	now: number,
 ): Promise<FlushResult> {
 	await publicApp.ready
 	const queue = [

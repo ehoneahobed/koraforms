@@ -142,6 +142,54 @@ test('offline readiness model reports ready only when every required capability 
 	assert.deepEqual(notReady.checks.map(check => check.status), ['pending', 'pending', 'ready', 'unavailable'])
 	assert.equal(notReady.pendingSubmissionCount, 2)
 	assert.equal(notReady.rejectedSubmissionCount, 1)
+
+	const storageIssue = buildPublicOfflineReadiness({
+		hasCachedForm: true,
+		formSource: 'local',
+		appShellSupported: true,
+		appShellReady: true,
+		localDatabaseReady: true,
+		blobStorageReady: true,
+		pendingSubmissionCount: 0,
+		rejectedSubmissionCount: 0,
+		localBlobBytes: 0,
+		localBlobCount: 0,
+		storeIssues: [{
+			type: 'opfs-unavailable',
+			reason: 'unsupported',
+			message: 'OPFS unavailable',
+			seenAt: 123,
+		}],
+	})
+
+	assert.equal(storageIssue.ready, false)
+	assert.equal(storageIssue.checks[2].status, 'unavailable')
+	assert.match(storageIssue.checks[2].detail, /OPFS is unsupported/)
+
+	const durableFallback = buildPublicOfflineReadiness({
+		hasCachedForm: true,
+		formSource: 'local',
+		appShellSupported: true,
+		appShellReady: true,
+		localDatabaseReady: true,
+		blobStorageReady: true,
+		pendingSubmissionCount: 0,
+		rejectedSubmissionCount: 0,
+		localBlobBytes: 0,
+		localBlobCount: 0,
+		storeIssues: [{
+			type: 'storage-fallback',
+			reason: 'unsupported',
+			from: 'opfs',
+			to: 'indexeddb',
+			blocking: false,
+			message: 'OPFS unavailable, using IndexedDB',
+			seenAt: 124,
+		}],
+	})
+
+	assert.equal(durableFallback.ready, true)
+	assert.equal(durableFallback.checks[2].status, 'ready')
 })
 
 test('queue decision distinguishes offline/network failures from server rejections', () => {

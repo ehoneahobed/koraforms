@@ -81,6 +81,17 @@ export interface PublicOfflineSubmissionIssue {
 	updatedAt: number
 }
 
+export interface PublicStoreIssue {
+	type: 'storage-fallback' | 'opfs-unavailable' | 'db-name-collision' | 'persistence-error' | 'quota-exceeded'
+	message: string
+	reason?: string
+	dbName?: string
+	from?: string
+	to?: string
+	blocking?: boolean
+	seenAt: number
+}
+
 export interface PublicOfflineDiagnostics {
 	generatedAt: number
 	submissions: Record<ResponseSubmissionLocalStatus, number>
@@ -88,6 +99,7 @@ export interface PublicOfflineDiagnostics {
 	localBlobBytes: number
 	localBlobCount: number
 	recentIssues: PublicOfflineSubmissionIssue[]
+	storeIssues: PublicStoreIssue[]
 }
 
 export type PublicOfflineReadinessStatus = 'ready' | 'pending' | 'unavailable'
@@ -108,6 +120,7 @@ export interface PublicOfflineReadiness {
 	rejectedSubmissionCount: number
 	localBlobBytes: number
 	localBlobCount: number
+	storeIssues: PublicStoreIssue[]
 	checks: PublicOfflineReadinessCheck[]
 }
 
@@ -139,7 +152,9 @@ export function buildPublicOfflineReadiness(params: {
 	rejectedSubmissionCount: number
 	localBlobBytes: number
 	localBlobCount: number
+	storeIssues?: PublicStoreIssue[]
 }): PublicOfflineReadiness {
+	const storeIssue = params.storeIssues?.find(issue => issue.blocking !== false) ?? null
 	const checks: PublicOfflineReadinessCheck[] = [
 		{
 			id: 'form-version',
@@ -162,8 +177,12 @@ export function buildPublicOfflineReadiness(params: {
 		{
 			id: 'local-storage',
 			label: 'Attachment storage ready',
-			status: params.localDatabaseReady && params.blobStorageReady ? 'ready' : 'unavailable',
-			detail: params.localDatabaseReady && params.blobStorageReady
+			status: storeIssue || !params.localDatabaseReady || !params.blobStorageReady ? 'unavailable' : 'ready',
+			detail: storeIssue
+				? storeIssue.type === 'opfs-unavailable'
+					? `Kora storage fell back because OPFS is ${storeIssue.reason || 'unavailable'}. Use another browser or prepare while online.`
+					: storeIssue.message
+				: params.localDatabaseReady && params.blobStorageReady
 				? params.localBlobCount > 0
 					? `${params.localBlobCount} local file${params.localBlobCount === 1 ? '' : 's'} saved for sync.`
 					: 'Files and signatures can be saved locally before sync.'
@@ -193,6 +212,7 @@ export function buildPublicOfflineReadiness(params: {
 		rejectedSubmissionCount: params.rejectedSubmissionCount,
 		localBlobBytes: params.localBlobBytes,
 		localBlobCount: params.localBlobCount,
+		storeIssues: params.storeIssues ?? [],
 		checks,
 	}
 }

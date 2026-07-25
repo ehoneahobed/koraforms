@@ -42,13 +42,10 @@ import {
 	getPublicSubmissionStatusHint,
 	publicFormRecordToForm,
 	readLatestPublicFormVersion,
-	readPublicFormRecovery,
 	readPublicFormProgress,
-	requestPublicFormFromPeer,
 	savePublicFormVersion,
 	savePublicFormProgress,
 	shouldQueueSubmission,
-	startPublicFormPeerResponder,
 	type PublicOfflineReadiness,
 	type PublicFormSource,
 } from '../features/form-fill/offlineRuntime'
@@ -66,6 +63,9 @@ type PendingDuplicateSubmission = {
 	clientSubmissionId: string
 	clientSubmittedAt: number
 }
+
+const PUBLIC_FORM_LOCAL_READ_TIMEOUT_MS = 5_000
+const PUBLIC_STATUS_READ_TIMEOUT_MS = 1_200
 
 function resolveWithTimeout<T>(promise: Promise<T>, timeoutMs: number, fallback: T): Promise<T> {
 	return Promise.race([
@@ -188,15 +188,13 @@ export function FormFill({ formId, navigate }: Props) {
 		let mounted = true
 
 		const loadForm = async () => {
-			let hasUsableForm = false
 			try {
-				const local = await resolveWithTimeout(readLatestPublicFormVersion(formId), 1_200, null)
+				const local = await resolveWithTimeout(readLatestPublicFormVersion(formId), PUBLIC_FORM_LOCAL_READ_TIMEOUT_MS, null)
 				if (mounted && local) {
 					setForm(publicFormRecordToForm(local))
 					setFormVersionHash(local.versionHash)
 					setFormSource('local')
 					setFormPersistedOffline(true)
-					hasUsableForm = true
 				}
 			} catch {
 				if (mounted) setOfflinePersistenceError(true)
@@ -209,7 +207,6 @@ export function FormFill({ formId, navigate }: Props) {
 				if (mounted && data && !data.error) {
 					setForm(data)
 					setFormSource('network')
-					hasUsableForm = true
 					try {
 						const record = await savePublicFormVersion(formId, data)
 						if (record && mounted) {
@@ -229,29 +226,6 @@ export function FormFill({ formId, navigate }: Props) {
 				// Fetch failed (offline, network error)
 			}
 
-			if (!hasUsableForm) {
-				const peer = await requestPublicFormFromPeer(formId)
-				if (mounted && peer) {
-					setForm(peer.form)
-					setFormVersionHash(peer.versionHash)
-					setFormSource('local')
-					setFormPersistedOffline(true)
-					setOfflinePersistenceError(false)
-					hasUsableForm = true
-				}
-			}
-
-			if (!hasUsableForm) {
-				const recovery = readPublicFormRecovery(formId)
-				if (mounted && recovery) {
-					setForm(recovery.form)
-					setFormVersionHash(recovery.versionHash)
-					setFormSource('local')
-					setFormPersistedOffline(true)
-					setOfflinePersistenceError(false)
-				}
-			}
-
 			if (mounted) setRemoteFetched(true)
 		}
 
@@ -261,14 +235,6 @@ export function FormFill({ formId, navigate }: Props) {
 			controller.abort()
 		}
 	}, [formId])
-
-	useEffect(() => {
-		return startPublicFormPeerResponder({
-			slug: formId,
-			getForm: () => form,
-			getVersionHash: () => formVersionHash,
-		})
-	}, [form, formId, formVersionHash])
 
 	// Set page meta when form loads (for client-side navigation and tab title)
 	useEffect(() => {
@@ -307,8 +273,8 @@ export function FormFill({ formId, navigate }: Props) {
 		const hintFormId = String(form?.id || formId)
 		const hint = getPublicSubmissionStatusHint(hintFormId)
 		Promise.all([
-			resolveWithTimeout(countPendingResponseSubmissions(), 1_200, null),
-			resolveWithTimeout(countRejectedResponseSubmissions(), 1_200, null),
+			resolveWithTimeout(countPendingResponseSubmissions(), PUBLIC_STATUS_READ_TIMEOUT_MS, null),
+			resolveWithTimeout(countRejectedResponseSubmissions(), PUBLIC_STATUS_READ_TIMEOUT_MS, null),
 		])
 			.then(([pending, rejected]) => {
 				setPendingOfflineSubmissions(pending ?? hint.pending)
@@ -321,7 +287,7 @@ export function FormFill({ formId, navigate }: Props) {
 	}, [form, formId])
 
 	const refreshOfflineReadiness = useCallback(() => {
-		getPublicOfflineReadiness(formId, formSource)
+		return getPublicOfflineReadiness(formId, formSource)
 			.then(setOfflineReadiness)
 			.catch(() => {
 				setOfflineReadiness(null)
@@ -330,11 +296,6 @@ export function FormFill({ formId, navigate }: Props) {
 
 	const flushOfflineSubmissions = useCallback(async () => {
 		if (typeof navigator !== 'undefined' && !navigator.onLine) {
-			refreshPendingOfflineCount()
-			return
-		}
-		const before = await resolveWithTimeout(countPendingResponseSubmissions(), 1_200, 0)
-		if (before === 0) {
 			refreshPendingOfflineCount()
 			return
 		}
@@ -362,6 +323,14 @@ export function FormFill({ formId, navigate }: Props) {
 			window.removeEventListener('online', handleOnline)
 		}
 	}, [flushOfflineSubmissions, refreshPendingOfflineCount])
+
+	useEffect(() => {
+		if (pendingOfflineSubmissions === 0) return
+		const interval = window.setInterval(() => {
+			flushOfflineSubmissions().catch(() => refreshPendingOfflineCount())
+		}, 2_000)
+		return () => window.clearInterval(interval)
+	}, [flushOfflineSubmissions, pendingOfflineSubmissions, refreshPendingOfflineCount])
 
 	useEffect(() => {
 		refreshOfflineReadiness()
