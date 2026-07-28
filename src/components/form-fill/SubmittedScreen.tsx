@@ -4,6 +4,12 @@ import { PoweredByBadge } from '../shared/PoweredByBadge'
 import { getPublicOfflineDiagnostics } from '../../features/form-fill/offlineRuntime'
 import { copyToClipboard } from '../../utils/clipboard'
 
+function isOfflineDiagnosticsMode(): boolean {
+	if (typeof window === 'undefined') return false
+	const params = new URLSearchParams(window.location.search)
+	return params.get('debug') === 'offline' || params.get('diagnostics') === '1'
+}
+
 // Custom thank-you screen with redirect support
 export function SubmittedScreen({
 	themeVars,
@@ -33,6 +39,7 @@ export function SubmittedScreen({
 	const [countdown, setCountdown] = useState(redirectDelay)
 	const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
 	const isQueued = submissionStatus === 'queued'
+	const showOfflineDiagnostics = isOfflineDiagnosticsMode()
 
 	const copyDiagnostics = async () => {
 		try {
@@ -111,7 +118,7 @@ export function SubmittedScreen({
 							Continue now
 						</a>
 					)}
-					{isQueued && (
+					{isQueued && showOfflineDiagnostics && (
 						<button
 							onClick={copyDiagnostics}
 							className="inline-flex items-center gap-2 rounded-xl border-2 border-gray-200 px-5 py-3 text-sm font-medium text-gray-500 transition-smooth hover:border-gray-300 hover:text-gray-700 active:scale-[0.98] dark:border-gray-700 dark:text-gray-400 dark:hover:border-gray-600 dark:hover:text-gray-200"

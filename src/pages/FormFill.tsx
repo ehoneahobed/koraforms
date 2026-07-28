@@ -88,6 +88,12 @@ function isEmbedMode(): boolean {
 	return new URLSearchParams(window.location.search).get('embed') === '1'
 }
 
+function isOfflineDiagnosticsMode(): boolean {
+	if (typeof window === 'undefined') return false
+	const params = new URLSearchParams(window.location.search)
+	return params.get('debug') === 'offline' || params.get('diagnostics') === '1'
+}
+
 interface Props {
 	formId: string
 	navigate: (path: string) => void
@@ -196,6 +202,7 @@ export function FormFill({ formId, navigate }: Props) {
 	const [offlineReadiness, setOfflineReadiness] = useState<PublicOfflineReadiness | null>(null)
 	const [isPreparingOffline, setIsPreparingOffline] = useState(false)
 	const [diagnosticsCopyState, setDiagnosticsCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
+	const showOfflineDiagnostics = useMemo(() => isOfflineDiagnosticsMode(), [])
 
 	useEffect(() => {
 		const controller = new AbortController()
@@ -1121,15 +1128,12 @@ export function FormFill({ formId, navigate }: Props) {
 							<ArrowRight className="h-4 w-4" />
 						</button>
 						<p className="mt-6 text-xs text-gray-400 dark:text-gray-500">
-							{totalQuestions} question{totalQuestions !== 1 ? 's' : ''} &middot; {
-								formSource === 'local'
-									? 'Loaded from this device'
-									: formPersistedOffline
-										? 'Available offline'
-										: offlinePersistenceError
-											? 'Offline access is unavailable'
-											: 'Preparing offline access...'
-							}
+							{totalQuestions} question{totalQuestions !== 1 ? 's' : ''}
+							{formSource === 'local'
+								? ' · Opened from this device'
+								: formPersistedOffline
+									? ' · Available offline'
+									: ''}
 						</p>
 						{(pendingOfflineSubmissions > 0 || rejectedOfflineSubmissions > 0 || lastSyncMessage) && (
 							<p className="mt-2 text-xs text-gray-400 dark:text-gray-500" aria-live="polite">
@@ -1140,13 +1144,15 @@ export function FormFill({ formId, navigate }: Props) {
 									: lastSyncMessage}
 							</p>
 						)}
-						<OfflineReadinessPanel
-							readiness={offlineReadiness}
-							isPreparing={isPreparingOffline}
-							onPrepare={prepareOfflineUse}
-							onCopyDiagnostics={copyOfflineDiagnostics}
-							diagnosticsCopyState={diagnosticsCopyState}
-						/>
+						{showOfflineDiagnostics && (
+							<OfflineReadinessPanel
+								readiness={offlineReadiness}
+								isPreparing={isPreparingOffline}
+								onPrepare={prepareOfflineUse}
+								onCopyDiagnostics={copyOfflineDiagnostics}
+								diagnosticsCopyState={diagnosticsCopyState}
+							/>
+						)}
 					</div>
 				</div>
 			</div>
