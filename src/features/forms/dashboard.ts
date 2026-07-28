@@ -121,6 +121,18 @@ export interface WorkspaceBackupPayload {
 	}>
 }
 
+export interface WorkspaceRestorePlan {
+	forms: Array<FormExportPayload & {
+		id: string
+		originalStatus: string
+		originalSlug: string
+		responseCount: number
+	}>
+	responses: WorkspaceBackupPayload['responses']
+	summary: WorkspaceBackupPayload['summary']
+	exportedAt: string
+}
+
 export function isArchivedForm(form: Pick<FormRecord, 'settings'>): boolean {
 	return parseFormSettings(form.settings).archived === true
 }
@@ -369,6 +381,86 @@ export function buildWorkspaceBackupPayload(
 export function workspaceBackupFilename(now = new Date()): string {
 	const stamp = now.toISOString().slice(0, 10)
 	return `koraforms-workspace-backup-${stamp}.json`
+}
+
+export function parseWorkspaceRestorePlan(value: unknown): WorkspaceRestorePlan {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) {
+		throw new Error('Choose a valid KoraForms workspace backup file.')
+	}
+	const input = value as Partial<WorkspaceBackupPayload>
+	if (input.koraforms !== true || input.kind !== 'workspace-backup' || input.version !== 1) {
+		throw new Error('This file is not a supported KoraForms workspace backup.')
+	}
+	if (!Array.isArray(input.forms)) throw new Error('The backup does not include forms.')
+	const forms = input.forms.map((form, index) => {
+		const id = String(form?.id || '').trim()
+		if (!id) throw new Error(`Backup form ${index + 1} is missing an id.`)
+		return {
+			koraforms: true as const,
+			version: 1 as const,
+			id,
+			title: String(form?.title || 'Untitled Form'),
+			description: String(form?.description || ''),
+			fields: parseFormFields(form?.fields),
+			theme: String(form?.theme || 'red'),
+			settings: parseFormSettings(form?.settings),
+			originalStatus: String(form?.status || 'draft'),
+			originalSlug: String(form?.slug || ''),
+			responseCount: 0,
+		}
+	})
+	const formIds = new Set(forms.map(form => form.id))
+	const responses = Array.isArray(input.responses)
+		? input.responses
+			.map(response => ({
+				id: String(response?.id || ''),
+				formId: String(response?.formId || ''),
+				submittedAt: typeof response?.submittedAt === 'number' ? response.submittedAt : null,
+				data: response?.data ?? null,
+			}))
+			.filter(response => response.id && formIds.has(response.formId))
+		: []
+	const responseCounts = new Map<string, number>()
+	for (const response of responses) {
+		responseCounts.set(response.formId, (responseCounts.get(response.formId) || 0) + 1)
+	}
+	return {
+		forms: forms.map(form => ({ ...form, responseCount: responseCounts.get(form.id) || 0 })),
+		responses,
+		summary: {
+			forms: forms.length,
+			responses: responses.length,
+		},
+		exportedAt: typeof input.exportedAt === 'string' ? input.exportedAt : '',
+	}
+}
+
+export function buildRestoredFormPayload(form: WorkspaceRestorePlan['forms'][number], ownerId: string) {
+	return {
+		title: `${form.title} (Restored)`,
+		description: form.description,
+		fields: JSON.stringify(form.fields),
+		status: 'draft',
+		ownerId,
+		theme: form.theme,
+		settings: JSON.stringify(serializeFormSettings(form.settings)),
+		responseCount: form.responseCount,
+		slug: '',
+	}
+}
+
+export function buildRestoredResponsePayload(
+	response: WorkspaceRestorePlan['responses'][number],
+	restoredFormId: string,
+): Record<string, unknown> {
+	return {
+		formId: restoredFormId,
+		data: response.data ?? null,
+		submittedBy: '',
+		clientSubmissionId: `restore:${response.id}`,
+		formVersionHash: 'restored-backup',
+		submittedAt: typeof response.submittedAt === 'number' ? response.submittedAt : Date.now(),
+	}
 }
 
 export function publicFormIdentifier(form: FormRecord): string {

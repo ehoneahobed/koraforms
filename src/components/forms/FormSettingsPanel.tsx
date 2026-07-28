@@ -1,9 +1,14 @@
 import { useEffect, useState } from 'react'
-import { AlertCircle, Ban, Calendar, CheckCircle2, Globe, History, Lock } from 'lucide-react'
+import { AlertCircle, Ban, Calendar, CheckCircle2, Globe, History, Loader2, Lock, Mail, Plus, Send, Trash2, Webhook } from 'lucide-react'
 import { updateSettingsValue, datetimeLocalToTimestamp, timestampToDatetimeLocal } from '../../features/forms/shell'
 import { buildPublicFormReadiness } from '../../features/forms/readiness'
 import { THEME_PRESETS } from '../../themes'
-import type { FormField, FormSettings as FormSettingsType } from '../../types'
+import type { FormField, FormSettings as FormSettingsType, WebhookConfig } from '../../types'
+
+type WebhookTestResult = { ok: boolean; message: string }
+type EmailTestResult = { ok: boolean; message: string }
+
+const EMAIL_NOTIFICATIONS_ENABLED = import.meta.env.VITE_EMAIL_NOTIFICATIONS_ENABLED === 'true'
 
 interface FormSettingsPanelProps {
 	title: string
@@ -19,6 +24,8 @@ interface FormSettingsPanelProps {
 	onSettingsChange: (settings: FormSettingsType) => void
 	onPasswordChange: (password: string) => Promise<void> | void
 	onPasswordClear: () => void
+	onWebhookTest?: (webhook: WebhookConfig) => Promise<WebhookTestResult>
+	onEmailTest?: (email: string) => Promise<EmailTestResult>
 }
 
 export function FormSettingsPanel({
@@ -35,11 +42,107 @@ export function FormSettingsPanel({
 	onSettingsChange,
 	onPasswordChange,
 	onPasswordClear,
+	onWebhookTest,
+	onEmailTest,
 }: FormSettingsPanelProps) {
 	const updateSetting = <K extends keyof FormSettingsType>(key: K, value: FormSettingsType[K]) => {
 		onSettingsChange(updateSettingsValue(settings, key, value))
 	}
 	const readiness = buildPublicFormReadiness({ title, status, slug, fields, settings, hasPassword })
+	const webhooks = settings.webhooks || []
+	const [testingWebhook, setTestingWebhook] = useState<number | null>(null)
+	const [testingEmail, setTestingEmail] = useState(false)
+	const [webhookMessages, setWebhookMessages] = useState<Record<number, { kind: 'success' | 'error' | 'muted'; text: string }>>({})
+	const [emailMessage, setEmailMessage] = useState<{ kind: 'success' | 'error' | 'muted'; text: string } | null>(null)
+	const [headerDrafts, setHeaderDrafts] = useState<Record<number, string>>({})
+
+	const updateWebhook = (index: number, patch: Partial<WebhookConfig>) => {
+		const next = webhooks.map((hook, hookIndex) => hookIndex === index ? { ...hook, ...patch } : hook)
+		onSettingsChange({ ...settings, webhooks: next.length > 0 ? next : undefined })
+	}
+
+	const removeWebhook = (index: number) => {
+		const next = webhooks.filter((_, hookIndex) => hookIndex !== index)
+		onSettingsChange({ ...settings, webhooks: next.length > 0 ? next : undefined })
+	}
+
+	const addWebhook = () => {
+		if (webhooks.length >= 5) {
+			setWebhookMessages({ ...webhookMessages, [webhooks.length - 1]: { kind: 'error', text: 'A form can have up to 5 webhooks.' } })
+			return
+		}
+		onSettingsChange({ ...settings, webhooks: [...webhooks, { url: '', method: 'POST', active: true }] })
+	}
+
+	const commitHeaderDraft = (index: number, value: string) => {
+		const trimmed = value.trim()
+		if (!trimmed) {
+			updateWebhook(index, { headers: undefined })
+			setWebhookMessages({ ...webhookMessages, [index]: { kind: 'muted', text: 'Custom headers cleared.' } })
+			return
+		}
+		try {
+			const parsed = JSON.parse(trimmed) as unknown
+			if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+				throw new Error('Headers must be a JSON object.')
+			}
+			const headers = Object.fromEntries(
+				Object.entries(parsed as Record<string, unknown>)
+					.map(([key, value]) => [key.trim(), String(value ?? '').trim()])
+					.filter(([key, value]) => key && value),
+			)
+			updateWebhook(index, { headers: Object.keys(headers).length > 0 ? headers : undefined })
+			setHeaderDrafts({ ...headerDrafts, [index]: JSON.stringify(headers, null, 2) })
+			setWebhookMessages({ ...webhookMessages, [index]: { kind: 'success', text: 'Headers saved.' } })
+		} catch (error) {
+			setWebhookMessages({
+				...webhookMessages,
+				[index]: { kind: 'error', text: error instanceof Error ? error.message : 'Headers must be valid JSON.' },
+			})
+		}
+	}
+
+	const testWebhook = async (index: number) => {
+		const hook = webhooks[index]
+		if (!hook || !onWebhookTest) return
+		setTestingWebhook(index)
+		setWebhookMessages({ ...webhookMessages, [index]: { kind: 'muted', text: 'Sending test event...' } })
+		try {
+			const result = await onWebhookTest(hook)
+			setWebhookMessages({
+				...webhookMessages,
+				[index]: { kind: result.ok ? 'success' : 'error', text: result.message },
+			})
+		} catch (error) {
+			setWebhookMessages({
+				...webhookMessages,
+				[index]: { kind: 'error', text: error instanceof Error ? error.message : 'Webhook test failed.' },
+			})
+		} finally {
+			setTestingWebhook(null)
+		}
+	}
+
+	const updateNotificationEmail = (value: string) => {
+		const email = value.trim()
+		onSettingsChange({ ...settings, notifyEmail: email || undefined })
+		setEmailMessage(email ? { kind: 'muted', text: 'Notification email saved locally.' } : null)
+	}
+
+	const testEmailNotification = async () => {
+		const email = String(settings.notifyEmail || '').trim()
+		if (!email || !onEmailTest || !EMAIL_NOTIFICATIONS_ENABLED) return
+		setTestingEmail(true)
+		setEmailMessage({ kind: 'muted', text: 'Sending test email...' })
+		try {
+			const result = await onEmailTest(email)
+			setEmailMessage({ kind: result.ok ? 'success' : 'error', text: result.message })
+		} catch (error) {
+			setEmailMessage({ kind: 'error', text: error instanceof Error ? error.message : 'Email test failed.' })
+		} finally {
+			setTestingEmail(false)
+		}
+	}
 
 	return (
 		<section className="animate-fade-in rounded-b-2xl border border-t-0 border-slate-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-surface-elevated-dark sm:p-6">
@@ -236,6 +339,162 @@ export function FormSettingsPanel({
 							/>
 						</div>
 					</div>
+				</div>
+
+				<div className="kf-panel p-6">
+					<div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+						<div>
+							<h3 className="flex items-center gap-2 text-[15px] font-semibold text-slate-950 dark:text-gray-100">
+								<Webhook className="h-4 w-4 text-slate-400" />
+								Integrations
+							</h3>
+							<p className="mt-1 text-[13px] text-slate-500 dark:text-gray-400">Optional. Send accepted responses to webhooks after KoraForms stores and syncs them.</p>
+						</div>
+						<button
+							type="button"
+							onClick={addWebhook}
+							className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[13px] font-semibold text-slate-700 transition-colors hover:bg-slate-50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
+						>
+							<Plus className="h-4 w-4" />
+							Add webhook
+						</button>
+					</div>
+
+					<div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50/60 p-4 dark:border-gray-800 dark:bg-gray-900/45">
+						<div className="flex flex-col gap-3 xl:flex-row xl:items-end">
+							<label className="block min-w-0 flex-1">
+								<span className="mb-1.5 flex items-center gap-2 text-[12px] font-medium text-slate-500 dark:text-gray-400">
+									<Mail className="h-3.5 w-3.5" />
+									Email notification
+								</span>
+								<input
+									type="email"
+									value={settings.notifyEmail || ''}
+									disabled={!EMAIL_NOTIFICATIONS_ENABLED}
+									onChange={(event) => updateNotificationEmail(event.target.value)}
+									placeholder="you@example.com"
+									className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[14px] text-slate-700 outline-none focus:border-brand-300 disabled:cursor-not-allowed disabled:opacity-55 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300"
+								/>
+							</label>
+							<button
+								type="button"
+								onClick={testEmailNotification}
+								disabled={!EMAIL_NOTIFICATIONS_ENABLED || !settings.notifyEmail || testingEmail || !onEmailTest}
+								className="inline-flex min-w-[132px] items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[13px] font-semibold text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300 dark:hover:bg-gray-900"
+							>
+								{testingEmail ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+								Send test
+							</button>
+						</div>
+						<p className="mt-2 text-[12px] leading-relaxed text-slate-500 dark:text-gray-400">
+							{EMAIL_NOTIFICATIONS_ENABLED
+								? 'Send an email to this address when a response is accepted.'
+								: 'Prepared for launch, but turned off until Resend is configured.'}
+						</p>
+						{emailMessage && (
+							<p className={`mt-2 text-[12px] ${
+								emailMessage.kind === 'success'
+									? 'text-emerald-600 dark:text-emerald-400'
+									: emailMessage.kind === 'error'
+										? 'text-red-600 dark:text-red-400'
+										: 'text-slate-500 dark:text-gray-400'
+							}`}>
+								{emailMessage.text}
+							</p>
+						)}
+					</div>
+
+					{webhooks.length === 0 ? (
+						<div className="mt-4 rounded-2xl border border-dashed border-slate-200 bg-slate-50/70 p-5 text-[13px] text-slate-500 dark:border-gray-800 dark:bg-gray-900/40 dark:text-gray-400">
+							No webhook is configured. This does not affect readiness; responses remain available in KoraForms.
+						</div>
+					) : (
+						<div className="mt-4 space-y-3">
+							{webhooks.map((hook, index) => {
+								const message = webhookMessages[index]
+								const headerDraft = headerDrafts[index] ?? JSON.stringify(hook.headers || {}, null, 2)
+								return (
+									<div key={index} className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4 dark:border-gray-800 dark:bg-gray-900/45">
+										<div className="grid gap-3 xl:grid-cols-[110px_1fr_auto_auto]">
+											<label className="block">
+												<span className="mb-1.5 block text-[12px] font-medium text-slate-500 dark:text-gray-400">Method</span>
+												<select
+													value={hook.method || 'POST'}
+													onChange={(event) => updateWebhook(index, { method: event.target.value === 'PUT' ? 'PUT' : 'POST' })}
+													className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[13px] font-semibold text-slate-700 outline-none focus:border-brand-300 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300"
+												>
+													<option value="POST">POST</option>
+													<option value="PUT">PUT</option>
+												</select>
+											</label>
+											<label className="block min-w-0">
+												<span className="mb-1.5 block text-[12px] font-medium text-slate-500 dark:text-gray-400">Endpoint URL</span>
+												<input
+													type="url"
+													value={hook.url}
+													onChange={(event) => updateWebhook(index, { url: event.target.value })}
+													placeholder="https://hooks.example.com/koraforms"
+													className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[14px] text-slate-700 outline-none focus:border-brand-300 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300"
+												/>
+											</label>
+											<label className="flex items-end gap-2 pb-2 text-[13px] font-medium text-slate-600 dark:text-gray-300">
+												<input
+													type="checkbox"
+													checked={hook.active !== false}
+													onChange={(event) => updateWebhook(index, { active: event.target.checked })}
+													className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+												/>
+												Active
+											</label>
+											<div className="flex items-end gap-2">
+												<button
+													type="button"
+													onClick={() => testWebhook(index)}
+													disabled={!hook.url || testingWebhook === index || !onWebhookTest}
+													className="inline-flex min-w-[92px] items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[13px] font-semibold text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300 dark:hover:bg-gray-900"
+												>
+													{testingWebhook === index ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+													Test
+												</button>
+												<button
+													type="button"
+													onClick={() => removeWebhook(index)}
+													className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-400 transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-600 dark:border-gray-800 dark:bg-gray-950 dark:hover:border-red-900/50 dark:hover:bg-red-900/20 dark:hover:text-red-300"
+													aria-label="Remove webhook"
+													title="Remove webhook"
+												>
+													<Trash2 className="h-4 w-4" />
+												</button>
+											</div>
+										</div>
+										<label className="mt-3 block">
+											<span className="mb-1.5 block text-[12px] font-medium text-slate-500 dark:text-gray-400">Headers JSON</span>
+											<textarea
+												value={headerDraft}
+												onChange={(event) => setHeaderDrafts({ ...headerDrafts, [index]: event.target.value })}
+												onBlur={(event) => commitHeaderDraft(index, event.target.value)}
+												rows={2}
+												spellCheck={false}
+												placeholder={'{\n  "Authorization": "Bearer ..."\n}'}
+												className="w-full resize-none rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-mono text-[12px] text-slate-700 outline-none focus:border-brand-300 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300"
+											/>
+										</label>
+										{message && (
+											<p className={`mt-2 text-[12px] ${
+												message.kind === 'success'
+													? 'text-emerald-600 dark:text-emerald-400'
+													: message.kind === 'error'
+														? 'text-red-600 dark:text-red-400'
+														: 'text-slate-500 dark:text-gray-400'
+											}`}>
+												{message.text}
+											</p>
+										)}
+									</div>
+								)
+							})}
+						</div>
+					)}
 				</div>
 
 				<div className="kf-panel p-6">

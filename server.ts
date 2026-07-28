@@ -18,12 +18,12 @@ import { defineSchema, t, op } from '@korajs/core'
 import type { ProductionServer, ServerStore } from '@korajs/server'
 import type { UserStore } from '@korajs/auth/server'
 import type { ProductionHttpRouteContext, ProductionHttpRouteRequest, ProductionHttpRouteResponse } from '@korajs/server'
-import { parseFormFields, parseFormSettings, safeJsonParse, serializeFormSettings } from './src/domain/forms'
+import { isResponseField, parseFormFields, parseFormSettings, safeJsonParse, serializeFormSettings } from './src/domain/forms'
 import { hasFormAccessPasswordSecret, stripFormAccessSecrets, verifyFormAccessPasswordSecret } from './src/domain/formPassword'
 import { buildPublicResponseRejectionLogEvent } from './src/domain/publicResponseDiagnostics'
 import { evaluatePublicResponseAcceptance } from './src/domain/responseAcceptance'
 import { validatePublishedResponsePayload } from './src/domain/responseValidation'
-import { buildSideEffectDeliveryJobs, isDeliverableWebhookUrl, isPublicWebhookIpAddress, normalizeWebhookConfig } from './src/domain/responseSideEffects'
+import { buildEmailNotificationPayload, buildSideEffectDeliveryJobs, buildWebhookPayload, isDeliverableWebhookUrl, isPublicWebhookIpAddress, normalizeWebhookConfig } from './src/domain/responseSideEffects'
 import { buildOpsDiagnosticsSnapshot } from './src/domain/opsDiagnostics'
 import type { FormField, FormSettings } from './src/types'
 type AnalyticsEventMetadata = Record<string, unknown>
@@ -316,6 +316,8 @@ type RateLimitBucket =
 	| 'public_analytics'
 	| 'public_results'
 	| 'public_submit'
+	| 'owner_email_test'
+	| 'owner_webhook_test'
 
 const RATE_LIMITS: Record<RateLimitBucket, { limit: number; windowMs: number }> = {
 	auth: { limit: 30, windowMs: 60_000 },
@@ -326,6 +328,8 @@ const RATE_LIMITS: Record<RateLimitBucket, { limit: number; windowMs: number }> 
 	public_analytics: { limit: 120, windowMs: 60_000 },
 	public_results: { limit: 60, windowMs: 60_000 },
 	public_submit: { limit: 20, windowMs: 60_000 },
+	owner_email_test: { limit: 20, windowMs: 60_000 },
+	owner_webhook_test: { limit: 20, windowMs: 60_000 },
 }
 
 function createRateLimiter() {
@@ -462,6 +466,15 @@ async function main(): Promise<void> {
 		return verifyFormAccessPasswordSecret(secret, password)
 	}
 
+	async function authenticatedRouteUserId(req: ProductionHttpRouteRequest): Promise<string | null> {
+		const authHeader = getHeaderValue(req.headers || {}, 'authorization')
+		const token = authHeader.toLowerCase().startsWith('bearer ') ? authHeader.slice(7).trim() : ''
+		if (!token) return null
+		const payload = await auth.tokenManager.validateTokenWithRevocation(token)
+		if (!payload || payload.type !== 'access' || !payload.sub) return null
+		return payload.sub
+	}
+
 	// -----------------------------------------------------------------------
 	// Production server — handles static files, WebSocket sync, CORS, health
 	// check, metrics, admin dashboard, and backup endpoints automatically.
@@ -519,6 +532,102 @@ async function main(): Promise<void> {
 					} catch (err) {
 						console.error('Operational diagnostics error:', err)
 						return withCors({ status: 500, body: { error: 'Internal server error' } })
+					}
+				},
+			},
+			{
+				path: '/api/forms/webhook-test',
+				async handle(req: ProductionHttpRouteRequest): Promise<ProductionHttpRouteResponse> {
+					if (req.method === 'OPTIONS') return withCors({ status: 204 })
+					if (req.method !== 'POST') return withCors({ status: 405, body: { error: 'Method not allowed' } })
+					const userId = await authenticatedRouteUserId(req)
+					if (!userId) return withCors({ status: 401, body: { error: 'Unauthorized' } })
+					const limited = rateLimit(req, 'owner_webhook_test')
+					if (limited) return limited
+
+					try {
+						const body = parseRequestBody<{ formId?: unknown; webhook?: unknown }>(req)
+						const formId = boundedString(body?.formId, 180)
+						const hook = normalizeWebhookConfig(body?.webhook as Partial<WebhookConfig>)
+						if (!formId || !hook) {
+							return withCors({ status: 400, body: { error: 'Enter an active HTTPS webhook URL before testing.' } })
+						}
+
+						const form = await req.kora.findById('forms', formId)
+						if (!form || String(form.ownerId || '') !== userId) {
+							return withCors({ status: 404, body: { error: 'Form not found' } })
+						}
+
+						const fields = parseFormFields(form.fields)
+						const fieldsMap = Object.fromEntries(fields.map(field => [
+							field.id,
+							{ label: field.label, type: field.type },
+						]))
+						const responseData = JSON.stringify(buildWebhookTestResponseData(fields))
+						await deliverWebhookNotification({
+							webhook: hook,
+							body: {
+								...buildWebhookPayload({
+									id: String(form.id),
+									title: String(form.title || 'Untitled Form'),
+									slug: String(form.slug || ''),
+								}, responseData, fieldsMap, Date.now()),
+								test: true,
+							},
+						})
+
+						return withCors({ status: 200, body: { message: 'Test event sent.' } })
+					} catch (error) {
+						return withCors({
+							status: 502,
+							body: { error: error instanceof Error ? error.message : 'Webhook test failed.' },
+						})
+					}
+				},
+			},
+			{
+				path: '/api/forms/email-test',
+				async handle(req: ProductionHttpRouteRequest): Promise<ProductionHttpRouteResponse> {
+					if (req.method === 'OPTIONS') return withCors({ status: 204 })
+					if (req.method !== 'POST') return withCors({ status: 405, body: { error: 'Method not allowed' } })
+					const userId = await authenticatedRouteUserId(req)
+					if (!userId) return withCors({ status: 401, body: { error: 'Unauthorized' } })
+					const limited = rateLimit(req, 'owner_email_test')
+					if (limited) return limited
+
+					try {
+						const body = parseRequestBody<{ formId?: unknown; email?: unknown }>(req)
+						const formId = boundedString(body?.formId, 180)
+						const email = boundedString(body?.email, 320)
+						if (!formId || !isValidNotificationEmail(email)) {
+							return withCors({ status: 400, body: { error: 'Enter a valid notification email before testing.' } })
+						}
+
+						const form = await req.kora.findById('forms', formId)
+						if (!form || String(form.ownerId || '') !== userId) {
+							return withCors({ status: 404, body: { error: 'Form not found' } })
+						}
+
+						const fields = parseFormFields(form.fields)
+						const fieldsMap = Object.fromEntries(fields.map(field => [
+							field.id,
+							{ label: field.label, type: field.type },
+						]))
+						const responseData = JSON.stringify(buildWebhookTestResponseData(fields))
+						await deliverEmailNotification(email, {
+							...buildEmailNotificationPayload({
+								id: String(form.id),
+								title: String(form.title || 'Untitled Form'),
+								slug: String(form.slug || ''),
+							}, responseData, fieldsMap, publicBaseUrl()),
+							subject: `Test notification: ${String(form.title || 'Untitled Form')}`,
+						})
+
+						return withCors({ status: 200, body: { message: 'Test email sent.' } })
+					} catch (error) {
+						const message = error instanceof Error ? error.message : 'Email test failed.'
+						const status = message.includes('not configured') ? 503 : 502
+						return withCors({ status, body: { error: message } })
 					}
 				},
 			},
@@ -605,12 +714,11 @@ async function main(): Promise<void> {
 								})
 							}
 
-							const baseUrl = process.env.PUBLIC_URL || 'https://forms.korajs.dev'
 							return withCors({
 								status: 200,
 								body: {
 									resumeId,
-									resumeUrl: `${baseUrl}/f/${slug}?resume=${resumeId}`,
+									resumeUrl: `${publicBaseUrl()}/f/${slug}?resume=${resumeId}`,
 								},
 							})
 						} catch {
@@ -1073,7 +1181,7 @@ async function main(): Promise<void> {
 								formInfo,
 								validation.data,
 								fieldsMap,
-								process.env.PUBLIC_URL || 'https://forms.korajs.dev',
+								publicBaseUrl(),
 								clientSubmittedAt,
 							)
 							for (const job of jobs) {
@@ -1255,6 +1363,14 @@ function boundedString(value: unknown, maxLength: number): string {
 	return typeof value === 'string' ? value.trim().slice(0, maxLength) : ''
 }
 
+function publicBaseUrl(): string {
+	return (process.env.PUBLIC_URL || 'https://forms.korajs.dev').replace(/\/$/, '')
+}
+
+function isValidNotificationEmail(value: string): boolean {
+	return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
+}
+
 function boundedJsonObject(value: unknown, maxBytes: number): Record<string, unknown> {
 	const object = asJsonObject(value)
 	const json = JSON.stringify(object)
@@ -1272,6 +1388,47 @@ function clampTimestamp(value: number, now: number): number {
 function asJsonObject(value: unknown): Record<string, unknown> {
 	if (value && typeof value === 'object' && !Array.isArray(value)) return value as Record<string, unknown>
 	return {}
+}
+
+function buildWebhookTestResponseData(fields: FormField[]): Record<string, unknown> {
+	const data: Record<string, unknown> = {}
+	for (const field of fields.filter(isResponseField).slice(0, 12)) {
+		data[field.id] = sampleAnswerForField(field)
+	}
+	return data
+}
+
+function sampleAnswerForField(field: FormField): unknown {
+	const firstOption = String(field.options || '').split(',').map(option => option.trim()).find(Boolean)
+	switch (field.type) {
+		case 'number':
+		case 'scale':
+		case 'rating':
+			return 5
+		case 'email':
+			return 'respondent@example.com'
+		case 'phone':
+			return '+1 555 0100'
+		case 'date':
+			return new Date().toISOString().slice(0, 10)
+		case 'time':
+			return '09:00'
+		case 'url':
+			return 'https://example.com'
+		case 'checkbox':
+			return firstOption ? [firstOption] : ['Sample option']
+		case 'radio':
+		case 'select':
+		case 'yesno':
+			return firstOption || (field.type === 'yesno' ? 'Yes' : 'Sample option')
+		case 'matrix':
+			return {}
+		case 'file':
+		case 'signature':
+			return '[test attachment omitted]'
+		default:
+			return 'Sample answer'
+	}
 }
 
 function publicFormResponse(form: Record<string, unknown>, settings: ReturnType<typeof parseFormSettings>): Record<string, unknown> {
@@ -1463,36 +1620,35 @@ async function deliverEmailNotification(
 	const html = typeof email.html === 'string' ? email.html : ''
 	const text = typeof email.text === 'string' ? email.text : ''
 
-	// Try Resend API first (recommended for production)
 	const resendKey = process.env.RESEND_API_KEY
-	if (resendKey) {
-		const fromEmail = process.env.EMAIL_FROM || 'KoraForms <notifications@koraforms.app>'
-		try {
-			const res = await fetch('https://api.resend.com/emails', {
-				method: 'POST',
-				headers: {
-					'Authorization': `Bearer ${resendKey}`,
-					'Content-Type': 'application/json',
-				},
-				body: JSON.stringify({
-					from: fromEmail,
-					to: [toEmail],
-					subject,
-					html,
-					text,
-				}),
-			})
-			if (res.ok) {
-				console.log(`Email notification sent to ${toEmail}`)
-				return
-			}
-			throw new Error(`Resend API error ${res.status}: ${await res.text()}`)
-		} catch (err) {
-			throw err instanceof Error ? err : new Error('Email notification failed')
-		}
+	if (!resendKey) {
+		throw new Error('Email notifications are not configured. Set RESEND_API_KEY before enabling this feature.')
 	}
 
-	console.log(`[EMAIL] ${subject} → ${toEmail}\n${text}`)
+	const fromEmail = process.env.EMAIL_FROM || 'KoraForms <notifications@koraforms.app>'
+	try {
+		const res = await fetch('https://api.resend.com/emails', {
+			method: 'POST',
+			headers: {
+				'Authorization': `Bearer ${resendKey}`,
+				'Content-Type': 'application/json',
+			},
+			body: JSON.stringify({
+				from: fromEmail,
+				to: [toEmail],
+				subject,
+				html,
+				text,
+			}),
+		})
+		if (res.ok) {
+			console.log(`Email notification sent to ${toEmail}`)
+			return
+		}
+		throw new Error(`Resend API error ${res.status}: ${await res.text()}`)
+	} catch (err) {
+		throw err instanceof Error ? err : new Error('Email notification failed')
+	}
 }
 
 async function deliverWebhookNotification(payload: Record<string, unknown>): Promise<void> {

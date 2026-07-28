@@ -52,7 +52,7 @@ const Terms = lazy(() => import('./pages/Terms').then(m => ({ default: m.Terms }
 import { ErrorBoundary } from './components/shared/ErrorBoundary'
 import { FORM_TEMPLATES, createFieldsFromTemplate } from './templates'
 import { readStringFromStorage, writeStringToStorage } from './utils/storage'
-import type { FormSettings as FormSettingsType } from './types'
+import type { FormSettings as FormSettingsType, WebhookConfig } from './types'
 import { parseFormFields, parseFormSettings, serializeFormSettings } from './domain/forms'
 import { hasFormAccessPasswordSecret } from './domain/formPassword'
 import {
@@ -492,6 +492,44 @@ function FormPageShell({ navigate, userId }: { navigate: (path: string) => void;
 		})
 	}
 
+	const handleWebhookTest = async (webhook: WebhookConfig): Promise<{ ok: boolean; message: string }> => {
+		if (!formId) return { ok: false, message: 'Save the form before testing a webhook.' }
+		const token = await authClient.getAccessToken()
+		if (!token) return { ok: false, message: 'Sign in again before testing webhooks.' }
+		const response = await fetch('/api/forms/webhook-test', {
+			method: 'POST',
+			headers: {
+				'Authorization': `Bearer ${token}`,
+				'Content-Type': 'application/json',
+			},
+			body: JSON.stringify({ formId, webhook }),
+		})
+		const body = await response.json().catch(() => ({})) as { message?: string; error?: string }
+		return {
+			ok: response.ok,
+			message: body.message || body.error || (response.ok ? 'Test event sent.' : 'Webhook test failed.'),
+		}
+	}
+
+	const handleEmailTest = async (email: string): Promise<{ ok: boolean; message: string }> => {
+		if (!formId) return { ok: false, message: 'Save the form before testing email notifications.' }
+		const token = await authClient.getAccessToken()
+		if (!token) return { ok: false, message: 'Sign in again before testing email notifications.' }
+		const response = await fetch('/api/forms/email-test', {
+			method: 'POST',
+			headers: {
+				'Authorization': `Bearer ${token}`,
+				'Content-Type': 'application/json',
+			},
+			body: JSON.stringify({ formId, email }),
+		})
+		const body = await response.json().catch(() => ({})) as { message?: string; error?: string }
+		return {
+			ok: response.ok,
+			message: body.message || body.error || (response.ok ? 'Test email sent.' : 'Email test failed.'),
+		}
+	}
+
 	// Sync status text for the breadcrumb bar
 	const syncText = (() => {
 		const s = syncStatus.status
@@ -663,6 +701,8 @@ function FormPageShell({ navigate, userId }: { navigate: (path: string) => void;
 					onSettingsChange={updateSettings}
 					onPasswordChange={updatePassword}
 					onPasswordClear={clearPassword}
+					onWebhookTest={handleWebhookTest}
+					onEmailTest={handleEmailTest}
 				/>
 			)}
 

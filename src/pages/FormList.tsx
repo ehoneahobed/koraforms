@@ -29,6 +29,7 @@ import {
 	Activity,
 	AlertCircle,
 	WifiOff,
+	Upload,
 } from 'lucide-react'
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { FORM_TEMPLATES, TEMPLATE_CATEGORIES, createFieldsFromTemplate } from '../templates'
@@ -48,10 +49,13 @@ import {
 	buildTemplateFormPayload,
 	buildWorkspaceHealthSnapshot,
 	buildWorkspaceBackupPayload,
+	buildRestoredFormPayload,
+	buildRestoredResponsePayload,
 	filterDashboardForms,
 	formExportFilename,
 	groupDashboardForms,
 	isArchivedForm,
+	parseWorkspaceRestorePlan,
 	publicFormIdentifier,
 	serializeArchiveSettings,
 	workspaceBackupFilename,
@@ -114,6 +118,9 @@ export function FormList({ navigate, userId }: Props) {
 	const { mutateAsync: duplicateForm } = useMutation(
 		(data: Record<string, unknown>) => app.forms.insert(data),
 	)
+	const { mutateAsync: createResponse } = useMutation(
+		(data: Record<string, unknown>) => app.responses.insert(data),
+	)
 
 	const { mutate: updateForm } = useMutation(
 		(data: { id: string; settings: string }) =>
@@ -126,6 +133,8 @@ export function FormList({ navigate, userId }: Props) {
 	const [filter, setFilter] = useState<DashboardFilter>('all')
 	const [searchQuery, setSearchQuery] = useState('')
 	const [publicOfflineDiagnostics, setPublicOfflineDiagnostics] = useState<PublicOfflineDiagnostics | null>(null)
+	const [restoreStatus, setRestoreStatus] = useState<{ tone: 'success' | 'error' | 'muted'; message: string } | null>(null)
+	const restoreInputRef = useRef<HTMLInputElement | null>(null)
 
 	const handleArchive = (form: Record<string, unknown>) => {
 		updateForm({ id: String(form.id), settings: JSON.stringify(serializeArchiveSettings(form.settings, true)) })
@@ -209,6 +218,55 @@ export function FormList({ navigate, userId }: Props) {
 		downloadJsonFile(data, workspaceBackupFilename(now))
 	}
 
+	const handleRestoreWorkspaceFile = async (file: File | null) => {
+		if (!file) return
+		setRestoreStatus({ tone: 'muted', message: 'Reading backup...' })
+		try {
+			const text = await file.text()
+			const plan = parseWorkspaceRestorePlan(JSON.parse(text) as unknown)
+			if (plan.forms.length === 0) {
+				setRestoreStatus({ tone: 'error', message: 'This backup does not contain any forms.' })
+				return
+			}
+
+			const formIdMap = new Map<string, string>()
+			for (const form of plan.forms) {
+				const restored = await createForm(buildRestoredFormPayload(form, userId))
+				formIdMap.set(form.id, String(restored.id))
+				void recordAuditEvent(app.audit_events, {
+					formId: String(restored.id),
+					actorId: userId,
+					eventType: 'form_restored',
+					summary: 'Restored form from workspace backup',
+					metadata: {
+						sourceFormId: form.id,
+						sourceSlug: form.originalSlug,
+						sourceStatus: form.originalStatus,
+						backupExportedAt: plan.exportedAt,
+					},
+				})
+			}
+
+			for (const response of plan.responses) {
+				const restoredFormId = formIdMap.get(response.formId)
+				if (!restoredFormId) continue
+				await createResponse(buildRestoredResponsePayload(response, restoredFormId))
+			}
+
+			setRestoreStatus({
+				tone: 'success',
+				message: `Restored ${plan.forms.length} form${plan.forms.length === 1 ? '' : 's'} and ${plan.responses.length} response${plan.responses.length === 1 ? '' : 's'} as draft copies.`,
+			})
+		} catch (error) {
+			setRestoreStatus({
+				tone: 'error',
+				message: error instanceof Error ? error.message : 'Could not restore this backup.',
+			})
+		} finally {
+			if (restoreInputRef.current) restoreInputRef.current.value = ''
+		}
+	}
+
 	const formGroups = useMemo(() => groupDashboardForms(allForms), [allForms])
 	const { activeForms, archivedForms, published, drafts } = formGroups
 
@@ -288,10 +346,31 @@ export function FormList({ navigate, userId }: Props) {
 			</div>
 
 			<WorkspaceHealthPanel
-				health={workspaceHealth}
-				syncStatus={syncStatus.status}
-				onBackup={handleBackupWorkspace}
-			/>
+					health={workspaceHealth}
+					syncStatus={syncStatus.status}
+					onBackup={handleBackupWorkspace}
+					onRestore={() => restoreInputRef.current?.click()}
+				/>
+				<input
+					ref={restoreInputRef}
+					type="file"
+					accept=".json,application/json"
+					className="hidden"
+					onChange={(event) => {
+						handleRestoreWorkspaceFile(event.target.files?.[0] || null).catch(() => {})
+					}}
+				/>
+				{restoreStatus && (
+					<div className={`mb-5 rounded-2xl border px-4 py-3 text-[13px] font-medium ${
+						restoreStatus.tone === 'success'
+							? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/25 dark:text-emerald-300'
+							: restoreStatus.tone === 'error'
+								? 'border-red-200 bg-red-50 text-red-700 dark:border-red-900/50 dark:bg-red-950/25 dark:text-red-300'
+								: 'border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-800 dark:bg-slate-900/60 dark:text-gray-300'
+					}`}>
+						{restoreStatus.message}
+					</div>
+				)}
 
 			{/* Stat Cards */}
 			{allForms.length > 0 && (
@@ -466,10 +545,12 @@ function WorkspaceHealthPanel({
 	health,
 	syncStatus,
 	onBackup,
+	onRestore,
 }: {
 	health: ReturnType<typeof buildWorkspaceHealthSnapshot>
 	syncStatus: string
 	onBackup: () => void
+	onRestore: () => void
 }) {
 	const syncCopy = getDashboardSyncCopy(syncStatus)
 	const healthIcon =
@@ -550,15 +631,25 @@ function WorkspaceHealthPanel({
 					<span className={`h-2.5 w-2.5 shrink-0 rounded-full ${syncCopy.dotClass}`} />
 				</div>
 
-				<button
-					type="button"
-					onClick={onBackup}
-					disabled={health.publishedForms + health.draftForms === 0}
-					className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-[13px] font-semibold text-slate-600 shadow-sm transition-all duration-150 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-950 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-white disabled:hover:border-slate-200 dark:border-slate-800 dark:bg-slate-900 dark:text-gray-300 dark:hover:border-slate-700 dark:hover:bg-slate-800 dark:hover:text-gray-100 dark:disabled:hover:bg-slate-900 dark:disabled:hover:border-slate-800"
-				>
-					<Download className="h-4 w-4" />
-					Backup
-				</button>
+				<div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+					<button
+						type="button"
+						onClick={onBackup}
+						disabled={health.publishedForms + health.draftForms === 0}
+						className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-[13px] font-semibold text-slate-600 shadow-sm transition-all duration-150 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-950 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-white disabled:hover:border-slate-200 dark:border-slate-800 dark:bg-slate-900 dark:text-gray-300 dark:hover:border-slate-700 dark:hover:bg-slate-800 dark:hover:text-gray-100 dark:disabled:hover:bg-slate-900 dark:disabled:hover:border-slate-800"
+					>
+						<Download className="h-4 w-4" />
+						Backup
+					</button>
+					<button
+						type="button"
+						onClick={onRestore}
+						className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-[13px] font-semibold text-slate-600 shadow-sm transition-all duration-150 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-950 active:scale-[0.98] dark:border-slate-800 dark:bg-slate-900 dark:text-gray-300 dark:hover:border-slate-700 dark:hover:bg-slate-800 dark:hover:text-gray-100"
+					>
+						<Upload className="h-4 w-4" />
+						Restore
+					</button>
+				</div>
 			</div>
 		</section>
 	)

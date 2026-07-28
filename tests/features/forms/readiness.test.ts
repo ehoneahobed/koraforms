@@ -14,14 +14,16 @@ test('public form readiness marks a complete published form as ready', () => {
 		status: 'published',
 		slug: 'rsvp',
 		fields,
-		settings: { webhooks: [{ url: 'https://example.com/hook', active: true }] },
+		settings: {},
 		hasPassword: false,
 		now: new Date('2026-01-01T12:00:00Z').getTime(),
 	})
 
 	assert.equal(readiness.status, 'ready')
+	assert.equal(readiness.score, 100)
 	assert.equal(readiness.blockedCount, 0)
 	assert.equal(readiness.warningCount, 0)
+	assert.ok(readiness.checks.some(check => check.id === 'integrations' && check.status === 'ready'))
 })
 
 test('public form readiness blocks forms that cannot collect answers safely', () => {
@@ -59,5 +61,5 @@ test('public form readiness warns for choices that reduce field-use confidence',
 	assert.equal(readiness.status, 'warning')
 	assert.ok(readiness.checks.some(check => check.id === 'required-fields' && check.status === 'warning'))
 	assert.ok(readiness.checks.some(check => check.id === 'offline' && check.status === 'warning'))
-	assert.ok(readiness.checks.some(check => check.id === 'integrations' && check.status === 'warning'))
+	assert.ok(readiness.checks.some(check => check.id === 'integrations' && check.status === 'ready'))
 })

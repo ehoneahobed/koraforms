@@ -8,10 +8,13 @@ import {
 	buildTemplateFormPayload,
 	buildWorkspaceHealthSnapshot,
 	buildWorkspaceBackupPayload,
+	buildRestoredFormPayload,
+	buildRestoredResponsePayload,
 	filterDashboardForms,
 	formExportFilename,
 	groupDashboardForms,
 	isArchivedForm,
+	parseWorkspaceRestorePlan,
 	publicFormIdentifier,
 	serializeArchiveSettings,
 	workspaceBackupFilename,
@@ -213,4 +216,54 @@ test('workspace backup payload exports local forms and owned responses', () => {
 		{ id: 'r1', formId: 'a', submittedAt: 200, data: '{"name":"Ada"}' },
 	])
 	assert.equal(workspaceBackupFilename(now), 'koraforms-workspace-backup-2026-07-23.json')
+})
+
+test('workspace restore plan validates backups and restores as draft copies', () => {
+	const plan = parseWorkspaceRestorePlan({
+		koraforms: true,
+		kind: 'workspace-backup',
+		version: 1,
+		exportedAt: '2026-07-23T10:00:00.000Z',
+		summary: { forms: 1, responses: 1 },
+		forms: [{
+			id: 'source-form',
+			title: 'Published Form',
+			description: 'Original',
+			fields: [{ id: 'name', type: 'text', label: 'Name', required: true }],
+			settings: { publicResults: true },
+			status: 'published',
+			slug: 'published-form',
+			theme: 'rose',
+			createdAt: 123,
+		}],
+		responses: [
+			{ id: 'source-response', formId: 'source-form', submittedAt: 456, data: { name: 'Ada' } },
+			{ id: 'orphan-response', formId: 'missing-form', submittedAt: 789, data: { name: 'Grace' } },
+		],
+	})
+
+	assert.equal(plan.forms.length, 1)
+	assert.equal(plan.responses.length, 1)
+	assert.equal(plan.forms[0]?.responseCount, 1)
+	assert.equal(plan.forms[0]?.originalSlug, 'published-form')
+	assert.deepEqual(plan.summary, { forms: 1, responses: 1 })
+
+	const formPayload = buildRestoredFormPayload(plan.forms[0]!, 'owner-1')
+	assert.equal(formPayload.title, 'Published Form (Restored)')
+	assert.equal(formPayload.status, 'draft')
+	assert.equal(formPayload.slug, '')
+	assert.equal(formPayload.ownerId, 'owner-1')
+	assert.equal(formPayload.responseCount, 1)
+
+	const responsePayload = buildRestoredResponsePayload(plan.responses[0]!, 'new-form')
+	assert.equal(responsePayload.formId, 'new-form')
+	assert.equal(responsePayload.clientSubmissionId, 'restore:source-response')
+	assert.equal(responsePayload.submittedAt, 456)
+})
+
+test('workspace restore plan rejects unsupported files', () => {
+	assert.throws(
+		() => parseWorkspaceRestorePlan({ koraforms: true, kind: 'form-export', version: 1 }),
+		/supported KoraForms workspace backup/,
+	)
 })

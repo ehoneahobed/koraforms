@@ -94,12 +94,12 @@ export function buildPublicFormReadiness(params: {
 		{
 			id: 'integrations',
 			label: 'Integrations',
-			status: invalidWebhooks.length > 0 ? 'blocked' : activeWebhooks.length > 0 ? 'ready' : 'warning',
+			status: invalidWebhooks.length > 0 ? 'blocked' : 'ready',
 			detail: invalidWebhooks.length > 0
 				? 'Active webhooks must use HTTPS public URLs.'
 				: activeWebhooks.length > 0
 					? `${activeWebhooks.length} active webhook${activeWebhooks.length === 1 ? '' : 's'} will receive submissions.`
-					: 'No webhook is configured. Responses will still be stored locally and synced.',
+					: 'Webhooks are optional. Responses will still be stored locally and synced.',
 		},
 		{
 			id: 'first-question',
