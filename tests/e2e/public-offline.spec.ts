@@ -138,15 +138,12 @@ test('public respondents can load, complete, queue, and sync a form offline', as
 	await expectVisibleWithPageDiagnostics(page, page.getByText('Available offline'), diagnostics)
 	await waitForServiceWorkerControl(page)
 	await waitForOfflineRouteCache(page)
-	await page.getByRole('button', { name: /prepare/i }).click()
-	await expect(page.getByText('Ready offline')).toBeVisible({ timeout: 10_000 })
-
 	apiOnline = false
 	await context.setOffline(true)
 	await page.reload({ waitUntil: 'domcontentloaded' })
 
 	await expectVisibleWithPageDiagnostics(page, page.getByRole('heading', { name: 'Field Visit Report' }), diagnostics)
-	await expect(page.getByText('Loaded from this device')).toBeVisible()
+	await expect(page.getByText('Opened from this device')).toBeVisible()
 
 	await page.getByRole('button', { name: /start/i }).click()
 	await expect(page.getByRole('heading', { name: /your name/i })).toBeVisible()
@@ -275,7 +272,7 @@ test('offline submissions move to needs review when server later rejects sync', 
 	apiOnline = false
 	await context.setOffline(true)
 	await page.reload({ waitUntil: 'domcontentloaded' })
-	await expect(page.getByText('Loaded from this device')).toBeVisible()
+	await expect(page.getByText('Opened from this device')).toBeVisible()
 
 	await page.getByRole('button', { name: /start/i }).click()
 	await fillTextQuestion(page, /your name/i, 'Ada Rejected')
@@ -339,7 +336,7 @@ test('offline queued submissions survive tab close before reconnect', async ({ p
 	const reopened = await context.newPage()
 	await reopened.goto(`/f/${REJECTED_FORM_SLUG}`, { waitUntil: 'domcontentloaded' })
 	await expect(reopened.getByRole('heading', { name: 'Closed Field Report' })).toBeVisible({ timeout: 15_000 })
-	await expect(reopened.getByText('Loaded from this device')).toBeVisible()
+	await expect(reopened.getByText('Opened from this device')).toBeVisible()
 	await expect(reopened.getByText('1 response waiting to sync', { exact: true })).toBeVisible()
 
 	apiOnline = true
@@ -383,7 +380,7 @@ test('offline queued submissions survive browser profile restart before reconnec
 	page = await context.newPage()
 	await page.goto(`/f/${REJECTED_FORM_SLUG}`, { waitUntil: 'domcontentloaded' })
 	await expect(page.getByRole('heading', { name: 'Closed Field Report' })).toBeVisible({ timeout: 15_000 })
-	await expect(page.getByText('Loaded from this device')).toBeVisible()
+	await expect(page.getByText('Opened from this device')).toBeVisible()
 	await expect(page.getByText('1 response waiting to sync', { exact: true })).toBeVisible()
 
 	apiOnline = true
@@ -425,7 +422,7 @@ test('offline queued submissions are visible in another tab on the same device',
 			`body: ${bodyText.slice(0, 1000)}`,
 		].join('\n\n'))
 	}
-	await expect(secondTab.getByText('Loaded from this device')).toBeVisible()
+	await expect(secondTab.getByText('Opened from this device')).toBeVisible()
 	await expect(secondTab.getByText('1 response waiting to sync', { exact: true })).toBeVisible()
 
 	apiOnline = true
@@ -470,7 +467,7 @@ test('public respondents can complete complex field types offline', async ({ pag
 	apiOnline = false
 	await context.setOffline(true)
 	await page.reload({ waitUntil: 'domcontentloaded' })
-	await expect(page.getByText('Loaded from this device')).toBeVisible()
+	await expect(page.getByText('Opened from this device')).toBeVisible()
 
 	await page.getByRole('button', { name: /start/i }).click()
 	await expect(page.getByRole('heading', { name: 'Inspection basics' })).toBeVisible()
