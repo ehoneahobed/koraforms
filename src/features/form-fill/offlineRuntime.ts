@@ -11,6 +11,7 @@ import {
 	stableHash,
 	type FlushResult,
 	type PublicOfflineDiagnostics,
+	type PublicOfflineFormDiagnostics,
 	type PublicOfflineReadiness,
 	type PublicOfflineSubmissionIssue,
 	type PublicFormSource,
@@ -38,6 +39,7 @@ export {
 	stableHash,
 	type FlushResult,
 	type PublicOfflineDiagnostics,
+	type PublicOfflineFormDiagnostics,
 	type PublicOfflineReadiness,
 	type PublicOfflineSubmissionIssue,
 	type PublicFormSource,
@@ -354,7 +356,18 @@ export async function countRejectedResponseSubmissions(): Promise<number> {
 
 export async function getPublicOfflineDiagnostics(now = Date.now()): Promise<PublicOfflineDiagnostics> {
 	await publicApp.ready
-	const [submittedLocally, syncing, accepted, rejected, failed, blobUsage, recentFailed, recentRejected] = await Promise.all([
+	const [
+		submittedLocally,
+		syncing,
+		accepted,
+		rejected,
+		failed,
+		blobUsage,
+		recentFailed,
+		recentRejected,
+		submissionRecords,
+		progressRecords,
+	] = await Promise.all([
 		publicApp.response_submissions.where({ localStatus: 'submitted_locally' }).count(),
 		publicApp.response_submissions.where({ localStatus: 'syncing' }).count(),
 		publicApp.response_submissions.where({ localStatus: 'accepted' }).count(),
@@ -363,6 +376,8 @@ export async function getPublicOfflineDiagnostics(now = Date.now()): Promise<Pub
 		getLocalBlobStorageUsage().catch(() => ({ bytes: 0, count: 0 })),
 		publicApp.response_submissions.where({ localStatus: 'failed' }).orderBy('updatedAt', 'desc').limit(10).exec(),
 		publicApp.response_submissions.where({ localStatus: 'rejected' }).orderBy('updatedAt', 'desc').limit(10).exec(),
+		publicApp.response_submissions.where({}).orderBy('updatedAt', 'desc').limit(1_000).exec(),
+		publicApp.public_form_progress.where({}).orderBy('updatedAt', 'desc').limit(1_000).exec(),
 	])
 	const recentIssues = [...recentFailed, ...recentRejected]
 		.sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0))
@@ -378,10 +393,12 @@ export async function getPublicOfflineDiagnostics(now = Date.now()): Promise<Pub
 			failed,
 		},
 		pendingSubmissionCount: submittedLocally + syncing + failed,
+		savedProgressCount: progressRecords.length,
 		localBlobBytes: blobUsage.bytes,
 		localBlobCount: blobUsage.count,
 		recentIssues,
 		storeIssues: getPublicStoreIssues(),
+		forms: buildPublicOfflineFormDiagnostics(submissionRecords, progressRecords),
 	}
 }
 
@@ -504,6 +521,60 @@ function toSubmissionIssue(record: ResponseSubmissionRecord): PublicOfflineSubmi
 		lastError: record.lastError,
 		updatedAt: Number(record.updatedAt || 0),
 	}
+}
+
+function buildPublicOfflineFormDiagnostics(
+	submissions: readonly ResponseSubmissionRecord[],
+	progressRecords: readonly PublicFormProgressRecord[],
+): PublicOfflineFormDiagnostics[] {
+	const forms = new Map<string, PublicOfflineFormDiagnostics>()
+
+	const getEntry = (formId: string, slug: string): PublicOfflineFormDiagnostics => {
+		const key = formId || slug
+		const existing = forms.get(key)
+		if (existing) {
+			if (!existing.formId && formId) existing.formId = formId
+			if (!existing.slug && slug) existing.slug = slug
+			return existing
+		}
+		const entry: PublicOfflineFormDiagnostics = {
+			formId,
+			slug,
+			submitted_locally: 0,
+			syncing: 0,
+			accepted: 0,
+			rejected: 0,
+			failed: 0,
+			progressCount: 0,
+			lastActivityAt: 0,
+		}
+		forms.set(key, entry)
+		return entry
+	}
+
+	for (const submission of submissions) {
+		const entry = getEntry(String(submission.formId || ''), String(submission.slug || ''))
+		entry[submission.localStatus] += 1
+		entry.lastActivityAt = Math.max(
+			entry.lastActivityAt,
+			Number(submission.updatedAt || 0),
+			Number(submission.submittedAt || 0),
+		)
+	}
+
+	for (const progress of progressRecords) {
+		const entry = getEntry(String(progress.formId || ''), String(progress.slug || ''))
+		entry.progressCount += 1
+		entry.lastActivityAt = Math.max(
+			entry.lastActivityAt,
+			Number(progress.updatedAt || 0),
+			Number(progress.savedAt || 0),
+		)
+	}
+
+	return [...forms.values()]
+		.filter(form => form.formId || form.slug)
+		.sort((a, b) => b.lastActivityAt - a.lastActivityAt)
 }
 
 async function getOfflineShellStatus(): Promise<{ supported: boolean; ready: boolean }> {

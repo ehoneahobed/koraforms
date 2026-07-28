@@ -53,7 +53,7 @@ import { ErrorBoundary } from './components/shared/ErrorBoundary'
 import { FORM_TEMPLATES, createFieldsFromTemplate } from './templates'
 import { readStringFromStorage, writeStringToStorage } from './utils/storage'
 import type { FormSettings as FormSettingsType } from './types'
-import { parseFormSettings, serializeFormSettings } from './domain/forms'
+import { parseFormFields, parseFormSettings, serializeFormSettings } from './domain/forms'
 import { hasFormAccessPasswordSecret } from './domain/formPassword'
 import {
 	activeFormShellTab,
@@ -65,6 +65,7 @@ import {
 	sanitizeSlug,
 	type FormShellTab,
 } from './features/forms/shell'
+import { recordAuditEvent } from './features/audit/events'
 
 // ---------------------------------------------------------------------------
 // Dark mode management
@@ -366,7 +367,9 @@ function FormPageShell({ navigate, userId }: { navigate: (path: string) => void;
 
 	// Load form data
 	const allForms = useQuery(app.forms.where({}).orderBy('createdAt', 'desc'))
+	const allAuditEvents = useQuery(app.audit_events.where({}).orderBy('createdAt', 'desc'))
 	const form = allForms.find((f) => f.id === formId)
+	const auditEvents = allAuditEvents.filter(event => String(event.formId) === String(formId)).slice(0, 12)
 
 	const { mutate: updateForm } = useMutation(
 		(id: string, data: Record<string, unknown>) => app.forms.update(id, data),
@@ -381,19 +384,46 @@ function FormPageShell({ navigate, userId }: { navigate: (path: string) => void;
 		if (!form) return {}
 		return parseFormSettings(form.settings)
 	}, [form])
+	const formFields = useMemo(() => {
+		if (!form) return []
+		return parseFormFields(form.fields)
+	}, [form])
 	const formUrl = getPublicFormUrl(slug || formId || '')
 
 	const updateSettings = (next: FormSettingsType) => {
 		if (!formId) return
-		updateForm(formId, { settings: serializeFormSettings(next) })
+		updateForm(formId, { settings: JSON.stringify(serializeFormSettings(next)) })
+		void recordAuditEvent(app.audit_events, {
+			formId,
+			actorId: userId,
+			eventType: 'settings_updated',
+			summary: 'Updated form settings',
+			metadata: {
+				publicResults: !!next.publicResults,
+				hasSchedule: !!(next.opensAt || next.closesAt),
+				hasLimit: !!next.maxResponses,
+			},
+		})
 	}
 	const updatePassword = (password: string) => {
 		if (!formId) return
 		updateForm(formId, { accessPassword: password.trim() })
+		void recordAuditEvent(app.audit_events, {
+			formId,
+			actorId: userId,
+			eventType: 'password_updated',
+			summary: 'Updated access password',
+		})
 	}
 	const clearPassword = () => {
 		if (!formId) return
 		updateForm(formId, { accessPassword: null })
+		void recordAuditEvent(app.audit_events, {
+			formId,
+			actorId: userId,
+			eventType: 'password_cleared',
+			summary: 'Cleared access password',
+		})
 	}
 
 	// Determine active tab from URL
@@ -415,6 +445,13 @@ function FormPageShell({ navigate, userId }: { navigate: (path: string) => void;
 			status: payload.status,
 			slug: payload.slug,
 		})
+		void recordAuditEvent(app.audit_events, {
+			formId,
+			actorId: userId,
+			eventType: 'form_published',
+			summary: isPublished ? 'Published form changes' : 'Published form',
+			metadata: { slug: payload.slug },
+		})
 		window.setTimeout(() => {
 			setPublishFeedback('saved')
 			window.setTimeout(() => setPublishFeedback('idle'), 1800)
@@ -429,11 +466,30 @@ function FormPageShell({ navigate, userId }: { navigate: (path: string) => void;
 		const sanitized = sanitizeSlug(nextSlug)
 		if (!sanitized) return
 		updateForm(formId, { slug: sanitized })
+		void recordAuditEvent(app.audit_events, {
+			formId,
+			actorId: userId,
+			eventType: 'form_updated',
+			summary: 'Updated public URL',
+			metadata: { slug: sanitized },
+		})
 	}
 
 	const handleStatusChange = (status: string) => {
 		if (!formId || !form) return
 		updateForm(formId, buildStatusPayload(status, slug, formTitle))
+		const eventType = status === 'published'
+			? 'form_published'
+			: status === 'closed'
+				? 'form_closed'
+				: 'form_reopened'
+		void recordAuditEvent(app.audit_events, {
+			formId,
+			actorId: userId,
+			eventType,
+			summary: `Changed status to ${status}`,
+			metadata: { status },
+		})
 	}
 
 	// Sync status text for the breadcrumb bar
@@ -585,12 +641,25 @@ function FormPageShell({ navigate, userId }: { navigate: (path: string) => void;
 			)}
 			{activePanel === 'settings' && form && (
 				<FormSettingsPanel
+					title={formTitle}
 					status={String(form.status || 'draft')}
+					slug={slug}
 					theme={formTheme}
+					fields={formFields}
+					auditEvents={auditEvents}
 					settings={formSettings}
 					hasPassword={formHasPassword}
 					onStatusChange={handleStatusChange}
-					onThemeChange={(theme) => updateForm(formId, { theme })}
+					onThemeChange={(theme) => {
+						updateForm(formId, { theme })
+						void recordAuditEvent(app.audit_events, {
+							formId,
+							actorId: userId,
+							eventType: 'theme_changed',
+							summary: 'Changed form theme',
+							metadata: { theme },
+						})
+					}}
 					onSettingsChange={updateSettings}
 					onPasswordChange={updatePassword}
 					onPasswordClear={clearPassword}
@@ -630,24 +699,25 @@ function FormBuilderInner() {
 function FormResponsesInner() {
 	const { formId } = useParams()
 	const navigate = useAppNavigate()
-	return <FormResponses formId={formId!} navigate={navigate} />
+	const { user } = useAuth()
+	return <FormResponses formId={formId!} navigate={navigate} userId={user?.id || ''} />
 }
 
 // ---------------------------------------------------------------------------
 // New form creation page — NOT nested under FormPageShell
 // ---------------------------------------------------------------------------
 
+// Module-level guard survives StrictMode unmount/remount cycles
+let formCreationInFlight = false
+
 function FormBuilderPage({ navigate, userId }: { navigate: (path: string) => void; userId: string }) {
 	const routerNav = useNavigate()
 	const [searchParams] = useSearchParams()
-	const { mutateAsync: createForm } = useMutation(
-		(data: Record<string, unknown>) => app.forms.insert(data),
-	)
-	const creating = useRef(false)
+	const [error, setError] = useState<string | null>(null)
 
 	useEffect(() => {
-		if (creating.current) return
-		creating.current = true
+		if (formCreationInFlight) return
+		formCreationInFlight = true
 
 		const templateKey = searchParams.get('template')
 		const template = templateKey ? FORM_TEMPLATES[templateKey] : null
@@ -655,16 +725,45 @@ function FormBuilderPage({ navigate, userId }: { navigate: (path: string) => voi
 		const data = {
 			title: template?.title || 'Untitled Form',
 			description: template?.description || '',
-			fields: templateKey && template ? createFieldsFromTemplate(templateKey) : [],
+			fields: templateKey && template ? JSON.stringify(createFieldsFromTemplate(templateKey)) : '[]',
 			status: 'draft',
 			ownerId: userId,
 			theme: 'red',
 		}
 
-		createForm(data).then((record) => {
+		app.forms.insert(data).then((record) => {
+			void recordAuditEvent(app.audit_events, {
+				formId: String(record.id),
+				actorId: userId,
+				eventType: templateKey ? 'template_used' : 'form_created',
+				summary: templateKey && template ? `Created form from ${template.title}` : 'Created blank form',
+				metadata: {
+					templateKey: templateKey || '',
+					templateTitle: template?.title || '',
+				},
+			})
 			routerNav(`/forms/${record.id}/edit`, { replace: true })
+		}).catch((err) => {
+			console.error('Failed to create form:', err)
+			setError(err instanceof Error ? err.message : 'Failed to create form')
+		}).finally(() => {
+			formCreationInFlight = false
 		})
-	}, [searchParams, userId, createForm, routerNav])
+	}, [searchParams, userId, routerNav])
+
+	if (error) {
+		return (
+			<div className="flex flex-col items-center justify-center py-20 gap-4">
+				<p className="text-red-600 dark:text-red-400 text-sm">{error}</p>
+				<button
+					onClick={() => { setError(null); formCreationInFlight = false }}
+					className="text-sm text-brand-600 dark:text-brand-400 font-medium hover:underline"
+				>
+					Try again
+				</button>
+			</div>
+		)
+	}
 
 	return (
 		<div className="space-y-4 animate-fade-in">

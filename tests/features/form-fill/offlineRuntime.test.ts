@@ -41,8 +41,8 @@ test('public form versions are stable and exclude password metadata stubs', () =
 		id: form.id,
 		title: form.title,
 		description: form.description,
-		fields: form.fields,
-		settings: { publicResults: true },
+		fields: JSON.stringify(form.fields),
+		settings: JSON.stringify({ publicResults: true }),
 		theme: form.theme,
 		status: form.status,
 	}))
@@ -55,8 +55,8 @@ test('public form version records reconstruct public form payloads', () => {
 
 	assert.equal(payload.id, 'form-1')
 	assert.equal(payload.slug, 'field-survey')
-	assert.deepEqual(payload.fields, form.fields)
-	assert.deepEqual(payload.settings, { publicResults: true })
+	assert.deepEqual(payload.fields, JSON.stringify(form.fields))
+	assert.deepEqual(payload.settings, JSON.stringify({ publicResults: true }))
 })
 
 test('response submissions are stored as Kora outbox records', () => {
@@ -97,7 +97,7 @@ test('public form progress records preserve respondent resume state', () => {
 	assert.deepEqual(record, {
 		slug: 'field-survey',
 		formId: 'form-1',
-		answers: { name: 'Ada' },
+		answers: JSON.stringify({ name: 'Ada' }),
 		currentIndex: 2,
 		resumeId: 'resume-1',
 		resumeUrl: 'https://forms.korajs.dev/f/field-survey?resume=resume-1',
@@ -190,6 +190,29 @@ test('offline readiness model reports ready only when every required capability 
 
 	assert.equal(durableFallback.ready, true)
 	assert.equal(durableFallback.checks[2].status, 'ready')
+
+	const persistenceFailure = buildPublicOfflineReadiness({
+		hasCachedForm: true,
+		formSource: 'local',
+		appShellSupported: true,
+		appShellReady: true,
+		localDatabaseReady: true,
+		blobStorageReady: true,
+		pendingSubmissionCount: 0,
+		rejectedSubmissionCount: 0,
+		localBlobBytes: 0,
+		localBlobCount: 0,
+		storeIssues: [{
+			type: 'persistence-error',
+			reason: 'PERSISTENCE_FAILED',
+			message: 'Export failed: Export not yet supported in browser worker',
+			seenAt: 125,
+		}],
+	})
+
+	assert.equal(persistenceFailure.ready, false)
+	assert.equal(persistenceFailure.checks[2].status, 'unavailable')
+	assert.match(persistenceFailure.checks[2].detail, /Export failed/)
 })
 
 test('queue decision distinguishes offline/network failures from server rejections', () => {

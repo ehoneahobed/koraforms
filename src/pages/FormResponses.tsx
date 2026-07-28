@@ -7,7 +7,7 @@ import {
 	Download, ChevronRight, ChevronLeft,
 	BarChart3, Search, Trash2,
 	ArrowUpDown,
-	Inbox, Calendar,
+	Inbox, Calendar, X,
 	Lightbulb, ListChecks
 } from 'lucide-react'
 import type { FormField } from '../types'
@@ -32,8 +32,19 @@ import {
 } from '../features/responses/actions'
 import {
 	formatResponseDateRange,
+	activeResponseFilterCount,
+	decodeFieldFilters,
+	encodeFieldFilters,
+	filterResponsesByAdvancedFilters,
+	filterResponsesByDateRange,
+	normalizeCompletionFilter,
 	paginateResponses,
+	presetDateFilter,
+	responseDateFilterLabel,
 	searchAndSortResponses,
+	type ResponseAdvancedFilters,
+	type ResponseDateFilter,
+	type ResponseFieldFilterOperator,
 } from '../features/responses/summary'
 import {
 	buildCompletionStats,
@@ -47,6 +58,7 @@ import {
 	updateResponsesSubTabUrl,
 	type ResponsesSubTab,
 } from '../features/responses/navigation'
+import { recordAuditEvent } from '../features/audit/events'
 
 // ============================================================================
 // Types & Constants
@@ -55,6 +67,7 @@ import {
 interface Props {
 	formId: string
 	navigate: (path: string) => void
+	userId?: string
 }
 
 type SubTab = ResponsesSubTab
@@ -79,18 +92,61 @@ function setResponsesSubTabInUrl(tab: SubTab) {
 	window.history.replaceState(null, '', updateResponsesSubTabUrl(window.location.href, tab))
 }
 
+function responseDateFilterFromUrl(): ResponseDateFilter {
+	if (typeof window === 'undefined') return {}
+	const params = new URLSearchParams(window.location.search)
+	return {
+		from: params.get('from') || undefined,
+		to: params.get('to') || undefined,
+	}
+}
+
+function setResponseDateFilterInUrl(dateFilter: ResponseDateFilter) {
+	if (typeof window === 'undefined') return
+	const url = new URL(window.location.href)
+	if (dateFilter.from) url.searchParams.set('from', dateFilter.from)
+	else url.searchParams.delete('from')
+	if (dateFilter.to) url.searchParams.set('to', dateFilter.to)
+	else url.searchParams.delete('to')
+	window.history.replaceState(null, '', url)
+}
+
+function responseAdvancedFiltersFromUrl(): ResponseAdvancedFilters {
+	if (typeof window === 'undefined') return { completion: 'all', fieldFilters: [] }
+	const params = new URLSearchParams(window.location.search)
+	return {
+		completion: normalizeCompletionFilter(params.get('completion')),
+		fieldFilters: decodeFieldFilters(params.get('ff')),
+	}
+}
+
+function setResponseAdvancedFiltersInUrl(filters: ResponseAdvancedFilters) {
+	if (typeof window === 'undefined') return
+	const url = new URL(window.location.href)
+	if (filters.completion === 'all') url.searchParams.delete('completion')
+	else url.searchParams.set('completion', filters.completion)
+	const encoded = encodeFieldFilters(filters.fieldFilters)
+	if (encoded) url.searchParams.set('ff', encoded)
+	else url.searchParams.delete('ff')
+	window.history.replaceState(null, '', url)
+}
+
 // ============================================================================
 // Main FormResponses Component
 // ============================================================================
 
-export function FormResponses({ formId, navigate }: Props) {
+export function FormResponses({ formId, navigate, userId = '' }: Props) {
 	const allForms = useQuery(app.forms.where({}).orderBy('createdAt', 'desc'))
 	const allResponses = useQuery(
 		app.responses.where({}).orderBy('submittedAt', 'desc'),
 	)
+	const allAnalyticsEvents = useQuery(
+		app.form_analytics_events.where({}).orderBy('occurredAt', 'desc'),
+	)
 
 	const form = allForms.find((f) => f.id === formId)
 	const responses = allResponses.filter((r) => String(r.formId) === formId)
+	const analyticsEvents = allAnalyticsEvents.filter((event) => String(event.formId) === formId)
 
 	useEffect(() => {
 		setPageMeta({
@@ -104,6 +160,11 @@ export function FormResponses({ formId, navigate }: Props) {
 	const [expandedId, setExpandedId] = useState<string | null>(null)
 	const [selectedResponse, setSelectedResponse] = useState<string | null>(null)
 	const [search, setSearch] = useState('')
+	const [dateFilter, setDateFilter] = useState<ResponseDateFilter>(() => responseDateFilterFromUrl())
+	const [advancedFilters, setAdvancedFilters] = useState<ResponseAdvancedFilters>(() => responseAdvancedFiltersFromUrl())
+	const [filterFieldId, setFilterFieldId] = useState('')
+	const [filterOperator, setFilterOperator] = useState<ResponseFieldFilterOperator>('contains')
+	const [filterValue, setFilterValue] = useState('')
 	const [sortCol, setSortCol] = useState<string>('_date')
 	const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
 	const [showShareModal, setShowShareModal] = useState(false)
@@ -118,20 +179,75 @@ export function FormResponses({ formId, navigate }: Props) {
 	}
 
 	useEffect(() => {
-		const handlePopState = () => setSubTab(getResponsesSubTabFromUrl())
+		const handlePopState = () => {
+			setSubTab(getResponsesSubTabFromUrl())
+			setDateFilter(responseDateFilterFromUrl())
+			setAdvancedFilters(responseAdvancedFiltersFromUrl())
+		}
 		window.addEventListener('popstate', handlePopState)
 		return () => window.removeEventListener('popstate', handlePopState)
 	}, [])
 
 	// --- Derived data ---
-	const fields: FormField[] = parseFormFields(form?.fields)
+	const fields: FormField[] = useMemo(() => parseFormFields(form?.fields), [form?.fields])
+	const responseFieldOptions = useMemo(() => responseFields(fields), [fields])
+	const responseFieldLabelById = useMemo(() => {
+		return new Map(responseFieldOptions.map(field => [field.id, staticFieldLabel(field)]))
+	}, [responseFieldOptions])
+	const activeFilterCount = useMemo(() => activeResponseFilterCount(advancedFilters), [advancedFilters])
 
 	const filteredResponses = useMemo(() => {
-		return searchAndSortResponses(responses, search, { column: sortCol, direction: sortDir })
-	}, [responses, search, sortCol, sortDir])
+		const dateScoped = filterResponsesByDateRange(responses, dateFilter)
+		const advancedScoped = filterResponsesByAdvancedFilters(fields, dateScoped, advancedFilters)
+		return searchAndSortResponses(advancedScoped, search, { column: sortCol, direction: sortDir })
+	}, [advancedFilters, dateFilter, fields, responses, search, sortCol, sortDir])
+
+	const dateFilterLabel = useMemo(() => {
+		return responseDateFilterLabel(dateFilter)
+	}, [dateFilter])
+
+	const updateDateFilter = (next: ResponseDateFilter) => {
+		setDateFilter(next)
+		setResponseDateFilterInUrl(next)
+		setCurrentPage(1)
+	}
+
+	const updateAdvancedFilters = (next: ResponseAdvancedFilters) => {
+		setAdvancedFilters(next)
+		setResponseAdvancedFiltersInUrl(next)
+		setCurrentPage(1)
+	}
+
+	const addFieldFilter = () => {
+		const fieldId = filterFieldId || responseFieldOptions[0]?.id || ''
+		if (!fieldId) return
+		const needsValue = filterOperator === 'contains' || filterOperator === 'equals'
+		const value = filterValue.trim()
+		if (needsValue && !value) return
+		updateAdvancedFilters({
+			...advancedFilters,
+			fieldFilters: [
+				...advancedFilters.fieldFilters,
+				{ fieldId, operator: filterOperator, ...(needsValue ? { value } : {}) },
+			].slice(-10),
+		})
+		setFilterValue('')
+	}
+
+	const removeFieldFilter = (index: number) => {
+		updateAdvancedFilters({
+			...advancedFilters,
+			fieldFilters: advancedFilters.fieldFilters.filter((_filter, filterIndex) => filterIndex !== index),
+		})
+	}
+
+	const clearAdvancedFilters = () => {
+		updateAdvancedFilters({ completion: 'all', fieldFilters: [] })
+		setFilterValue('')
+	}
 
 	// Reset page when search changes
-	useEffect(() => { setCurrentPage(1) }, [search])
+	useEffect(() => { setCurrentPage(1) }, [search, dateFilter.from, dateFilter.to, advancedFilters])
 
 	// Pagination
 	const pagination = useMemo(
@@ -182,9 +298,17 @@ export function FormResponses({ formId, navigate }: Props) {
 
 	const deleteSelected = () => {
 		if (selectedIds.size === 0) return
+		const deletedCount = selectedIds.size
 		for (const id of responseIdsForDeletion(selectedIds)) {
 			app.responses.delete(id)
 		}
+		void recordAuditEvent(app.audit_events, {
+			formId,
+			actorId: userId,
+			eventType: 'responses_deleted',
+			summary: `Deleted ${deletedCount} response${deletedCount === 1 ? '' : 's'}`,
+			metadata: { count: deletedCount },
+		})
 		setSelectedIds(new Set())
 		setConfirmingBulkDelete(false)
 	}
@@ -199,6 +323,18 @@ export function FormResponses({ formId, navigate }: Props) {
 		})
 		if (!exported) return
 		downloadTextFile(exported.content, exported.filename, exported.type)
+		void recordAuditEvent(app.audit_events, {
+			formId,
+			actorId: userId,
+			eventType: 'responses_exported',
+			summary: `Exported ${sourceResponses.length} response${sourceResponses.length === 1 ? '' : 's'} as CSV`,
+			metadata: {
+				format: 'csv',
+				count: sourceResponses.length,
+				fieldCount: selectedFieldIds?.length ?? responseFieldOptions.length,
+				includeMetadata,
+			},
+		})
 	}
 
 	const exportJson = (selectedFieldIds?: string[], sourceResponses: Record<string, unknown>[] = responses, includeMetadata = true) => {
@@ -211,6 +347,18 @@ export function FormResponses({ formId, navigate }: Props) {
 		})
 		if (!exported) return
 		downloadJsonFile(exported.data, exported.filename)
+		void recordAuditEvent(app.audit_events, {
+			formId,
+			actorId: userId,
+			eventType: 'responses_exported',
+			summary: `Exported ${sourceResponses.length} response${sourceResponses.length === 1 ? '' : 's'} as JSON`,
+			metadata: {
+				format: 'json',
+				count: sourceResponses.length,
+				fieldCount: selectedFieldIds?.length ?? responseFieldOptions.length,
+				includeMetadata,
+			},
+		})
 	}
 
 	// --- Date range display ---
@@ -307,7 +455,54 @@ export function FormResponses({ formId, navigate }: Props) {
 									/>
 								</div>
 								<div className="flex items-center gap-2 flex-wrap">
-									{dateRangeLabel && (
+									<div className="inline-flex flex-wrap items-center gap-1 rounded-xl border border-slate-200 bg-white p-1 dark:border-gray-800 dark:bg-surface-elevated-dark">
+										{[
+											{ label: 'Today', value: 'today' },
+											{ label: '7d', value: '7d' },
+											{ label: '30d', value: '30d' },
+											{ label: 'This month', value: 'month' },
+										].map(preset => (
+											<button
+												key={preset.value}
+												onClick={() => updateDateFilter(presetDateFilter(preset.value as Parameters<typeof presetDateFilter>[0]))}
+												className="rounded-lg px-2.5 py-1.5 text-[12px] font-semibold text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+											>
+												{preset.label}
+											</button>
+										))}
+									</div>
+									<div className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white p-1 dark:border-gray-800 dark:bg-surface-elevated-dark">
+										<input
+											type="date"
+											value={dateFilter.from || ''}
+											onChange={event => updateDateFilter({ ...dateFilter, from: event.target.value || undefined })}
+											className="h-8 rounded-lg border-0 bg-transparent px-2 text-[12px] font-medium text-slate-500 outline-none dark:text-gray-400"
+											aria-label="Responses from date"
+										/>
+										<span className="text-[11px] text-slate-300 dark:text-gray-600">to</span>
+										<input
+											type="date"
+											value={dateFilter.to || ''}
+											onChange={event => updateDateFilter({ ...dateFilter, to: event.target.value || undefined })}
+											className="h-8 rounded-lg border-0 bg-transparent px-2 text-[12px] font-medium text-slate-500 outline-none dark:text-gray-400"
+											aria-label="Responses to date"
+										/>
+										{dateFilterLabel && (
+											<button
+												onClick={() => updateDateFilter({})}
+												className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-50 hover:text-slate-700 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+												aria-label="Clear date filter"
+											>
+												<X className="h-3.5 w-3.5" />
+											</button>
+										)}
+									</div>
+									{dateFilterLabel ? (
+										<span className="inline-flex items-center gap-1.5 text-xs text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-800/50 rounded-lg px-3 py-2 border border-gray-100 dark:border-gray-800">
+											<Calendar className="h-3.5 w-3.5" />
+											{dateFilterLabel}
+										</span>
+									) : dateRangeLabel && (
 										<span className="inline-flex items-center gap-1.5 text-xs text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-800/50 rounded-lg px-3 py-2 border border-gray-100 dark:border-gray-800">
 											<Calendar className="h-3.5 w-3.5" />
 											{dateRangeLabel}
@@ -322,6 +517,112 @@ export function FormResponses({ formId, navigate }: Props) {
 									</button>
 								</div>
 							</div>
+
+							{responseFieldOptions.length > 0 && (
+								<div className="mb-4 rounded-2xl border border-slate-200 bg-slate-50/50 p-3 dark:border-gray-800 dark:bg-gray-900/30">
+									<div className="flex flex-col gap-2 lg:flex-row lg:items-center">
+										<div className="inline-flex items-center rounded-xl border border-slate-200 bg-white p-1 dark:border-gray-800 dark:bg-surface-elevated-dark">
+											<select
+												value={advancedFilters.completion}
+												onChange={event => updateAdvancedFilters({
+													...advancedFilters,
+													completion: normalizeCompletionFilter(event.target.value),
+												})}
+												className="h-9 rounded-lg border-0 bg-transparent px-2 text-[12px] font-semibold text-slate-600 outline-none dark:text-gray-300"
+												aria-label="Filter by completion status"
+											>
+												<option value="all">All statuses</option>
+												<option value="complete">Complete only</option>
+												<option value="partial">Partial only</option>
+											</select>
+										</div>
+										<div className="grid min-w-0 flex-1 grid-cols-1 gap-2 sm:grid-cols-[minmax(160px,1fr)_130px_minmax(140px,1fr)_auto]">
+											<select
+												value={filterFieldId || responseFieldOptions[0]?.id || ''}
+												onChange={event => setFilterFieldId(event.target.value)}
+												className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-[13px] font-medium text-slate-600 outline-none transition-colors focus:border-brand-300 focus:ring-2 focus:ring-brand-500/10 dark:border-gray-800 dark:bg-surface-elevated-dark dark:text-gray-300"
+												aria-label="Filter field"
+											>
+												{responseFieldOptions.map(field => (
+													<option key={field.id} value={field.id}>{staticFieldLabel(field)}</option>
+												))}
+											</select>
+											<select
+												value={filterOperator}
+												onChange={event => setFilterOperator(event.target.value as ResponseFieldFilterOperator)}
+												className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-[13px] font-medium text-slate-600 outline-none transition-colors focus:border-brand-300 focus:ring-2 focus:ring-brand-500/10 dark:border-gray-800 dark:bg-surface-elevated-dark dark:text-gray-300"
+												aria-label="Filter operator"
+											>
+												<option value="contains">Contains</option>
+												<option value="equals">Equals</option>
+												<option value="present">Answered</option>
+												<option value="missing">Missing</option>
+											</select>
+											<input
+												type="text"
+												value={filterValue}
+												onChange={event => setFilterValue(event.target.value)}
+												onKeyDown={event => {
+													if (event.key === 'Enter') addFieldFilter()
+												}}
+												disabled={filterOperator === 'present' || filterOperator === 'missing'}
+												placeholder={filterOperator === 'present' || filterOperator === 'missing' ? 'No value needed' : 'Value'}
+												className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-[13px] font-medium text-slate-700 outline-none transition-colors placeholder:text-slate-400 focus:border-brand-300 focus:ring-2 focus:ring-brand-500/10 disabled:bg-slate-100 disabled:text-slate-400 dark:border-gray-800 dark:bg-surface-elevated-dark dark:text-gray-300 dark:disabled:bg-gray-900"
+												aria-label="Filter value"
+											/>
+											<button
+												onClick={addFieldFilter}
+												disabled={(filterOperator === 'contains' || filterOperator === 'equals') && !filterValue.trim()}
+												className="h-10 rounded-xl border border-slate-200 bg-white px-4 text-[13px] font-semibold text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45 dark:border-gray-800 dark:bg-surface-elevated-dark dark:text-gray-300 dark:hover:bg-gray-800"
+											>
+												Add
+											</button>
+										</div>
+									</div>
+									{activeFilterCount > 0 && (
+										<div className="mt-3 flex flex-wrap items-center gap-2">
+											{advancedFilters.completion !== 'all' && (
+												<span className="inline-flex items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-[12px] font-semibold text-slate-600 ring-1 ring-slate-200 dark:bg-gray-900 dark:text-gray-300 dark:ring-gray-800">
+													{advancedFilters.completion === 'complete' ? 'Complete responses' : 'Partial responses'}
+													<button
+														onClick={() => updateAdvancedFilters({ ...advancedFilters, completion: 'all' })}
+														className="text-slate-400 transition-colors hover:text-slate-700 dark:hover:text-gray-200"
+														aria-label="Clear completion filter"
+													>
+														<X className="h-3 w-3" />
+													</button>
+												</span>
+											)}
+											{advancedFilters.fieldFilters.map((filter, index) => {
+												const label = responseFieldLabelById.get(filter.fieldId) ?? filter.fieldId
+												const operatorLabel = filter.operator === 'present'
+													? 'answered'
+													: filter.operator === 'missing'
+														? 'missing'
+														: filter.operator
+												return (
+													<span key={`${filter.fieldId}-${filter.operator}-${index}`} className="inline-flex items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-[12px] font-semibold text-slate-600 ring-1 ring-slate-200 dark:bg-gray-900 dark:text-gray-300 dark:ring-gray-800">
+														{label} {operatorLabel}{filter.value ? ` "${filter.value}"` : ''}
+														<button
+															onClick={() => removeFieldFilter(index)}
+															className="text-slate-400 transition-colors hover:text-slate-700 dark:hover:text-gray-200"
+															aria-label={`Remove ${label} filter`}
+														>
+															<X className="h-3 w-3" />
+														</button>
+													</span>
+												)
+											})}
+											<button
+												onClick={clearAdvancedFilters}
+												className="text-[12px] font-semibold text-slate-400 transition-colors hover:text-slate-700 dark:text-gray-500 dark:hover:text-gray-300"
+											>
+												Clear filters
+											</button>
+										</div>
+									)}
+								</div>
+							)}
 
 							{/* Response table */}
 							<div className="overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-gray-800 dark:bg-surface-elevated-dark">
@@ -507,7 +808,7 @@ export function FormResponses({ formId, navigate }: Props) {
 					{responses.length === 0 ? (
 						<EmptyState formId={formId} navigate={navigate} form={form} />
 					) : (
-						<AnalyticsView fields={fields} responses={responses} />
+						<AnalyticsView fields={fields} responses={responses} analyticsEvents={analyticsEvents} />
 					)}
 				</>
 			)}
@@ -607,6 +908,13 @@ export function FormResponses({ formId, navigate }: Props) {
 					onNavigate={setSelectedResponse}
 					onDelete={(id) => {
 						app.responses.delete(id)
+						void recordAuditEvent(app.audit_events, {
+							formId,
+							actorId: userId,
+							eventType: 'responses_deleted',
+							summary: 'Deleted 1 response',
+							metadata: { count: 1 },
+						})
 						setSelectedResponse(null)
 					}}
 				/>
@@ -618,9 +926,14 @@ export function FormResponses({ formId, navigate }: Props) {
 			{showExportModal && (
 				<ExportModal
 					fields={fields}
-					responseCount={responses.length}
-					onExportCsv={exportCsv}
-					onExportJson={exportJson}
+					responseCount={filteredResponses.length}
+					scopeLabel={
+						filteredResponses.length === responses.length && !search && !dateFilterLabel && activeFilterCount === 0
+							? 'All responses for this form'
+							: `Filtered set: ${filteredResponses.length} of ${responses.length} responses`
+					}
+					onExportCsv={(fieldIds, sourceResponses, includeMetadata) => exportCsv(fieldIds, sourceResponses ?? filteredResponses, includeMetadata)}
+					onExportJson={(fieldIds, sourceResponses, includeMetadata) => exportJson(fieldIds, sourceResponses ?? filteredResponses, includeMetadata)}
 					onClose={() => setShowExportModal(false)}
 				/>
 			)}

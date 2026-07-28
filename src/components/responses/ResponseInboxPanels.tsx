@@ -95,7 +95,7 @@ export function FollowUpView({
 		return buildFollowUpReview(fields, responses)
 	}, [fields, responses])
 
-	const hasWork = review.incomplete.length > 0 || review.slow.length > 0 || review.lowFillFields.length > 0 || review.duplicateGroups.length > 0
+	const hasWork = review.qualitySignals.length > 0 || review.incomplete.length > 0 || review.slow.length > 0 || review.lowFillFields.length > 0 || review.duplicateGroups.length > 0
 
 	if (responses.length === 0) {
 		return (
@@ -117,10 +117,11 @@ export function FollowUpView({
 							{hasWork ? 'Suggested follow-ups' : 'Everything looks clean'}
 						</h2>
 						<p className="mt-1 text-[14px] text-slate-500 dark:text-gray-400">
-							KoraForms scans required gaps, slow submissions, low-fill fields, and duplicate-looking respondents.
+							KoraForms scans quality, required gaps, slow submissions, low-fill fields, and duplicate-looking respondents.
 						</p>
 					</div>
-					<div className="grid grid-cols-4 gap-2 text-center">
+					<div className="grid grid-cols-5 gap-2 text-center">
+						<QueueCount label="Quality" value={review.qualitySignals.length} />
 						<QueueCount label="Incomplete" value={review.incomplete.length} />
 						<QueueCount label="Slow" value={review.slow.length} />
 						<QueueCount label="Fields" value={review.lowFillFields.length} />
@@ -130,6 +131,24 @@ export function FollowUpView({
 			</div>
 
 			<div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+				<ReviewSection
+					title="Response quality"
+					description="Submissions that look incomplete, duplicated, unusually fast, or worth checking."
+					empty="No quality signals detected."
+				>
+					{review.qualitySignals.slice(0, 8).map(signal => (
+						<ReviewResponseRow
+							key={signal.id}
+							response={{ id: signal.responseId }}
+							title={signal.title}
+							detail={`${signal.detail} ${signal.action}`}
+							badge={signal.severity === 'review' ? 'Review' : signal.severity === 'watch' ? 'Watch' : 'Note'}
+							tone={signal.severity}
+							onOpen={() => onOpenResponse(signal.responseId)}
+						/>
+					))}
+				</ReviewSection>
+
 				<ReviewSection
 					title="Incomplete required answers"
 					description="Responses missing one or more required fields."
@@ -252,14 +271,21 @@ function ReviewResponseRow({
 	title,
 	detail,
 	badge,
+	tone = 'watch',
 	onOpen,
 }: {
 	response: Record<string, unknown>
 	title: string
 	detail: string
 	badge: string
+	tone?: 'info' | 'watch' | 'review'
 	onOpen: () => void
 }) {
+	const badgeClass = tone === 'review'
+		? 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-300'
+		: tone === 'info'
+			? 'bg-slate-100 text-slate-600 dark:bg-gray-800 dark:text-gray-300'
+			: 'bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300'
 	return (
 		<button
 			onClick={onOpen}
@@ -272,7 +298,7 @@ function ReviewResponseRow({
 					<p className="mt-1 text-[11px] text-slate-400 dark:text-gray-600">{formatTimeSince(Number(response.submittedAt))}</p>
 				) : null}
 			</div>
-			<span className="shrink-0 rounded-full bg-amber-50 px-2.5 py-1 text-[12px] font-semibold text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">{badge}</span>
+			<span className={`shrink-0 rounded-full px-2.5 py-1 text-[12px] font-semibold ${badgeClass}`}>{badge}</span>
 		</button>
 	)
 }

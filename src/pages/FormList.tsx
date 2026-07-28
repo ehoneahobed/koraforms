@@ -28,8 +28,9 @@ import {
 	ShieldCheck,
 	Activity,
 	AlertCircle,
+	WifiOff,
 } from 'lucide-react'
-import { useState, useRef, useEffect, useMemo } from 'react'
+import { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { FORM_TEMPLATES, TEMPLATE_CATEGORIES, createFieldsFromTemplate } from '../templates'
 import { ShareModal } from '../components/shared/ShareModal'
 import { Share2, Search } from 'lucide-react'
@@ -58,6 +59,12 @@ import {
 	type FormRecord,
 	type ResponseRecord,
 } from '../features/forms/dashboard'
+import {
+	getPublicOfflineDiagnostics,
+	type PublicOfflineDiagnostics,
+	type PublicOfflineFormDiagnostics,
+} from '../features/form-fill/offlineRuntime'
+import { recordAuditEvent } from '../features/audit/events'
 
 interface Props {
 	navigate: (path: string) => void
@@ -100,16 +107,16 @@ export function FormList({ navigate, userId }: Props) {
 	)
 	const allResponses = useQuery(app.responses.where({}).orderBy('submittedAt', 'desc'))
 	const syncStatus = useSyncStatus()
-	const { mutate: deleteForm } = useMutation((id: string) => app.forms.delete(id))
-	const { mutate: createForm } = useMutation(
+	const { mutateAsync: deleteForm } = useMutation((id: string) => app.forms.delete(id))
+	const { mutateAsync: createForm } = useMutation(
 		(data: Record<string, unknown>) => app.forms.insert(data),
 	)
-	const { mutate: duplicateForm } = useMutation(
+	const { mutateAsync: duplicateForm } = useMutation(
 		(data: Record<string, unknown>) => app.forms.insert(data),
 	)
 
 	const { mutate: updateForm } = useMutation(
-		(data: { id: string; settings: FormSettings }) =>
+		(data: { id: string; settings: string }) =>
 			app.forms.update(data.id, { settings: data.settings }),
 	)
 
@@ -118,24 +125,68 @@ export function FormList({ navigate, userId }: Props) {
 	const [shareForm, setShareForm] = useState<Record<string, unknown> | null>(null)
 	const [filter, setFilter] = useState<DashboardFilter>('all')
 	const [searchQuery, setSearchQuery] = useState('')
+	const [publicOfflineDiagnostics, setPublicOfflineDiagnostics] = useState<PublicOfflineDiagnostics | null>(null)
 
 	const handleArchive = (form: Record<string, unknown>) => {
-		updateForm({ id: String(form.id), settings: serializeArchiveSettings(form.settings, true) })
+		updateForm({ id: String(form.id), settings: JSON.stringify(serializeArchiveSettings(form.settings, true)) })
+		void recordAuditEvent(app.audit_events, {
+			formId: String(form.id),
+			actorId: userId,
+			eventType: 'form_archived',
+			summary: 'Archived form',
+		})
 	}
 
 	const handleUnarchive = (form: Record<string, unknown>) => {
-		updateForm({ id: String(form.id), settings: serializeArchiveSettings(form.settings, false) })
+		updateForm({ id: String(form.id), settings: JSON.stringify(serializeArchiveSettings(form.settings, false)) })
+		void recordAuditEvent(app.audit_events, {
+			formId: String(form.id),
+			actorId: userId,
+			eventType: 'form_restored',
+			summary: 'Restored form',
+		})
 	}
 
-	const handleCreateFromTemplate = (key: string) => {
-		const payload = buildTemplateFormPayload(key, userId)
+	const handleCreateFromTemplate = async (key: string) => {
+		const payload = key === 'blank'
+			? { title: 'Untitled Form', description: '', fields: '[]', status: 'draft', ownerId: userId, theme: 'red' }
+			: buildTemplateFormPayload(key, userId)
 		if (!payload) return
-		createForm(payload)
 		setShowTemplates(false)
+		try {
+			const record = await app.forms.insert(payload)
+			void recordAuditEvent(app.audit_events, {
+				formId: String(record.id),
+				actorId: userId,
+				eventType: key === 'blank' ? 'form_created' : 'template_used',
+				summary: key === 'blank' ? 'Created blank form' : 'Created form from template',
+				metadata: { templateKey: key },
+			})
+			navigate(`build/${record.id}`)
+		} catch (err) {
+			console.error('Failed to create form:', err)
+		}
 	}
 
-	const handleDuplicate = (form: Record<string, unknown>) => {
-		duplicateForm(buildDuplicateFormPayload(form as FormRecord, userId))
+	const handleDuplicate = async (form: Record<string, unknown>) => {
+		const record = await duplicateForm(buildDuplicateFormPayload(form as FormRecord, userId))
+		void recordAuditEvent(app.audit_events, {
+			formId: String(record.id),
+			actorId: userId,
+			eventType: 'form_duplicated',
+			summary: 'Duplicated form',
+			metadata: { sourceFormId: String(form.id) },
+		})
+	}
+
+	const handleDeleteForm = async (form: Record<string, unknown>) => {
+		await deleteForm(String(form.id))
+		void recordAuditEvent(app.audit_events, {
+			formId: String(form.id),
+			actorId: userId,
+			eventType: 'form_deleted',
+			summary: 'Deleted form',
+		})
 	}
 
 	const handleCopyLink = async (form: Record<string, unknown>) => {
@@ -170,9 +221,21 @@ export function FormList({ navigate, userId }: Props) {
 	const responseStats = useMemo(() => {
 		return buildDashboardResponseStats(allForms, allResponses, lastSeen)
 	}, [allForms, allResponses, lastSeen])
+	const refreshPublicOfflineDiagnostics = useCallback(() => {
+		getPublicOfflineDiagnostics()
+			.then(setPublicOfflineDiagnostics)
+			.catch(() => setPublicOfflineDiagnostics(null))
+	}, [])
+	const publicOfflineForms = useMemo(() => {
+		const byId = new Map<string, PublicOfflineFormDiagnostics>()
+		for (const item of publicOfflineDiagnostics?.forms || []) {
+			if (item.formId) byId.set(String(item.formId), item)
+		}
+		return byId
+	}, [publicOfflineDiagnostics])
 	const workspaceHealth = useMemo(
-		() => buildWorkspaceHealthSnapshot(allForms, allResponses, lastSeen),
-		[allForms, allResponses, lastSeen],
+		() => buildWorkspaceHealthSnapshot(allForms, allResponses, lastSeen, publicOfflineDiagnostics),
+		[allForms, allResponses, lastSeen, publicOfflineDiagnostics],
 	)
 
 	// Update last seen timestamps when viewing dashboard
@@ -182,6 +245,21 @@ export function FormList({ navigate, userId }: Props) {
 		const next = buildLastSeenMap(userFormIds, lastSeen, Date.now())
 		writeJsonToStorage(lastSeenKey, next)
 	}, [allResponses.length, userFormIds])
+
+	useEffect(() => {
+		refreshPublicOfflineDiagnostics()
+		const interval = window.setInterval(refreshPublicOfflineDiagnostics, 15_000)
+		const onVisibilityChange = () => {
+			if (document.visibilityState === 'visible') refreshPublicOfflineDiagnostics()
+		}
+		window.addEventListener('online', refreshPublicOfflineDiagnostics)
+		document.addEventListener('visibilitychange', onVisibilityChange)
+		return () => {
+			window.clearInterval(interval)
+			window.removeEventListener('online', refreshPublicOfflineDiagnostics)
+			document.removeEventListener('visibilitychange', onVisibilityChange)
+		}
+	}, [refreshPublicOfflineDiagnostics])
 
 	const displayForms = useMemo(
 		() => filterDashboardForms(formGroups, filter, searchQuery),
@@ -343,8 +421,8 @@ export function FormList({ navigate, userId }: Props) {
 							key={form.id}
 							form={form}
 							navigate={navigate}
-							onDelete={() => deleteForm(form.id)}
-							onDuplicate={() => handleDuplicate(form)}
+							onDelete={() => void handleDeleteForm(form)}
+							onDuplicate={() => void handleDuplicate(form)}
 							onCopyLink={() => handleCopyLink(form)}
 							onShare={() => setShareForm(form)}
 							onExport={() => handleExportForm(form)}
@@ -354,6 +432,7 @@ export function FormList({ navigate, userId }: Props) {
 							isCopied={copiedId === form.id}
 							responseCount={responseStats.responseCountMap.get(String(form.id)) || 0}
 							newResponseCount={responseStats.newResponseCountMap.get(String(form.id)) || 0}
+							offlineDiagnostics={publicOfflineForms.get(String(form.id)) || null}
 						/>
 					))}
 				</div>
@@ -403,6 +482,7 @@ function WorkspaceHealthPanel({
 			: health.tone === 'active'
 				? 'bg-brand-50 text-brand-700 dark:bg-brand-950/30 dark:text-brand-300'
 				: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300'
+	const recoveryCopy = getOfflineRecoveryCopy(health)
 
 	return (
 		<section
@@ -410,7 +490,7 @@ function WorkspaceHealthPanel({
 			aria-label="Workspace health"
 			aria-live="polite"
 		>
-			<div className="grid gap-4 lg:grid-cols-[1.25fr_1fr_1fr_auto] lg:items-center">
+			<div className="grid gap-4 lg:grid-cols-[1.2fr_0.9fr_1fr_1fr_auto] lg:items-center">
 				<div className="flex min-w-0 items-center gap-3.5">
 					<div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${healthToneClass}`}>
 						{healthIcon}
@@ -441,6 +521,23 @@ function WorkspaceHealthPanel({
 				<div className="flex min-w-0 items-center justify-between gap-3 rounded-xl bg-slate-50 px-3.5 py-3 dark:bg-slate-950/45">
 					<div className="min-w-0">
 						<p className="text-[12px] font-semibold uppercase tracking-wide text-slate-400 dark:text-gray-500">
+							Field recovery
+						</p>
+						<p className={`mt-1 truncate text-[13px] font-semibold ${recoveryCopy.titleClass}`}>
+							{recoveryCopy.title}
+						</p>
+						<p className="mt-0.5 truncate text-[12px] text-slate-500 dark:text-gray-500">
+							{recoveryCopy.description}
+						</p>
+					</div>
+					<span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${recoveryCopy.iconClass}`}>
+						<WifiOff className="h-4 w-4" />
+					</span>
+				</div>
+
+				<div className="flex min-w-0 items-center justify-between gap-3 rounded-xl bg-slate-50 px-3.5 py-3 dark:bg-slate-950/45">
+					<div className="min-w-0">
+						<p className="text-[12px] font-semibold uppercase tracking-wide text-slate-400 dark:text-gray-500">
 							Local sync
 						</p>
 						<p className="mt-1 truncate text-[13px] font-semibold text-slate-700 dark:text-gray-200">
@@ -456,7 +553,8 @@ function WorkspaceHealthPanel({
 				<button
 					type="button"
 					onClick={onBackup}
-					className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-[13px] font-semibold text-slate-600 shadow-sm transition-all duration-150 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-950 active:scale-[0.98] dark:border-slate-800 dark:bg-slate-900 dark:text-gray-300 dark:hover:border-slate-700 dark:hover:bg-slate-800 dark:hover:text-gray-100"
+					disabled={health.publishedForms + health.draftForms === 0}
+					className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-[13px] font-semibold text-slate-600 shadow-sm transition-all duration-150 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-950 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-white disabled:hover:border-slate-200 dark:border-slate-800 dark:bg-slate-900 dark:text-gray-300 dark:hover:border-slate-700 dark:hover:bg-slate-800 dark:hover:text-gray-100 dark:disabled:hover:bg-slate-900 dark:disabled:hover:border-slate-800"
 				>
 					<Download className="h-4 w-4" />
 					Backup
@@ -464,6 +562,45 @@ function WorkspaceHealthPanel({
 			</div>
 		</section>
 	)
+}
+
+function getOfflineRecoveryCopy(health: ReturnType<typeof buildWorkspaceHealthSnapshot>) {
+	const waiting = health.offlinePendingSubmissions
+	const review = health.offlineFailedSubmissions + health.offlineRejectedSubmissions + health.offlineBlockingStoreIssues
+	const drafts = health.offlineSavedProgress
+	const localFiles = health.offlineLocalBlobCount
+	if (review > 0) {
+		return {
+			title: 'Needs review',
+			description: `${review} issue${review === 1 ? '' : 's'} preserved locally.`,
+			iconClass: 'bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300',
+			titleClass: 'text-amber-700 dark:text-amber-300',
+		}
+	}
+	if (waiting > 0) {
+		return {
+			title: 'Waiting to sync',
+			description: `${waiting} response${waiting === 1 ? '' : 's'} saved on this device.`,
+			iconClass: 'bg-brand-50 text-brand-700 dark:bg-brand-950/30 dark:text-brand-300',
+			titleClass: 'text-brand-700 dark:text-brand-300',
+		}
+	}
+	if (drafts > 0 || localFiles > 0) {
+		const draftCopy = drafts > 0 ? `${drafts} draft${drafts === 1 ? '' : 's'}` : ''
+		const fileCopy = localFiles > 0 ? `${localFiles} file${localFiles === 1 ? '' : 's'}` : ''
+		return {
+			title: 'Saved locally',
+			description: [draftCopy, fileCopy].filter(Boolean).join(' and '),
+			iconClass: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300',
+			titleClass: 'text-slate-700 dark:text-slate-200',
+		}
+	}
+	return {
+		title: 'Clear',
+		description: 'No respondent work is waiting.',
+		iconClass: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300',
+		titleClass: 'text-slate-700 dark:text-slate-200',
+	}
 }
 
 function HealthMetric({ value, label }: { value: number; label: string }) {
@@ -522,6 +659,7 @@ function FormCard({
 	isCopied,
 	responseCount,
 	newResponseCount,
+	offlineDiagnostics,
 }: {
 	form: Record<string, unknown>
 	navigate: (path: string) => void
@@ -536,6 +674,7 @@ function FormCard({
 	isCopied: boolean
 	responseCount: number
 	newResponseCount: number
+	offlineDiagnostics: PublicOfflineFormDiagnostics | null
 }) {
 	const [menuOpen, setMenuOpen] = useState(false)
 	const [menuAbove, setMenuAbove] = useState(false)
@@ -553,6 +692,13 @@ function FormCard({
 	}
 
 	const timeAgo = formatTimeAgo(Number(form.createdAt) || Date.now())
+	const offlinePending = offlineDiagnostics
+		? offlineDiagnostics.submitted_locally + offlineDiagnostics.syncing + offlineDiagnostics.failed
+		: 0
+	const offlineNeedsReview = offlineDiagnostics
+		? offlineDiagnostics.failed + offlineDiagnostics.rejected
+		: 0
+	const offlineDrafts = offlineDiagnostics?.progressCount || 0
 
 	useEffect(() => {
 		if (!menuOpen) return
@@ -673,6 +819,28 @@ function FormCard({
 						</>
 					)}
 				</div>
+
+				{(offlinePending > 0 || offlineNeedsReview > 0 || offlineDrafts > 0) && (
+					<div className="mb-3 flex flex-wrap items-center gap-2">
+						{offlineNeedsReview > 0 ? (
+							<span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
+								<AlertCircle className="h-3.5 w-3.5" />
+								{offlineNeedsReview} offline issue{offlineNeedsReview === 1 ? '' : 's'}
+							</span>
+						) : offlinePending > 0 ? (
+							<span className="inline-flex items-center gap-1.5 rounded-full bg-brand-50 px-2.5 py-1 text-[11px] font-semibold text-brand-700 dark:bg-brand-950/30 dark:text-brand-300">
+								<WifiOff className="h-3.5 w-3.5" />
+								{offlinePending} waiting to sync
+							</span>
+						) : null}
+						{offlineDrafts > 0 && (
+							<span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+								<FileText className="h-3.5 w-3.5" />
+								{offlineDrafts} saved draft{offlineDrafts === 1 ? '' : 's'}
+							</span>
+						)}
+					</div>
+				)}
 
 				{/* Action buttons */}
 				<div className="flex items-center gap-2.5 pt-0.5">

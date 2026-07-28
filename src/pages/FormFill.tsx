@@ -49,6 +49,11 @@ import {
 	type PublicOfflineReadiness,
 	type PublicFormSource,
 } from '../features/form-fill/offlineRuntime'
+import {
+	createAnalyticsSessionId,
+	flushPublicFormAnalyticsEvents,
+	recordPublicFormAnalyticsEvent,
+} from '../features/form-fill/analytics'
 import { createSubmissionId } from '../features/form-fill/offlineModel'
 import { deleteLocalBlobsFromResponseJson, hydrateLocalBlobValues } from '../features/form-fill/blobStorage'
 
@@ -72,6 +77,15 @@ function resolveWithTimeout<T>(promise: Promise<T>, timeoutMs: number, fallback:
 		promise,
 		new Promise<T>(resolve => window.setTimeout(() => resolve(fallback), timeoutMs)),
 	])
+}
+
+function responseAnsweredCount(fields: FormField[], values: Record<string, string>): number {
+	return fields.filter(field => !isDisplayOnlyField(field) && String(values[field.id] || '').trim().length > 0).length
+}
+
+function isEmbedMode(): boolean {
+	if (typeof window === 'undefined') return false
+	return new URLSearchParams(window.location.search).get('embed') === '1'
 }
 
 interface Props {
@@ -252,13 +266,20 @@ export function FormFill({ formId, navigate }: Props) {
 		responseData: string,
 		clientSubmissionId?: string,
 		clientSubmittedAt = Date.now(),
+		responseFormVersionHash = formVersionHash,
 	) => {
 		// Submit via REST API — no Kora worker needed
 		const hydratedResponseData = await hydrateLocalBlobValues(responseData)
 		const res = await fetch('/api/public/responses', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ formId: realFormId, data: hydratedResponseData, clientSubmissionId, clientSubmittedAt }),
+			body: JSON.stringify({
+				formId: realFormId,
+				data: hydratedResponseData,
+				clientSubmissionId,
+				clientSubmittedAt,
+				formVersionHash: responseFormVersionHash,
+			}),
 		})
 		if (!res.ok) {
 			const err = await res.json().catch(() => ({ error: 'Unknown error' }))
@@ -267,7 +288,7 @@ export function FormFill({ formId, navigate }: Props) {
 			error.permanent = isPermanentHttpSubmissionStatus(res.status)
 			throw error
 		}
-	}, [])
+	}, [formVersionHash])
 
 	const refreshPendingOfflineCount = useCallback(() => {
 		const hintFormId = String(form?.id || formId)
@@ -300,7 +321,7 @@ export function FormFill({ formId, navigate }: Props) {
 			return
 		}
 		const result = await flushResponseSubmissions(
-			item => submitResponseToServer(item.formId, item.data, item.clientSubmissionId, item.submittedAt),
+			item => submitResponseToServer(item.formId, item.data, item.clientSubmissionId, item.submittedAt, item.formVersionHash),
 		)
 		refreshPendingOfflineCount()
 		if (result.synced > 0 && result.remaining === 0) {
@@ -331,6 +352,21 @@ export function FormFill({ formId, navigate }: Props) {
 		}, 2_000)
 		return () => window.clearInterval(interval)
 	}, [flushOfflineSubmissions, pendingOfflineSubmissions, refreshPendingOfflineCount])
+
+	useEffect(() => {
+		void flushPublicFormAnalyticsEvents()
+		const handleOnline = () => {
+			void flushPublicFormAnalyticsEvents()
+		}
+		window.addEventListener('online', handleOnline)
+		const interval = window.setInterval(() => {
+			void flushPublicFormAnalyticsEvents()
+		}, 15_000)
+		return () => {
+			window.removeEventListener('online', handleOnline)
+			window.clearInterval(interval)
+		}
+	}, [])
 
 	useEffect(() => {
 		refreshOfflineReadiness()
@@ -422,6 +458,10 @@ export function FormFill({ formId, navigate }: Props) {
 	const [isSubmitting, setIsSubmitting] = useState(false)
 	const [language, setLanguage] = useState<string | undefined>(undefined)
 	const startedAtRef = useRef<number>(0)
+	const analyticsSessionIdRef = useRef(createAnalyticsSessionId())
+	const analyticsViewedRef = useRef(false)
+	const analyticsStartedRef = useRef(false)
+	const analyticsAnsweredFieldsRef = useRef<Set<string>>(new Set())
 	const [passwordUnlocked, setPasswordUnlocked] = useState(false)
 	const [passwordInput, setPasswordInput] = useState('')
 	const [passwordError, setPasswordError] = useState(false)
@@ -473,6 +513,53 @@ export function FormFill({ formId, navigate }: Props) {
 			: 0
 
 	const progress = progressForIndex(visibleFields, currentIndex)
+
+	const recordAnalytics = useCallback((
+		type: Parameters<typeof recordPublicFormAnalyticsEvent>[0]['type'],
+		options: {
+			fieldId?: string
+			questionIndex?: number
+			answeredCount?: number
+			metadata?: Record<string, unknown>
+			occurredAt?: number
+		} = {},
+	) => {
+		if (!form) return
+		const realFormId = String(form.id || formId)
+		const answeredCount = options.answeredCount ?? responseAnsweredCount(visibleFields, values)
+		void recordPublicFormAnalyticsEvent({
+			formId: realFormId,
+			slug: formId,
+			formVersionHash,
+			sessionId: analyticsSessionIdRef.current,
+			type,
+			fieldId: options.fieldId,
+			questionIndex: options.questionIndex ?? currentIndex,
+			answeredCount,
+			visibleQuestionCount: totalQuestions,
+			metadata: {
+				source: formSource,
+				embed: isEmbedMode(),
+				language: navigator.language,
+				...options.metadata,
+			},
+			occurredAt: options.occurredAt,
+		}).then(() => {
+			void flushPublicFormAnalyticsEvents()
+		}).catch(() => {})
+	}, [currentIndex, form, formId, formSource, formVersionHash, totalQuestions, values, visibleFields])
+
+	useEffect(() => {
+		if (!form || analyticsViewedRef.current) return
+		if ((form as Record<string, unknown>).passwordProtected && !passwordUnlocked) return
+		analyticsViewedRef.current = true
+		recordAnalytics('viewed_form', {
+			questionIndex: -1,
+			metadata: {
+				title: String(form.title || ''),
+			},
+		})
+	}, [form, passwordUnlocked, recordAnalytics])
 
 	// URL pre-fill — seed initial values from query params
 	useEffect(() => {
@@ -528,6 +615,7 @@ export function FormFill({ formId, navigate }: Props) {
 		if (!form || Object.keys(values).length === 0) return
 		setSaveMessage('')
 		await persistProgress()
+		recordAnalytics('saved_progress', { questionIndex: currentIndex })
 		if (typeof navigator !== 'undefined' && !navigator.onLine) {
 			setSaveMessage('Progress is saved on this device. Shared resume links are created when you are online.')
 			return
@@ -556,7 +644,7 @@ export function FormFill({ formId, navigate }: Props) {
 		} finally {
 			setIsSaving(false)
 		}
-	}, [form, formId, persistProgress, values, resumeId])
+	}, [currentIndex, form, formId, persistProgress, recordAnalytics, values, resumeId])
 
 	// Progress saving — auto-save on every answer change (debounced)
 	useEffect(() => {
@@ -630,6 +718,7 @@ export function FormFill({ formId, navigate }: Props) {
 		setDuplicateSubmissionDraft(null)
 		setSubmitError('')
 		setIsSubmitting(true)
+		recordAnalytics('submitted_form', { questionIndex: currentIndex, occurredAt: draft.clientSubmittedAt })
 		submitResponse(draft.realFormId, draft.responseJson, draft.clientSubmissionId, draft.clientSubmittedAt)
 			.then((status) => {
 				setSubmissionStatus(status)
@@ -642,7 +731,7 @@ export function FormFill({ formId, navigate }: Props) {
 			})
 			.catch((err) => setSubmitError(err.message || 'Failed to submit. Please try again.'))
 			.finally(() => setIsSubmitting(false))
-	}, [formId, submitResponse])
+	}, [currentIndex, formId, recordAnalytics, submitResponse])
 
 	const goNext = useCallback(() => {
 		if (duplicateSubmissionDraft) return
@@ -650,6 +739,10 @@ export function FormFill({ formId, navigate }: Props) {
 			setDirection('forward')
 			setCurrentIndex(0)
 			if (!startedAtRef.current) startedAtRef.current = Date.now()
+			if (!analyticsStartedRef.current) {
+				analyticsStartedRef.current = true
+				recordAnalytics('started_form', { questionIndex: 0, occurredAt: startedAtRef.current })
+			}
 			return
 		}
 		if (!validateCurrent()) return
@@ -694,12 +787,25 @@ export function FormFill({ formId, navigate }: Props) {
 	}, [currentIndex])
 
 	const setValue = useCallback((fieldId: string, value: string) => {
-		setValues(currentValues => ({ ...currentValues, [fieldId]: value }))
+		const nextValues = { ...values, [fieldId]: value }
+		setValues(nextValues)
 		setErrors(currentErrors => {
 			if (!currentErrors[fieldId]) return currentErrors
 			return { ...currentErrors, [fieldId]: '' }
 		})
-	}, [])
+		if (String(value).trim() && !analyticsAnsweredFieldsRef.current.has(fieldId)) {
+			analyticsAnsweredFieldsRef.current.add(fieldId)
+			const questionIndex = visibleFields.findIndex(field => field.id === fieldId)
+			recordAnalytics('answered_question', {
+				fieldId,
+				questionIndex,
+				answeredCount: responseAnsweredCount(visibleFields, nextValues),
+				metadata: {
+					fieldType: visibleFields[questionIndex]?.type || '',
+				},
+			})
+		}
+	}, [recordAnalytics, values, visibleFields])
 
 	// Enhanced keyboard navigation
 	useEffect(() => {

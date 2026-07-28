@@ -189,9 +189,9 @@ export function FormBuilder({ formId, navigate, userId }: Props) {
 		updateForm(formId, {
 			title: title || 'Untitled Form',
 			description,
-			fields: serializeFormFields(fields),
+			fields: JSON.stringify(serializeFormFields(fields)),
 			theme,
-			settings: serializeFormSettings(settings),
+			settings: JSON.stringify(serializeFormSettings(settings)),
 			ownerId: userId,
 		})
 	}, [formId, title, description, fields, theme, settings, userId, updateForm])

@@ -45,7 +45,19 @@ export interface FollowUpReview {
 	slow: ParsedResponseRecord[]
 	lowFillFields: FieldFillSummary[]
 	duplicateGroups: { field: FormField; value: string; responses: Record<string, unknown>[] }[]
+	qualitySignals: ResponseQualitySignal[]
 	slowThreshold: number
+}
+
+export interface ResponseQualitySignal {
+	id: string
+	responseId: string
+	severity: 'info' | 'watch' | 'review'
+	type: 'incomplete' | 'duplicate_identity' | 'duplicate_payload' | 'fast_submit' | 'slow_submit' | 'low_completion' | 'repeated_values' | 'attachment_review'
+	title: string
+	detail: string
+	action: string
+	fieldIds: string[]
 }
 
 export function buildCompletionStats(fields: FormField[], responses: Record<string, unknown>[]): CompletionStats {
@@ -130,7 +142,160 @@ export function buildFollowUpReview(fields: FormField[], responses: Record<strin
 			.map(([value, items]) => ({ field, value, responses: items }))
 	}).slice(0, 6)
 
-	return { incomplete, slow, lowFillFields, duplicateGroups, slowThreshold }
+	const qualitySignals = buildResponseQualitySignals(fields, parsed, slowThreshold)
+
+	return { incomplete, slow, lowFillFields, duplicateGroups, qualitySignals, slowThreshold }
+}
+
+export function buildResponseQualitySignals(
+	fields: FormField[],
+	parsed: ParsedResponseRecord[],
+	slowThreshold: number | null = null,
+): ResponseQualitySignal[] {
+	const dataFields = responseFields(fields)
+	const requiredFields = dataFields.filter(field => field.required)
+	const durations = validDurations(parsed)
+	const medianDuration = durations.length > 0 ? median(durations) : 0
+	const slowLimit = slowThreshold ?? (durations.length > 0 ? Math.max(300, medianDuration * 1.75) : 300)
+	const fastLimit = Math.max(3, Math.min(20, dataFields.length * 2))
+	const identityFields = dataFields.filter(field => ['email', 'phone'].includes(field.type) || /email|phone|name/i.test(field.label))
+	const duplicateIdentityValues = new Set<string>()
+	for (const field of identityFields) {
+		const counts = new Map<string, number>()
+		for (const item of parsed) {
+			const value = item.data[field.id]?.trim().toLowerCase()
+			if (!value) continue
+			counts.set(`${field.id}:${value}`, (counts.get(`${field.id}:${value}`) ?? 0) + 1)
+		}
+		for (const [key, count] of counts) {
+			if (count > 1) duplicateIdentityValues.add(key)
+		}
+	}
+
+	const payloadCounts = new Map<string, number>()
+	for (const item of parsed) {
+		const payload = responsePayloadFingerprint(dataFields, item.data)
+		if (!payload) continue
+		payloadCounts.set(payload, (payloadCounts.get(payload) ?? 0) + 1)
+	}
+
+	const signals: ResponseQualitySignal[] = []
+	for (const item of parsed) {
+		const responseId = String(item.response.id || '')
+		if (!responseId) continue
+		const missingFields = requiredFields.filter(field => !isFilledValue(item.data[field.id]))
+		if (missingFields.length > 0) {
+			signals.push({
+				id: `${responseId}:incomplete`,
+				responseId,
+				severity: 'review',
+				type: 'incomplete',
+				title: 'Missing required answers',
+				detail: missingFields.map(field => field.label || field.id).join(', '),
+				action: 'Review before using this submission in reports.',
+				fieldIds: missingFields.map(field => field.id),
+			})
+		}
+
+		const duplicateIdentityField = identityFields.find(field => duplicateIdentityValues.has(`${field.id}:${item.data[field.id]?.trim().toLowerCase()}`))
+		if (duplicateIdentityField) {
+			signals.push({
+				id: `${responseId}:duplicate-identity:${duplicateIdentityField.id}`,
+				responseId,
+				severity: 'watch',
+				type: 'duplicate_identity',
+				title: 'Possible duplicate respondent',
+				detail: `${duplicateIdentityField.label || duplicateIdentityField.id} appears in more than one response.`,
+				action: 'Open nearby responses and confirm whether this is intentional.',
+				fieldIds: [duplicateIdentityField.id],
+			})
+		}
+
+		const fingerprint = responsePayloadFingerprint(dataFields, item.data)
+		if (fingerprint && (payloadCounts.get(fingerprint) ?? 0) > 1) {
+			signals.push({
+				id: `${responseId}:duplicate-payload`,
+				responseId,
+				severity: 'watch',
+				type: 'duplicate_payload',
+				title: 'Repeated answer pattern',
+				detail: 'This response has the same answer set as another submission.',
+				action: 'Check whether the respondent submitted twice or copied a previous entry.',
+				fieldIds: dataFields.map(field => field.id),
+			})
+		}
+
+		const duration = item.meta?.duration
+		if (typeof duration === 'number' && duration > 0 && duration < fastLimit && item.completion >= 80 && dataFields.length >= 3) {
+			signals.push({
+				id: `${responseId}:fast-submit`,
+				responseId,
+				severity: 'watch',
+				type: 'fast_submit',
+				title: 'Unusually fast completion',
+				detail: `Completed in ${duration}s across ${dataFields.length} fields.`,
+				action: 'Spot-check this response before acting on it.',
+				fieldIds: [],
+			})
+		}
+
+		if (typeof duration === 'number' && duration > slowLimit) {
+			signals.push({
+				id: `${responseId}:slow-submit`,
+				responseId,
+				severity: 'info',
+				type: 'slow_submit',
+				title: 'Long completion time',
+				detail: `Took ${Math.round(duration)}s, above the current review threshold.`,
+				action: 'Look for fields that may need clearer wording.',
+				fieldIds: [],
+			})
+		}
+
+		if (item.completion < 75) {
+			signals.push({
+				id: `${responseId}:low-completion`,
+				responseId,
+				severity: 'review',
+				type: 'low_completion',
+				title: 'Low completion',
+				detail: `Only ${item.completion}% of required fields were completed.`,
+				action: 'Follow up if this response matters.',
+				fieldIds: requiredFields.filter(field => !isFilledValue(item.data[field.id])).map(field => field.id),
+			})
+		}
+
+		const repeated = repeatedAnswerValues(dataFields, item.data)
+		if (repeated.length > 0) {
+			signals.push({
+				id: `${responseId}:repeated-values`,
+				responseId,
+				severity: 'watch',
+				type: 'repeated_values',
+				title: 'Repeated values',
+				detail: `The same value appears in ${repeated.length} fields.`,
+				action: 'Check whether the answers are meaningful or placeholder text.',
+				fieldIds: repeated,
+			})
+		}
+
+		const attachmentFields = dataFields.filter(field => ['file', 'signature'].includes(field.type) && isFilledValue(item.data[field.id]))
+		if (attachmentFields.length > 0) {
+			signals.push({
+				id: `${responseId}:attachments`,
+				responseId,
+				severity: 'info',
+				type: 'attachment_review',
+				title: 'Contains attachments',
+				detail: `${attachmentFields.length} attachment field${attachmentFields.length === 1 ? '' : 's'} included.`,
+				action: 'Verify the files or signature before downstream use.',
+				fieldIds: attachmentFields.map(field => field.id),
+			})
+		}
+	}
+
+	const severityRank = { review: 0, watch: 1, info: 2 } satisfies Record<ResponseQualitySignal['severity'], number>
+	return signals.sort((a, b) => severityRank[a.severity] - severityRank[b.severity] || a.responseId.localeCompare(b.responseId)).slice(0, 24)
 }
 
 function parseResponsesForReview(fields: FormField[], responses: Record<string, unknown>[]): ParsedResponseRecord[] {
@@ -143,6 +308,25 @@ function parseResponsesForReview(fields: FormField[], responses: Record<string, 
 			completion: responseCompletionPct(fields, data),
 		}
 	})
+}
+
+function responsePayloadFingerprint(fields: FormField[], data: Record<string, string>): string {
+	const entries = fields
+		.map(field => [field.id, String(data[field.id] || '').trim().toLowerCase()] as const)
+		.filter(([, value]) => value.length > 0)
+	if (entries.length === 0) return ''
+	return JSON.stringify(entries)
+}
+
+function repeatedAnswerValues(fields: FormField[], data: Record<string, string>): string[] {
+	const byValue = new Map<string, string[]>()
+	for (const field of fields) {
+		if (['checkbox', 'ranking', 'file', 'signature'].includes(field.type)) continue
+		const value = String(data[field.id] || '').trim().toLowerCase()
+		if (!value || value.length < 3) continue
+		byValue.set(value, [...(byValue.get(value) ?? []), field.id])
+	}
+	return [...byValue.values()].find(fieldIds => fieldIds.length >= 3) ?? []
 }
 
 function validDurations(parsed: ParsedResponseRecord[]): number[] {

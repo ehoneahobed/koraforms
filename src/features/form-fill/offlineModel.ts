@@ -81,6 +81,18 @@ export interface PublicOfflineSubmissionIssue {
 	updatedAt: number
 }
 
+export interface PublicOfflineFormDiagnostics {
+	formId: string
+	slug: string
+	submitted_locally: number
+	syncing: number
+	accepted: number
+	rejected: number
+	failed: number
+	progressCount: number
+	lastActivityAt: number
+}
+
 export interface PublicStoreIssue {
 	type: 'storage-fallback' | 'opfs-unavailable' | 'db-name-collision' | 'persistence-error' | 'quota-exceeded'
 	message: string
@@ -96,10 +108,12 @@ export interface PublicOfflineDiagnostics {
 	generatedAt: number
 	submissions: Record<ResponseSubmissionLocalStatus, number>
 	pendingSubmissionCount: number
+	savedProgressCount: number
 	localBlobBytes: number
 	localBlobCount: number
 	recentIssues: PublicOfflineSubmissionIssue[]
 	storeIssues: PublicStoreIssue[]
+	forms: PublicOfflineFormDiagnostics[]
 }
 
 export type PublicOfflineReadinessStatus = 'ready' | 'pending' | 'unavailable'
@@ -223,8 +237,8 @@ export function buildPublicFormVersionRecord(
 	now = Date.now(),
 ): PublicFormVersionRecord {
 	const settings = stripFormAccessSecrets(parseFormSettings(form.settings))
-	const fields = serializeFormFields(parseFormFields(form.fields))
-	const serializedSettings = serializeFormSettings(settings)
+	const fields = JSON.stringify(serializeFormFields(parseFormFields(form.fields)))
+	const serializedSettings = JSON.stringify(serializeFormSettings(settings))
 	const versionHash = stableHash({
 		id: form.id,
 		title: form.title,
@@ -304,7 +318,7 @@ export function buildPublicFormProgressRecord(
 	return {
 		slug: params.slug,
 		formId: params.formId,
-		answers: { ...params.values },
+		answers: JSON.stringify(params.values),
 		currentIndex: params.currentIndex,
 		resumeId: params.resumeId || '',
 		resumeUrl: params.resumeUrl || '',

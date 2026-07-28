@@ -26,13 +26,14 @@ import { validatePublishedResponsePayload } from './src/domain/responseValidatio
 import { buildSideEffectDeliveryJobs, isDeliverableWebhookUrl, isPublicWebhookIpAddress, normalizeWebhookConfig } from './src/domain/responseSideEffects'
 import { buildOpsDiagnosticsSnapshot } from './src/domain/opsDiagnostics'
 import type { FormField, FormSettings } from './src/types'
+type AnalyticsEventMetadata = Record<string, unknown>
 
 // ---------------------------------------------------------------------------
 // KoraForms schema (shared between client and server for materialized tables)
 // ---------------------------------------------------------------------------
 
 const koraFormsSchema = defineSchema({
-	version: 13,
+	version: 16,
 	collections: {
 		forms: {
 			fields: {
@@ -66,9 +67,40 @@ const koraFormsSchema = defineSchema({
 				data: t.json<Record<string, unknown>>().default({}),
 				submittedBy: t.string().default(''),
 				clientSubmissionId: t.string().default(''),
+				formVersionHash: t.string().default(''),
 				submittedAt: t.number(),
 			},
-			indexes: ['formId', 'clientSubmissionId', 'submittedAt'],
+			indexes: ['formId', 'clientSubmissionId', 'formVersionHash', 'submittedAt'],
+		},
+		form_analytics_events: {
+			fields: {
+				formId: t.string(),
+				slug: t.string().default(''),
+				formVersionHash: t.string().default(''),
+				clientEventId: t.string(),
+				sessionId: t.string(),
+				visitorKey: t.string(),
+				type: t.enum(['viewed_form', 'started_form', 'answered_question', 'saved_progress', 'submitted_form']),
+				fieldId: t.string().default(''),
+				questionIndex: t.number().default(-1),
+				answeredCount: t.number().default(0),
+				visibleQuestionCount: t.number().default(0),
+				metadata: t.json<AnalyticsEventMetadata>().default({}),
+				syncStatus: t.enum(['pending', 'syncing', 'accepted', 'failed']).default('pending').transitions({
+					pending: ['syncing', 'accepted', 'failed'],
+					syncing: ['accepted', 'failed'],
+					failed: ['syncing', 'pending'],
+					accepted: [],
+				}),
+				occurredAt: t.number(),
+				updatedAt: t.number(),
+			},
+			indexes: ['formId', 'slug', 'clientEventId', 'sessionId', 'visitorKey', 'type', 'syncStatus', 'occurredAt'],
+			constraints: [{
+				type: 'unique',
+				fields: ['formId', 'clientEventId'],
+				onConflict: 'first-write-wins',
+			}],
 		},
 		public_form_versions: {
 			fields: {
@@ -181,6 +213,35 @@ const koraFormsSchema = defineSchema({
 			},
 			indexes: ['responseId', 'formId', 'type', 'status', 'nextAttemptAt', 'createdAt'],
 		},
+		audit_events: {
+			fields: {
+				formId: t.string(),
+				actorId: t.string().default(''),
+				actorType: t.enum(['user', 'system', 'public']).default('user'),
+				eventType: t.enum([
+					'form_created',
+					'form_updated',
+					'form_published',
+					'form_closed',
+					'form_reopened',
+					'form_archived',
+					'form_restored',
+					'form_duplicated',
+					'form_deleted',
+					'template_used',
+					'theme_changed',
+					'settings_updated',
+					'password_updated',
+					'password_cleared',
+					'responses_exported',
+					'responses_deleted',
+				]),
+				summary: t.string(),
+				metadata: t.json<Record<string, unknown>>().default({}),
+				createdAt: t.number(),
+			},
+			indexes: ['formId', 'actorId', 'eventType', 'createdAt'],
+		},
 	},
 })
 
@@ -211,10 +272,30 @@ type ResumeLinkRecord = {
 	expiresAt: number
 }
 
-const SCHEMA_VERSION = 13
+type PublicAnalyticsEventType = 'viewed_form' | 'started_form' | 'answered_question' | 'saved_progress' | 'submitted_form'
+
+type NormalizedPublicAnalyticsEvent = {
+	formId: string
+	slug: string
+	formVersionHash: string
+	clientEventId: string
+	sessionId: string
+	visitorKey: string
+	type: PublicAnalyticsEventType
+	fieldId: string
+	questionIndex: number
+	answeredCount: number
+	visibleQuestionCount: number
+	metadata: Record<string, unknown>
+	occurredAt: number
+	updatedAt: number
+}
+
+const SCHEMA_VERSION = 16
 const RESUME_LINK_TTL_MS = 30 * 24 * 60 * 60 * 1000
 const MAX_RESUME_PAYLOAD_BYTES = 128 * 1024
 const MAX_PUBLIC_RESPONSE_BODY_BYTES = 2 * 1024 * 1024
+const MAX_PUBLIC_ANALYTICS_EVENTS_PER_BATCH = 50
 const DEFAULT_PUBLIC_RESULTS_LIMIT = 100
 const MAX_PUBLIC_RESULTS_LIMIT = 500
 const WEBHOOK_TIMEOUT_MS = 10_000
@@ -232,6 +313,7 @@ type RateLimitBucket =
 	| 'public_password'
 	| 'public_partial_read'
 	| 'public_partial_write'
+	| 'public_analytics'
 	| 'public_results'
 	| 'public_submit'
 
@@ -241,6 +323,7 @@ const RATE_LIMITS: Record<RateLimitBucket, { limit: number; windowMs: number }> 
 	public_password: { limit: 8, windowMs: 5 * 60_000 },
 	public_partial_read: { limit: 60, windowMs: 60_000 },
 	public_partial_write: { limit: 30, windowMs: 60_000 },
+	public_analytics: { limit: 120, windowMs: 60_000 },
 	public_results: { limit: 60, windowMs: 60_000 },
 	public_submit: { limit: 20, windowMs: 60_000 },
 }
@@ -703,6 +786,88 @@ async function main(): Promise<void> {
 					}
 				},
 			},
+			// Public API: ingest respondent analytics events. Events are non-blocking,
+			// idempotent telemetry and never gate response submission.
+			{
+				path: '/api/public/analytics-events',
+				async handle(req: ProductionHttpRouteRequest): Promise<ProductionHttpRouteResponse> {
+					if (req.method === 'OPTIONS') return withCors({ status: 204 })
+					if (req.method !== 'POST') {
+						return withCors({ status: 405, body: { error: 'Method not allowed' } })
+					}
+					const limited = rateLimit(req, 'public_analytics')
+					if (limited) return limited
+					try {
+						const body = parseRequestBody<{ events?: unknown }>(req)
+						if (!body) return withCors({ status: 400, body: { error: 'Invalid JSON body' } })
+						const events = Array.isArray(body.events) ? body.events : []
+						if (events.length === 0) return withCors({ status: 400, body: { error: 'events are required' } })
+						if (events.length > MAX_PUBLIC_ANALYTICS_EVENTS_PER_BATCH) {
+							return withCors({ status: 413, body: { error: 'Too many analytics events in one batch' } })
+						}
+
+						let accepted = 0
+						let duplicates = 0
+						let rejected = 0
+						const acceptedIds: string[] = []
+						const duplicateIds: string[] = []
+						const rejectedIds: string[] = []
+						for (const rawEvent of events) {
+							const event = normalizePublicAnalyticsEvent(rawEvent)
+							if (!event) {
+								rejected += 1
+								const rawId = rawEvent && typeof rawEvent === 'object' && !Array.isArray(rawEvent)
+									? boundedString((rawEvent as Record<string, unknown>).clientEventId, 180)
+									: ''
+								if (rawId) rejectedIds.push(rawId)
+								continue
+							}
+							let [form] = await req.kora.query('forms', {
+								where: { id: event.formId, status: 'published' },
+								limit: 1,
+							})
+							if (!form && event.slug) {
+								;[form] = await req.kora.query('forms', {
+									where: { slug: event.slug, status: 'published' },
+									limit: 1,
+								})
+							}
+							if (!form) {
+								rejected += 1
+								rejectedIds.push(event.clientEventId)
+								continue
+							}
+							const resolvedFormId = String(form.id)
+							const [existing] = await req.kora.query('form_analytics_events', {
+								where: { formId: resolvedFormId, clientEventId: event.clientEventId },
+								limit: 1,
+							})
+							if (existing) {
+								duplicates += 1
+								duplicateIds.push(event.clientEventId)
+								continue
+							}
+							await insertRouteRecord(req.kora, 'form_analytics_events', event.clientEventId, {
+								...event,
+								formId: resolvedFormId,
+								slug: String(form.slug || event.slug || ''),
+								syncStatus: 'accepted',
+								updatedAt: Date.now(),
+							})
+							accepted += 1
+							acceptedIds.push(event.clientEventId)
+						}
+
+						return withCors({
+							status: 202,
+							body: { success: true, accepted, duplicates, rejected, acceptedIds, duplicateIds, rejectedIds },
+						})
+					} catch (err) {
+						console.error('Public analytics ingestion error:', err)
+						return withCors({ status: 500, body: { error: 'Internal server error' } })
+					}
+				},
+			},
 			// Public API: submit a response via REST (no Kora sync needed)
 			{
 				path: '/api/public/responses',
@@ -714,7 +879,7 @@ async function main(): Promise<void> {
 					const limited = rateLimit(req, 'public_submit')
 					if (limited) return limited
 					try {
-						const body = parseRequestBody<{ formId?: unknown; data?: unknown; clientSubmissionId?: unknown; clientSubmittedAt?: unknown }>(req)
+						const body = parseRequestBody<{ formId?: unknown; data?: unknown; clientSubmissionId?: unknown; clientSubmittedAt?: unknown; formVersionHash?: unknown }>(req)
 						if (!body) return withCors({ status: 400, body: { error: 'Invalid JSON body' } })
 						const formId = typeof body.formId === 'string' ? body.formId : ''
 						const data = typeof body.data === 'string'
@@ -723,6 +888,7 @@ async function main(): Promise<void> {
 								? JSON.stringify(body.data)
 								: ''
 						const clientSubmissionId = typeof body.clientSubmissionId === 'string' ? body.clientSubmissionId.trim() : ''
+						const formVersionHash = boundedString(body.formVersionHash, 128)
 						const clientSubmittedAt = typeof body.clientSubmittedAt === 'number' && Number.isFinite(body.clientSubmittedAt)
 							? body.clientSubmittedAt
 							: Date.now()
@@ -831,9 +997,10 @@ async function main(): Promise<void> {
 								recordId: responseId,
 								data: {
 									formId: String(form.id),
-									data: responseData,
+									data: JSON.stringify(responseData),
 									submittedBy: '',
 									clientSubmissionId,
+									formVersionHash,
 									submittedAt: clientSubmittedAt,
 								},
 							}],
@@ -1043,6 +1210,63 @@ async function buildOpsDiagnostics(store: ServerStore) {
 function clampNumber(value: number, min: number, max: number): number {
 	if (!Number.isFinite(value)) return min
 	return Math.min(max, Math.max(min, Math.floor(value)))
+}
+
+function normalizePublicAnalyticsEvent(raw: unknown): NormalizedPublicAnalyticsEvent | null {
+	if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
+	const input = raw as Record<string, unknown>
+	const type = typeof input.type === 'string' && isPublicAnalyticsEventType(input.type)
+		? input.type
+		: null
+	const formId = boundedString(input.formId, 160)
+	const clientEventId = boundedString(input.clientEventId, 180)
+	const sessionId = boundedString(input.sessionId, 180)
+	const visitorKey = boundedString(input.visitorKey, 180)
+	if (!type || !formId || !clientEventId || !sessionId || !visitorKey) return null
+	const now = Date.now()
+	const occurredAt = clampTimestamp(Number(input.occurredAt || 0), now)
+	return {
+		formId,
+		slug: boundedString(input.slug, 160),
+		formVersionHash: boundedString(input.formVersionHash, 128),
+		clientEventId,
+		sessionId,
+		visitorKey,
+		type,
+		fieldId: boundedString(input.fieldId, 160),
+		questionIndex: clampNumber(Number(input.questionIndex ?? -1), -1, 10_000),
+		answeredCount: clampNumber(Number(input.answeredCount ?? 0), 0, 10_000),
+		visibleQuestionCount: clampNumber(Number(input.visibleQuestionCount ?? 0), 0, 10_000),
+		metadata: boundedJsonObject(input.metadata, 2_048),
+		occurredAt,
+		updatedAt: now,
+	}
+}
+
+function isPublicAnalyticsEventType(value: string): value is PublicAnalyticsEventType {
+	return value === 'viewed_form'
+		|| value === 'started_form'
+		|| value === 'answered_question'
+		|| value === 'saved_progress'
+		|| value === 'submitted_form'
+}
+
+function boundedString(value: unknown, maxLength: number): string {
+	return typeof value === 'string' ? value.trim().slice(0, maxLength) : ''
+}
+
+function boundedJsonObject(value: unknown, maxBytes: number): Record<string, unknown> {
+	const object = asJsonObject(value)
+	const json = JSON.stringify(object)
+	if (Buffer.byteLength(json, 'utf8') <= maxBytes) return object
+	return {}
+}
+
+function clampTimestamp(value: number, now: number): number {
+	if (!Number.isFinite(value) || value <= 0) return now
+	const oldestAllowed = now - 365 * 24 * 60 * 60 * 1000
+	const newestAllowed = now + 10 * 60 * 1000
+	return Math.min(newestAllowed, Math.max(oldestAllowed, Math.floor(value)))
 }
 
 function asJsonObject(value: unknown): Record<string, unknown> {

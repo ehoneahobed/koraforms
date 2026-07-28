@@ -78,6 +78,8 @@ test('workspace health summarizes local readiness and unseen response activity',
 	assert.equal(health.totalResponses, 2)
 	assert.equal(health.newResponses, 1)
 	assert.equal(health.responseCountDrift, 0)
+	assert.equal(health.offlinePendingSubmissions, 0)
+	assert.equal(health.offlineRecoveryRequired, false)
 })
 
 test('workspace health flags response counter drift without treating missing counters as drift', () => {
@@ -97,6 +99,50 @@ test('workspace health flags response counter drift without treating missing cou
 	assert.equal(health.tone, 'review')
 	assert.equal(health.responseCountDrift, 1)
 	assert.equal(health.formsWithResponseCountDrift, 1)
+})
+
+test('workspace health surfaces public offline respondent recovery state', () => {
+	const health = buildWorkspaceHealthSnapshot(
+		[
+			{ id: 'a', title: 'RSVP', status: 'published', responseCount: 0, settings: '{}' },
+			{ id: 'b', title: 'Survey', status: 'published', responseCount: 0, settings: '{}' },
+		],
+		[],
+		{},
+		{
+			submissions: {
+				submitted_locally: 2,
+				syncing: 1,
+				accepted: 4,
+				failed: 1,
+				rejected: 1,
+			},
+			pendingSubmissionCount: 4,
+			savedProgressCount: 3,
+			localBlobBytes: 42_000,
+			localBlobCount: 2,
+			recentIssues: [{ id: 'issue-1' }],
+			storeIssues: [{ blocking: true }, { blocking: false }],
+			forms: [
+				{ formId: 'a', slug: 'rsvp', failed: 1, rejected: 0, progressCount: 2 },
+				{ formId: 'b', slug: 'survey', failed: 0, rejected: 1, progressCount: 1 },
+			],
+		},
+	)
+
+	assert.equal(health.tone, 'review')
+	assert.equal(health.title, 'Offline responses need review')
+	assert.equal(health.offlinePendingSubmissions, 4)
+	assert.equal(health.offlineSyncingSubmissions, 1)
+	assert.equal(health.offlineFailedSubmissions, 1)
+	assert.equal(health.offlineRejectedSubmissions, 1)
+	assert.equal(health.offlineSavedProgress, 3)
+	assert.equal(health.offlineLocalBlobBytes, 42_000)
+	assert.equal(health.offlineLocalBlobCount, 2)
+	assert.equal(health.offlineRecentIssueCount, 1)
+	assert.equal(health.offlineFormsWithIssues, 2)
+	assert.equal(health.offlineBlockingStoreIssues, 1)
+	assert.equal(health.offlineRecoveryRequired, true)
 })
 
 test('last seen helper updates current form ids without dropping existing keys', () => {

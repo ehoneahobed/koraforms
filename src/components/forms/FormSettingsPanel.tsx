@@ -1,12 +1,17 @@
 import { useEffect, useState } from 'react'
-import { Ban, Calendar, Globe, Lock } from 'lucide-react'
+import { AlertCircle, Ban, Calendar, CheckCircle2, Globe, History, Lock } from 'lucide-react'
 import { updateSettingsValue, datetimeLocalToTimestamp, timestampToDatetimeLocal } from '../../features/forms/shell'
+import { buildPublicFormReadiness } from '../../features/forms/readiness'
 import { THEME_PRESETS } from '../../themes'
-import type { FormSettings as FormSettingsType } from '../../types'
+import type { FormField, FormSettings as FormSettingsType } from '../../types'
 
 interface FormSettingsPanelProps {
+	title: string
 	status: string
+	slug: string
 	theme: string
+	fields: FormField[]
+	auditEvents?: Record<string, unknown>[]
 	settings: FormSettingsType
 	hasPassword: boolean
 	onStatusChange: (status: string) => void
@@ -17,8 +22,12 @@ interface FormSettingsPanelProps {
 }
 
 export function FormSettingsPanel({
+	title,
 	status,
+	slug,
 	theme,
+	fields,
+	auditEvents = [],
 	settings,
 	hasPassword,
 	onStatusChange,
@@ -30,6 +39,7 @@ export function FormSettingsPanel({
 	const updateSetting = <K extends keyof FormSettingsType>(key: K, value: FormSettingsType[K]) => {
 		onSettingsChange(updateSettingsValue(settings, key, value))
 	}
+	const readiness = buildPublicFormReadiness({ title, status, slug, fields, settings, hasPassword })
 
 	return (
 		<section className="animate-fade-in rounded-b-2xl border border-t-0 border-slate-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-surface-elevated-dark sm:p-6">
@@ -37,6 +47,53 @@ export function FormSettingsPanel({
 				<div>
 					<h2 className="text-[22px] font-semibold tracking-tight text-slate-950 dark:text-gray-100">Settings</h2>
 					<p className="mt-1 text-[14px] text-slate-500 dark:text-gray-400">Control form behavior, access, and presentation.</p>
+				</div>
+
+				<div className="kf-panel overflow-hidden p-0">
+					<div className="grid gap-0 lg:grid-cols-[280px_1fr]">
+						<div className="border-b border-slate-100 bg-slate-50/70 p-5 dark:border-gray-800 dark:bg-gray-900/45 lg:border-b-0 lg:border-r">
+							<div className="flex items-center justify-between gap-4">
+								<div>
+									<p className="text-[12px] font-semibold uppercase tracking-wide text-slate-400 dark:text-gray-500">Readiness</p>
+									<p className="mt-1 text-[24px] font-bold tracking-tight text-slate-950 dark:text-gray-100">{readiness.score}%</p>
+								</div>
+								<span className={`flex h-10 w-10 items-center justify-center rounded-full ${
+									readiness.status === 'blocked'
+										? 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-300'
+										: readiness.status === 'warning'
+											? 'bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300'
+											: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300'
+								}`}>
+									{readiness.status === 'ready' ? <CheckCircle2 className="h-5 w-5" /> : <AlertCircle className="h-5 w-5" />}
+								</span>
+							</div>
+							<p className="mt-3 text-[13px] leading-relaxed text-slate-500 dark:text-gray-400">{readiness.summary}</p>
+							<p className="mt-3 text-[12px] font-medium text-slate-400 dark:text-gray-500">
+								{readiness.blockedCount} blocked · {readiness.warningCount} warning{readiness.warningCount === 1 ? '' : 's'}
+							</p>
+						</div>
+						<div className="grid gap-px bg-slate-100 dark:bg-gray-800 sm:grid-cols-2">
+							{readiness.checks.map(check => (
+								<div key={check.id} className="bg-white p-4 dark:bg-surface-elevated-dark">
+									<div className="flex items-start gap-3">
+										<span className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${
+											check.status === 'blocked'
+												? 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-300'
+												: check.status === 'warning'
+													? 'bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300'
+													: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300'
+										}`}>
+											{check.status === 'ready' ? <CheckCircle2 className="h-4 w-4" /> : <AlertCircle className="h-4 w-4" />}
+										</span>
+										<div className="min-w-0">
+											<p className="text-[13px] font-semibold text-slate-800 dark:text-gray-200">{check.label}</p>
+											<p className="mt-1 text-[12px] leading-relaxed text-slate-500 dark:text-gray-500">{check.detail}</p>
+										</div>
+									</div>
+								</div>
+							))}
+						</div>
+					</div>
 				</div>
 
 				<div className="grid gap-4 lg:grid-cols-[1fr_1fr]">
@@ -180,9 +237,48 @@ export function FormSettingsPanel({
 						</div>
 					</div>
 				</div>
+
+				<div className="kf-panel p-6">
+					<div className="flex items-center justify-between gap-4">
+						<div>
+							<h3 className="text-[15px] font-semibold text-slate-950 dark:text-gray-100">Recent Activity</h3>
+							<p className="mt-1 text-[13px] text-slate-500 dark:text-gray-400">Owner actions are recorded locally first, then synced for accountability.</p>
+						</div>
+						<span className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-50 text-slate-400 dark:bg-gray-900 dark:text-gray-500">
+							<History className="h-4 w-4" />
+						</span>
+					</div>
+					<div className="mt-4 divide-y divide-slate-100 dark:divide-gray-800">
+						{auditEvents.length === 0 ? (
+							<p className="rounded-xl bg-slate-50 px-4 py-3 text-[13px] text-slate-500 dark:bg-gray-900/50 dark:text-gray-400">
+								No activity recorded yet.
+							</p>
+						) : auditEvents.map(event => (
+							<div key={String(event.id || `${event.eventType}-${event.createdAt}`)} className="flex items-start justify-between gap-4 py-3">
+								<div className="min-w-0">
+									<p className="truncate text-[13px] font-semibold text-slate-800 dark:text-gray-200">{String(event.summary || 'Updated form')}</p>
+									<p className="mt-0.5 text-[12px] text-slate-400 dark:text-gray-500">{formatAuditEventType(event.eventType)}</p>
+								</div>
+								<span className="shrink-0 text-[12px] text-slate-400 dark:text-gray-500">{formatAuditEventTime(event.createdAt)}</span>
+							</div>
+						))}
+					</div>
+				</div>
 			</div>
 		</section>
 	)
+}
+
+function formatAuditEventType(value: unknown): string {
+	return String(value || 'form_updated')
+		.replace(/_/g, ' ')
+		.replace(/\b\w/g, char => char.toUpperCase())
+}
+
+function formatAuditEventTime(value: unknown): string {
+	const timestamp = Number(value || 0)
+	if (!Number.isFinite(timestamp) || timestamp <= 0) return ''
+	return new Date(timestamp).toLocaleDateString('en', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
 function PasswordProtectionControl({

@@ -8,6 +8,7 @@ type ExportFormat = 'csv' | 'json'
 interface ExportModalProps {
 	fields: FormField[]
 	responseCount: number
+	scopeLabel?: string
 	onExportCsv: (fieldIds?: string[], sourceResponses?: Record<string, unknown>[], includeMetadata?: boolean) => void
 	onExportJson: (fieldIds?: string[], sourceResponses?: Record<string, unknown>[], includeMetadata?: boolean) => void
 	onClose: () => void
@@ -16,6 +17,7 @@ interface ExportModalProps {
 export function ExportModal({
 	fields,
 	responseCount,
+	scopeLabel,
 	onExportCsv,
 	onExportJson,
 	onClose,
@@ -56,6 +58,13 @@ export function ExportModal({
 				</div>
 
 				<div className="px-6 py-5 space-y-5 max-h-[70vh] overflow-y-auto">
+					<div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-gray-800 dark:bg-gray-900/50">
+						<p className="text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-gray-500">Scope</p>
+						<p className="mt-1 text-sm font-medium text-slate-700 dark:text-gray-300">
+							{scopeLabel || 'All responses currently visible in this view'}
+						</p>
+					</div>
+
 					<div>
 						<label className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 block">Format</label>
 						<div className="flex gap-2">

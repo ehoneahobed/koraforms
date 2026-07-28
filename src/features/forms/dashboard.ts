@@ -52,6 +52,40 @@ export interface WorkspaceHealthSnapshot {
 	newResponses: number
 	responseCountDrift: number
 	formsWithResponseCountDrift: number
+	offlinePendingSubmissions: number
+	offlineSyncingSubmissions: number
+	offlineFailedSubmissions: number
+	offlineRejectedSubmissions: number
+	offlineSavedProgress: number
+	offlineLocalBlobCount: number
+	offlineLocalBlobBytes: number
+	offlineRecentIssueCount: number
+	offlineFormsWithIssues: number
+	offlineBlockingStoreIssues: number
+	offlineRecoveryRequired: boolean
+}
+
+export interface OfflineFormHealthInput {
+	formId?: string
+	slug?: string
+	submitted_locally?: number
+	syncing?: number
+	accepted?: number
+	rejected?: number
+	failed?: number
+	progressCount?: number
+	lastActivityAt?: number
+}
+
+export interface PublicRecoveryDiagnosticsInput {
+	submissions?: Partial<Record<'submitted_locally' | 'syncing' | 'accepted' | 'rejected' | 'failed', number>>
+	pendingSubmissionCount?: number
+	savedProgressCount?: number
+	localBlobBytes?: number
+	localBlobCount?: number
+	recentIssues?: readonly unknown[]
+	storeIssues?: readonly { blocking?: boolean }[]
+	forms?: readonly OfflineFormHealthInput[]
 }
 
 export interface FormExportPayload {
@@ -163,6 +197,7 @@ export function buildWorkspaceHealthSnapshot(
 	forms: readonly FormRecord[],
 	responses: readonly ResponseRecord[],
 	lastSeen: Record<string, number>,
+	publicRecovery?: PublicRecoveryDiagnosticsInput | null,
 ): WorkspaceHealthSnapshot {
 	const groups = groupDashboardForms(forms)
 	const stats = buildDashboardResponseStats(forms, responses, lastSeen)
@@ -179,19 +214,46 @@ export function buildWorkspaceHealthSnapshot(
 		}
 	}
 
+	const submittedLocally = Math.max(0, Number(publicRecovery?.submissions?.submitted_locally || 0))
+	const syncing = Math.max(0, Number(publicRecovery?.submissions?.syncing || 0))
+	const failed = Math.max(0, Number(publicRecovery?.submissions?.failed || 0))
+	const rejected = Math.max(0, Number(publicRecovery?.submissions?.rejected || 0))
+	const pendingSubmissionCount = Math.max(
+		0,
+		Number(publicRecovery?.pendingSubmissionCount ?? submittedLocally + syncing + failed),
+	)
+	const savedProgressCount = Math.max(0, Number(publicRecovery?.savedProgressCount || 0))
+	const offlineFormsWithIssues = new Set(
+		(publicRecovery?.forms || [])
+			.filter(form => Number(form.failed || 0) > 0 || Number(form.rejected || 0) > 0)
+			.map(form => String(form.formId || form.slug || ''))
+			.filter(Boolean),
+	).size
+	const blockingStoreIssues = (publicRecovery?.storeIssues || []).filter(issue => issue.blocking !== false).length
+	const recoveryRequired = failed + rejected + blockingStoreIssues > 0
+
 	const tone: WorkspaceHealthTone =
-		formsWithResponseCountDrift > 0 ? 'review'
-		: stats.newResponses > 0 ? 'active'
+		formsWithResponseCountDrift > 0 || recoveryRequired ? 'review'
+		: stats.newResponses > 0 || pendingSubmissionCount > 0 || savedProgressCount > 0 ? 'active'
 		: 'ready'
 
 	const title =
-		tone === 'review' ? 'Workspace needs review'
+		formsWithResponseCountDrift > 0 ? 'Workspace needs review'
+		: recoveryRequired ? 'Offline responses need review'
+		: pendingSubmissionCount > 0 ? 'Offline responses waiting'
+		: savedProgressCount > 0 ? 'Saved respondent drafts'
 		: tone === 'active' ? 'New responses ready'
 		: 'Workspace ready'
 
 	const description =
-		tone === 'review'
+		formsWithResponseCountDrift > 0
 			? 'Local response totals need reconciliation before release reporting.'
+			: recoveryRequired
+				? 'Some public submissions or local storage events need attention before reporting.'
+			: pendingSubmissionCount > 0
+				? 'Field submissions are preserved locally and will sync when connectivity returns.'
+			: savedProgressCount > 0
+				? 'Respondents have saved in-progress forms on this device.'
 			: tone === 'active'
 				? 'New submissions are saved locally and ready to inspect.'
 				: 'Forms and responses are available from this device.'
@@ -207,6 +269,17 @@ export function buildWorkspaceHealthSnapshot(
 		newResponses: stats.newResponses,
 		responseCountDrift,
 		formsWithResponseCountDrift,
+		offlinePendingSubmissions: pendingSubmissionCount,
+		offlineSyncingSubmissions: syncing,
+		offlineFailedSubmissions: failed,
+		offlineRejectedSubmissions: rejected,
+		offlineSavedProgress: savedProgressCount,
+		offlineLocalBlobCount: Math.max(0, Number(publicRecovery?.localBlobCount || 0)),
+		offlineLocalBlobBytes: Math.max(0, Number(publicRecovery?.localBlobBytes || 0)),
+		offlineRecentIssueCount: publicRecovery?.recentIssues?.length || 0,
+		offlineFormsWithIssues,
+		offlineBlockingStoreIssues: blockingStoreIssues,
+		offlineRecoveryRequired: recoveryRequired,
 	}
 }
 
@@ -222,7 +295,7 @@ export function buildTemplateFormPayload(templateKey: string, ownerId: string) {
 	return {
 		title: template.title || 'Untitled Form',
 		description: template.description,
-		fields: createFieldsFromTemplate(templateKey),
+		fields: JSON.stringify(createFieldsFromTemplate(templateKey)),
 		status: 'draft',
 		ownerId,
 		theme: 'red',
@@ -233,11 +306,11 @@ export function buildDuplicateFormPayload(form: FormRecord, ownerId: string) {
 	return {
 		title: `Copy of ${String(form.title || 'Untitled Form')}`,
 		description: String(form.description || ''),
-		fields: parseFormFields(form.fields),
+		fields: typeof form.fields === 'string' ? form.fields : JSON.stringify(parseFormFields(form.fields)),
 		status: 'draft',
 		ownerId,
 		theme: String(form.theme || 'blue'),
-		settings: parseFormSettings(form.settings),
+		settings: typeof form.settings === 'string' ? form.settings : JSON.stringify(parseFormSettings(form.settings)),
 	}
 }
 

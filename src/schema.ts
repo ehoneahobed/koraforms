@@ -3,9 +3,10 @@ import type { FormField, FormSettings } from './types'
 
 type ResponseData = Record<string, unknown>
 type SideEffectPayload = Record<string, unknown>
+type AnalyticsEventMetadata = Record<string, unknown>
 
 export default defineSchema({
-	version: 13,
+	version: 16,
 	collections: {
 		// A form definition (e.g. "Customer Feedback", "Event Registration")
 		forms: {
@@ -46,9 +47,41 @@ export default defineSchema({
 				data: t.json<ResponseData>().default({}),
 				submittedBy: t.string().default(''),
 				clientSubmissionId: t.string().default(''),
+				formVersionHash: t.string().default(''),
 				submittedAt: t.number(),
 			},
-			indexes: ['formId', 'clientSubmissionId', 'submittedAt'],
+			indexes: ['formId', 'clientSubmissionId', 'formVersionHash', 'submittedAt'],
+		},
+
+		form_analytics_events: {
+			fields: {
+				formId: t.string(),
+				slug: t.string().default(''),
+				formVersionHash: t.string().default(''),
+				clientEventId: t.string(),
+				sessionId: t.string(),
+				visitorKey: t.string(),
+				type: t.enum(['viewed_form', 'started_form', 'answered_question', 'saved_progress', 'submitted_form']),
+				fieldId: t.string().default(''),
+				questionIndex: t.number().default(-1),
+				answeredCount: t.number().default(0),
+				visibleQuestionCount: t.number().default(0),
+				metadata: t.json<AnalyticsEventMetadata>().default({}),
+				syncStatus: t.enum(['pending', 'syncing', 'accepted', 'failed']).default('pending').transitions({
+					pending: ['syncing', 'accepted', 'failed'],
+					syncing: ['accepted', 'failed'],
+					failed: ['syncing', 'pending'],
+					accepted: [],
+				}),
+				occurredAt: t.number(),
+				updatedAt: t.number(),
+			},
+			indexes: ['formId', 'slug', 'clientEventId', 'sessionId', 'visitorKey', 'type', 'syncStatus', 'occurredAt'],
+			constraints: [{
+				type: 'unique',
+				fields: ['formId', 'clientEventId'],
+				onConflict: 'first-write-wins',
+			}],
 		},
 
 		// Sanitized, immutable public form payloads cached in Kora's local
@@ -169,6 +202,36 @@ export default defineSchema({
 				updatedAt: t.number(),
 			},
 			indexes: ['responseId', 'formId', 'type', 'status', 'nextAttemptAt', 'createdAt'],
+		},
+
+		audit_events: {
+			fields: {
+				formId: t.string(),
+				actorId: t.string().default(''),
+				actorType: t.enum(['user', 'system', 'public']).default('user'),
+				eventType: t.enum([
+					'form_created',
+					'form_updated',
+					'form_published',
+					'form_closed',
+					'form_reopened',
+					'form_archived',
+					'form_restored',
+					'form_duplicated',
+					'form_deleted',
+					'template_used',
+					'theme_changed',
+					'settings_updated',
+					'password_updated',
+					'password_cleared',
+					'responses_exported',
+					'responses_deleted',
+				]),
+				summary: t.string(),
+				metadata: t.json<Record<string, unknown>>().default({}),
+				createdAt: t.number(),
+			},
+			indexes: ['formId', 'actorId', 'eventType', 'createdAt'],
 		},
 	},
 })

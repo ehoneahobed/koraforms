@@ -566,21 +566,22 @@ export function createFieldsFromTemplate(templateKey: string): FormField[] {
 
 	return template.fields.map((field) => {
 		const nextId = idMap.get(field.id) || field.id
-		const nextFormula = field.formula
-			? Array.from(idMap.entries()).reduce(
+		const result: FormField = {
+			...field,
+			id: nextId,
+		}
+		if (field.formula) {
+			result.formula = Array.from(idMap.entries()).reduce(
 				(formula, [oldId, newId]) => formula.replace(new RegExp(`\\{${oldId}\\}`, 'g'), `{${newId}}`),
 				field.formula,
 			)
-			: undefined
-
-		return {
-			...field,
-			id: nextId,
-			formula: nextFormula,
-			conditions: field.conditions?.map(rule => ({
+		}
+		if (field.conditions) {
+			result.conditions = field.conditions.map(rule => ({
 				...rule,
 				fieldId: idMap.get(rule.fieldId) || rule.fieldId,
-			})),
+			}))
 		}
+		return result
 	})
 }

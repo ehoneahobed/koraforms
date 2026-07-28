@@ -4,6 +4,7 @@ import {
 	buildCompletionStats,
 	buildFollowUpReview,
 	buildResponseOverview,
+	buildResponseQualitySignals,
 } from '../../../src/features/responses/inbox'
 import type { FormField } from '../../../src/types'
 
@@ -66,4 +67,45 @@ test('buildFollowUpReview identifies incomplete, slow, low-fill, and duplicate r
 		['name', 'ada', 2],
 		['email', 'ada@example.com', 2],
 	])
+	assert.equal(review.qualitySignals.some(signal => signal.type === 'duplicate_identity'), true)
+	assert.equal(review.qualitySignals.some(signal => signal.type === 'slow_submit'), true)
+})
+
+test('buildResponseQualitySignals flags fast, duplicate, incomplete, repeated, and attachment responses', () => {
+	const qualityFields: FormField[] = [
+		{ id: 'name', type: 'text', label: 'Name', required: true },
+		{ id: 'email', type: 'email', label: 'Email', required: true },
+		{ id: 'city', type: 'text', label: 'City', required: false },
+		{ id: 'notes', type: 'textarea', label: 'Notes', required: false },
+		{ id: 'file', type: 'file', label: 'Attachment', required: false },
+	]
+	const parsed = [
+		{
+			response: response('1', {}),
+			data: { name: 'Ada', email: 'ada@example.com', city: 'same', notes: 'same', file: 'blob:1' },
+			meta: { duration: 4 },
+			completion: 100,
+		},
+		{
+			response: response('2', {}),
+			data: { name: 'Ada', email: 'ada@example.com', city: 'same', notes: 'same', file: 'blob:1' },
+			meta: { duration: 400 },
+			completion: 100,
+		},
+		{
+			response: response('3', {}),
+			data: { name: 'Grace', email: '', city: 'x', notes: '', file: '' },
+			meta: { duration: 30 },
+			completion: 50,
+		},
+	]
+
+	const signals = buildResponseQualitySignals(qualityFields, parsed, 300)
+	const types = new Set(signals.map(signal => signal.type))
+	assert.equal(types.has('fast_submit'), true)
+	assert.equal(types.has('duplicate_identity'), true)
+	assert.equal(types.has('duplicate_payload'), true)
+	assert.equal(types.has('incomplete'), true)
+	assert.equal(types.has('low_completion'), true)
+	assert.equal(types.has('attachment_review'), true)
 })

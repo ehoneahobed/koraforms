@@ -101,7 +101,7 @@ export function SignIn({ navigate }: Props) {
 								required
 								autoFocus
 								autoComplete="email"
-								className="w-full rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-surface-elevated-dark px-4 py-3 text-sm outline-none focus:border-brand-500 dark:focus:border-brand-400 focus:ring-2 focus:ring-brand-500/20 transition-smooth"
+								className="w-full rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-surface-elevated-dark px-4 py-3 text-sm text-gray-900 dark:text-gray-100 caret-brand-600 dark:caret-brand-400 placeholder:text-gray-400 dark:placeholder:text-gray-500 outline-none focus:border-brand-500 dark:focus:border-brand-400 focus:ring-2 focus:ring-brand-500/20 transition-smooth"
 							/>
 						</div>
 

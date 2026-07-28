@@ -7,6 +7,7 @@ import {
 	parseResponseData,
 	parseResponseMeta,
 	parseUA,
+	responseCompletionPct,
 	responseFields,
 	staticFieldLabel,
 	startOfDaysAgo,
@@ -16,6 +17,25 @@ import {
 export interface ResponseFilter {
 	fieldId: string
 	value: string
+}
+
+export interface ResponseDateFilter {
+	from?: string
+	to?: string
+}
+
+export type ResponseFieldFilterOperator = 'contains' | 'equals' | 'present' | 'missing'
+export type ResponseCompletionFilter = 'all' | 'complete' | 'partial'
+
+export interface ResponseFieldFilter {
+	fieldId: string
+	operator: ResponseFieldFilterOperator
+	value?: string
+}
+
+export interface ResponseAdvancedFilters {
+	completion: ResponseCompletionFilter
+	fieldFilters: ResponseFieldFilter[]
 }
 
 export interface DailyCount {
@@ -46,6 +66,48 @@ export interface DeviceBreakdown {
 	hasData: boolean
 }
 
+export interface RespondentLifecycleSummary {
+	totalViews: number
+	uniqueViewers: number
+	started: number
+	completed: number
+	partial: number
+	abandoned: number
+	viewToStartRate: number
+	startToCompleteRate: number
+	uniqueCompletionRate: number
+	dropOffQuestionIndex: number | null
+	dropOffAnsweredCount: number | null
+}
+
+export interface FieldJourneyStep {
+	field: FormField
+	index: number
+	label: string
+	fieldType: string
+	reached: number
+	answered: number
+	skipped: number
+	abandoned: number
+	answerRate: number
+	abandonRate: number
+	impact: 'low' | 'medium' | 'high'
+}
+
+export interface FormVersionAnalytics {
+	versionHash: string
+	label: string
+	isCurrent: boolean
+	views: number
+	starts: number
+	submissions: number
+	responses: number
+	partialSessions: number
+	conversionRate: number
+	firstSeenAt: number
+	lastSeenAt: number
+}
+
 export interface ResponsesAnalyticsSummary {
 	filteredResponses: Record<string, unknown>[]
 	previousPeriodResponses: Record<string, unknown>[]
@@ -65,6 +127,9 @@ export interface ResponsesAnalyticsSummary {
 	npsData: NpsSummary | null
 	funnelData: FunnelStep[]
 	deviceBreakdown: DeviceBreakdown
+	lifecycle: RespondentLifecycleSummary
+	fieldJourney: FieldJourneyStep[]
+	formVersions: FormVersionAnalytics[]
 	crossInsights: CrossInsight[]
 	completionSparkline: number[]
 	fillRateSparkline: number[]
@@ -88,8 +153,10 @@ export function buildResponsesAnalyticsSummary(
 	responses: Record<string, unknown>[],
 	range: TimeRange,
 	filters: ResponseFilter[],
+	analyticsEvents: Record<string, unknown>[] = [],
 ): ResponsesAnalyticsSummary {
 	const filteredResponses = filterResponses(responses, range, filters)
+	const filteredEvents = filterAnalyticsEventsByRange(analyticsEvents, range)
 	const previousPeriodResponses = previousPeriodForRange(responses, range)
 	const responseData = filteredResponses.map(parseResponseData)
 	const previousResponseData = previousPeriodResponses.map(parseResponseData)
@@ -121,10 +188,229 @@ export function buildResponsesAnalyticsSummary(
 		npsData: buildNpsSummary(fields, responseData),
 		funnelData: buildFunnelData(fields, responseData),
 		deviceBreakdown: buildDeviceBreakdown(filteredResponses),
+		lifecycle: buildRespondentLifecycleSummary(filteredEvents, filteredResponses),
+		fieldJourney: buildFieldJourneySummary(fields, filteredEvents, filteredResponses),
+		formVersions: buildFormVersionAnalytics(filteredResponses, filteredEvents),
 		crossInsights: computeCrossInsights(fields, responseData),
 		completionSparkline: buildCompletionSparkline(fields, filteredResponses, responseData, dailyCounts),
 		fillRateSparkline: buildFillRateSparkline(fields, filteredResponses, responseData, dailyCounts),
 	}
+}
+
+export function buildRespondentLifecycleSummary(
+	events: Record<string, unknown>[],
+	responses: Record<string, unknown>[],
+	now = Date.now(),
+	abandonAfterMs = 30 * 60 * 1000,
+): RespondentLifecycleSummary {
+	const viewedEvents = events.filter(event => event.type === 'viewed_form')
+	const startedEvents = events.filter(event => event.type === 'started_form')
+	const submittedEvents = events.filter(event => event.type === 'submitted_form')
+	const bySession = new Map<string, Record<string, unknown>[]>()
+	for (const event of events) {
+		const sessionId = String(event.sessionId || '')
+		if (!sessionId) continue
+		bySession.set(sessionId, [...(bySession.get(sessionId) ?? []), event])
+	}
+
+	let partial = 0
+	let abandoned = 0
+	const dropOffCounts = new Map<number, number>()
+	for (const sessionEvents of bySession.values()) {
+		const started = sessionEvents.some(event => event.type === 'started_form')
+		const submitted = sessionEvents.some(event => event.type === 'submitted_form')
+		const eventTimes = sessionEvents.map(event => Number(event.occurredAt || 0)).filter(Number.isFinite)
+		const answerCounts = sessionEvents.map(event => Number(event.answeredCount || 0)).filter(Number.isFinite)
+		const lastEventAt = eventTimes.length > 0 ? Math.max(...eventTimes) : 0
+		const answeredCount = answerCounts.length > 0 ? Math.max(0, ...answerCounts) : 0
+		if (started && !submitted && answeredCount > 0) partial += 1
+		if (started && !submitted && lastEventAt > 0 && now - lastEventAt >= abandonAfterMs) {
+			abandoned += 1
+			dropOffCounts.set(answeredCount, (dropOffCounts.get(answeredCount) ?? 0) + 1)
+		}
+	}
+
+	const completed = Math.max(submittedEvents.length, responses.length)
+	const started = Math.max(startedEvents.length, completed)
+	const totalViews = Math.max(viewedEvents.length, started)
+	const uniqueViewers = Math.max(uniqueCount(viewedEvents, 'visitorKey'), uniqueCount(startedEvents, 'visitorKey'), completed)
+	const dropOff = [...dropOffCounts.entries()].sort((a, b) => b[1] - a[1])[0] ?? null
+	return {
+		totalViews,
+		uniqueViewers,
+		started,
+		completed,
+		partial,
+		abandoned,
+		viewToStartRate: totalViews > 0 ? Math.round((started / totalViews) * 100) : 0,
+		startToCompleteRate: started > 0 ? Math.round((completed / started) * 100) : 0,
+		uniqueCompletionRate: uniqueViewers > 0 ? Math.round((completed / uniqueViewers) * 100) : 0,
+		dropOffQuestionIndex: dropOff ? dropOff[0] : null,
+		dropOffAnsweredCount: dropOff ? dropOff[0] : null,
+	}
+}
+
+export function buildFieldJourneySummary(
+	fields: FormField[],
+	events: Record<string, unknown>[],
+	responses: Record<string, unknown>[],
+	now = Date.now(),
+	abandonAfterMs = 30 * 60 * 1000,
+): FieldJourneyStep[] {
+	const dataFields = responseFields(fields)
+	const fieldIndex = new Map(dataFields.map((field, index) => [field.id, index]))
+	const steps = dataFields.map((field, index) => ({
+		field,
+		index,
+		label: staticFieldLabel(field),
+		fieldType: field.type,
+		reached: 0,
+		answered: 0,
+		skipped: 0,
+		abandoned: 0,
+		answerRate: 0,
+		abandonRate: 0,
+		impact: 'low' as FieldJourneyStep['impact'],
+	}))
+
+	if (steps.length === 0) return []
+
+	const acceptedResponseData = responses.map(parseResponseData)
+	const acceptedFilledCounts = dataFields.map(field => {
+		return acceptedResponseData.filter(data => isFilledValue(data[field.id])).length
+	})
+
+	const sessions = groupEventsBySession(events)
+	for (const sessionEvents of sessions.values()) {
+		const submitted = sessionEvents.some(event => event.type === 'submitted_form')
+		const started = sessionEvents.some(event => event.type === 'started_form')
+		if (!started) continue
+
+		const latestAnswerIndex = maxEventIndex(sessionEvents, fieldIndex)
+		const maxQuestionIndex = Math.max(0, ...sessionEvents.map(event => Number(event.questionIndex ?? -1)).filter(Number.isFinite))
+		const reachedIndex = Math.min(steps.length - 1, Math.max(latestAnswerIndex, maxQuestionIndex, 0))
+		for (let index = 0; index <= reachedIndex; index += 1) {
+			steps[index]!.reached += 1
+		}
+
+		for (const event of sessionEvents) {
+			if (event.type !== 'answered_question') continue
+			const fieldId = String(event.fieldId || '')
+			const index = fieldIndex.get(fieldId)
+			if (index !== undefined) steps[index]!.answered += 1
+		}
+
+		const eventTimes = sessionEvents.map(event => Number(event.occurredAt || 0)).filter(Number.isFinite)
+		const lastEventAt = eventTimes.length > 0 ? Math.max(...eventTimes) : 0
+		if (!submitted && lastEventAt > 0 && now - lastEventAt >= abandonAfterMs) {
+			const abandonedIndex = Math.min(steps.length - 1, Math.max(latestAnswerIndex + 1, reachedIndex))
+			if (abandonedIndex > reachedIndex) steps[abandonedIndex]!.reached += 1
+			steps[abandonedIndex]!.abandoned += 1
+		}
+	}
+
+	return steps.map(step => {
+		const reached = Math.max(responses.length, step.reached)
+		const answered = Math.min(reached, Math.max(acceptedFilledCounts[step.index] ?? 0, step.answered))
+		const skipped = Math.max(0, reached - answered)
+		const answerRate = reached > 0 ? Math.round((answered / reached) * 100) : 0
+		const abandonRate = reached > 0 ? Math.round((step.abandoned / reached) * 100) : 0
+		const impact = abandonRate >= 20 || answerRate < 60 ? 'high' : abandonRate >= 10 || answerRate < 80 ? 'medium' : 'low'
+		return { ...step, reached, answered, skipped, answerRate, abandonRate, impact }
+	})
+}
+
+export function buildFormVersionAnalytics(
+	responses: Record<string, unknown>[],
+	events: Record<string, unknown>[],
+	currentVersionHash?: string,
+): FormVersionAnalytics[] {
+	const versions = new Map<string, {
+		versionHash: string
+		views: number
+		starts: number
+		submissions: number
+		responses: number
+		sessionIds: Set<string>
+		submittedSessionIds: Set<string>
+		firstSeenAt: number
+		lastSeenAt: number
+	}>()
+
+	const entryFor = (versionHash: string) => {
+		const normalized = versionHash.trim() || 'unversioned'
+		let entry = versions.get(normalized)
+		if (!entry) {
+			entry = {
+				versionHash: normalized,
+				views: 0,
+				starts: 0,
+				submissions: 0,
+				responses: 0,
+				sessionIds: new Set<string>(),
+				submittedSessionIds: new Set<string>(),
+				firstSeenAt: 0,
+				lastSeenAt: 0,
+			}
+			versions.set(normalized, entry)
+		}
+		return entry
+	}
+
+	const rememberActivity = (entry: ReturnType<typeof entryFor>, timestamp: number) => {
+		if (!Number.isFinite(timestamp) || timestamp <= 0) return
+		entry.firstSeenAt = entry.firstSeenAt === 0 ? timestamp : Math.min(entry.firstSeenAt, timestamp)
+		entry.lastSeenAt = Math.max(entry.lastSeenAt, timestamp)
+	}
+
+	for (const event of events) {
+		const versionHash = String(event.formVersionHash || '')
+		const entry = entryFor(versionHash)
+		const type = String(event.type || '')
+		const sessionId = String(event.sessionId || '')
+		if (sessionId) entry.sessionIds.add(sessionId)
+		if (type === 'viewed_form') entry.views += 1
+		if (type === 'started_form') entry.starts += 1
+		if (type === 'submitted_form') {
+			entry.submissions += 1
+			if (sessionId) entry.submittedSessionIds.add(sessionId)
+		}
+		rememberActivity(entry, Number(event.occurredAt || event.updatedAt || 0))
+	}
+
+	for (const response of responses) {
+		const versionHash = String(response.formVersionHash || '')
+		const entry = entryFor(versionHash)
+		entry.responses += 1
+		entry.submissions = Math.max(entry.submissions, entry.responses)
+		rememberActivity(entry, Number(response.submittedAt || 0))
+	}
+
+	const latestVersionHash = currentVersionHash
+		? currentVersionHash.trim()
+		: [...versions.values()]
+			.filter(version => version.versionHash !== 'unversioned')
+			.sort((a, b) => b.lastSeenAt - a.lastSeenAt)[0]?.versionHash || ''
+
+	return [...versions.values()]
+		.sort((a, b) => b.lastSeenAt - a.lastSeenAt)
+		.map(version => {
+			const denominator = Math.max(version.starts, version.views, version.responses)
+			const completed = Math.max(version.submissions, version.responses)
+			return {
+				versionHash: version.versionHash,
+				label: version.versionHash === 'unversioned' ? 'Unversioned' : `Version ${version.versionHash.slice(0, 7)}`,
+				isCurrent: latestVersionHash ? version.versionHash === latestVersionHash : false,
+				views: version.views,
+				starts: version.starts,
+				submissions: version.submissions,
+				responses: version.responses,
+				partialSessions: Math.max(0, version.sessionIds.size - version.submittedSessionIds.size),
+				conversionRate: denominator > 0 ? Math.round((completed / denominator) * 100) : 0,
+				firstSeenAt: version.firstSeenAt,
+				lastSeenAt: version.lastSeenAt,
+			}
+		})
 }
 
 export function searchAndSortResponses<T extends Record<string, unknown>>(
@@ -159,6 +445,111 @@ export function searchAndSortResponses<T extends Record<string, unknown>>(
 	})
 }
 
+export function filterResponsesByDateRange<T extends Record<string, unknown>>(
+	responses: T[],
+	dateFilter: ResponseDateFilter,
+): T[] {
+	const from = parseDateBoundary(dateFilter.from, 'start')
+	const to = parseDateBoundary(dateFilter.to, 'end')
+	if (from === null && to === null) return responses
+	return responses.filter(response => {
+		const submittedAt = Number(response.submittedAt || 0)
+		if (!Number.isFinite(submittedAt) || submittedAt <= 0) return false
+		if (from !== null && submittedAt < from) return false
+		if (to !== null && submittedAt > to) return false
+		return true
+	})
+}
+
+export function normalizeCompletionFilter(value: string | null | undefined): ResponseCompletionFilter {
+	if (value === 'complete' || value === 'partial') return value
+	return 'all'
+}
+
+export function encodeFieldFilters(filters: readonly ResponseFieldFilter[]): string {
+	const normalized = normalizeFieldFilters(filters)
+	return normalized.length > 0 ? encodeURIComponent(JSON.stringify(normalized)) : ''
+}
+
+export function decodeFieldFilters(value: string | null | undefined): ResponseFieldFilter[] {
+	if (!value) return []
+	try {
+		const parsed = JSON.parse(decodeURIComponent(value))
+		if (!Array.isArray(parsed)) return []
+		return normalizeFieldFilters(parsed)
+	} catch {
+		return []
+	}
+}
+
+export function activeResponseFilterCount(filters: ResponseAdvancedFilters): number {
+	return filters.fieldFilters.length + (filters.completion === 'all' ? 0 : 1)
+}
+
+export function filterResponsesByAdvancedFilters<T extends Record<string, unknown>>(
+	fields: FormField[],
+	responses: T[],
+	filters: ResponseAdvancedFilters,
+): T[] {
+	const normalized = {
+		completion: normalizeCompletionFilter(filters.completion),
+		fieldFilters: normalizeFieldFilters(filters.fieldFilters),
+	}
+	if (activeResponseFilterCount(normalized) === 0) return responses
+
+	return responses.filter(response => {
+		const data = parseResponseData(response)
+		if (normalized.completion !== 'all') {
+			const complete = responseCompletionPct(fields, data) === 100
+			if (normalized.completion === 'complete' && !complete) return false
+			if (normalized.completion === 'partial' && complete) return false
+		}
+
+		return normalized.fieldFilters.every(filter => {
+			const raw = data[filter.fieldId] ?? ''
+			const value = normalizeFilterValue(raw)
+			const expected = normalizeFilterValue(filter.value ?? '')
+			if (filter.operator === 'present') return isFilledValue(raw)
+			if (filter.operator === 'missing') return !isFilledValue(raw)
+			if (filter.operator === 'equals') return value === expected
+			return value.includes(expected)
+		})
+	})
+}
+
+export function responseDateFilterLabel(dateFilter: ResponseDateFilter): string {
+	const from = parseDateBoundary(dateFilter.from, 'start')
+	const to = parseDateBoundary(dateFilter.to, 'end')
+	if (from === null && to === null) return ''
+	const format = (timestamp: number) => new Date(timestamp).toLocaleDateString('en', { month: 'short', day: 'numeric', year: 'numeric' })
+	if (from !== null && to !== null) return `${format(from)} - ${format(to)}`
+	if (from !== null) return `From ${format(from)}`
+	return `Until ${format(to!)}`
+}
+
+export function presetDateFilter(preset: 'today' | 'yesterday' | '7d' | '30d' | 'month' | 'lastMonth', now = new Date()): ResponseDateFilter {
+	const today = new Date(now)
+	today.setHours(0, 0, 0, 0)
+	if (preset === 'today') return { from: dateKey(today), to: dateKey(today) }
+	if (preset === 'yesterday') {
+		const date = new Date(today)
+		date.setDate(date.getDate() - 1)
+		return { from: dateKey(date), to: dateKey(date) }
+	}
+	if (preset === '7d' || preset === '30d') {
+		const date = new Date(today)
+		date.setDate(date.getDate() - (preset === '7d' ? 6 : 29))
+		return { from: dateKey(date), to: dateKey(today) }
+	}
+	if (preset === 'month') {
+		const from = new Date(today.getFullYear(), today.getMonth(), 1)
+		return { from: dateKey(from), to: dateKey(today) }
+	}
+	const from = new Date(today.getFullYear(), today.getMonth() - 1, 1)
+	const to = new Date(today.getFullYear(), today.getMonth(), 0)
+	return { from: dateKey(from), to: dateKey(to) }
+}
+
 export function paginateResponses<T>(items: T[], page: number, perPage: number): PaginationResult<T> {
 	const totalPages = Math.max(1, Math.ceil(items.length / perPage))
 	const currentPage = Math.min(Math.max(1, page), totalPages)
@@ -171,6 +562,35 @@ export function paginateResponses<T>(items: T[], page: number, perPage: number):
 		start: items.length === 0 ? 0 : offset + 1,
 		end,
 	}
+}
+
+function normalizeFieldFilters(filters: readonly unknown[]): ResponseFieldFilter[] {
+	const result: ResponseFieldFilter[] = []
+	for (const filter of filters) {
+		if (!filter || typeof filter !== 'object') continue
+		const candidate = filter as Partial<ResponseFieldFilter>
+		const fieldId = String(candidate.fieldId || '').trim()
+		const operator = normalizeFieldFilterOperator(candidate.operator)
+		if (!fieldId || !operator) continue
+		const value = String(candidate.value ?? '').trim().slice(0, 160)
+		if ((operator === 'contains' || operator === 'equals') && !value) continue
+		result.push({
+			fieldId: fieldId.slice(0, 120),
+			operator,
+			...(value ? { value } : {}),
+		})
+		if (result.length >= 10) break
+	}
+	return result
+}
+
+function normalizeFieldFilterOperator(value: unknown): ResponseFieldFilterOperator | null {
+	if (value === 'contains' || value === 'equals' || value === 'present' || value === 'missing') return value
+	return null
+}
+
+function normalizeFilterValue(value: unknown): string {
+	return String(value ?? '').trim().toLocaleLowerCase()
 }
 
 export function formatResponseDateRange<T extends Record<string, unknown>>(responses: T[]): string {
@@ -211,6 +631,19 @@ export function filterResponses(
 			const value = data[filter.fieldId] ?? ''
 			return value.toLowerCase().includes(filter.value.toLowerCase())
 		})
+	})
+}
+
+export function filterAnalyticsEventsByRange(
+	events: Record<string, unknown>[],
+	range: TimeRange,
+): Record<string, unknown>[] {
+	const days = daysForRange(range)
+	if (days === null) return events
+	const cutoff = startOfDaysAgo(days)
+	return events.filter(event => {
+		const occurredAt = Number(event.occurredAt || 0)
+		return Number.isFinite(occurredAt) && occurredAt >= cutoff
 	})
 }
 
@@ -409,4 +842,46 @@ function groupDataByResponseDay(
 
 function sortBreakdown(obj: Record<string, number>): [string, number][] {
 	return Object.entries(obj).sort((a, b) => b[1] - a[1]) as [string, number][]
+}
+
+function uniqueCount(events: Record<string, unknown>[], field: string): number {
+	const values = new Set<string>()
+	for (const event of events) {
+		const value = String(event[field] || '')
+		if (value) values.add(value)
+	}
+	return values.size
+}
+
+function groupEventsBySession(events: Record<string, unknown>[]): Map<string, Record<string, unknown>[]> {
+	const sessions = new Map<string, Record<string, unknown>[]>()
+	for (const event of events) {
+		const sessionId = String(event.sessionId || '')
+		if (!sessionId) continue
+		sessions.set(sessionId, [...(sessions.get(sessionId) ?? []), event])
+	}
+	return sessions
+}
+
+function maxEventIndex(events: Record<string, unknown>[], fieldIndex: Map<string, number>): number {
+	let maxIndex = -1
+	for (const event of events) {
+		const fieldId = String(event.fieldId || '')
+		const byField = fieldIndex.get(fieldId)
+		if (byField !== undefined) maxIndex = Math.max(maxIndex, byField)
+		const byQuestion = Number(event.questionIndex ?? -1)
+		if (Number.isFinite(byQuestion)) maxIndex = Math.max(maxIndex, byQuestion)
+	}
+	return maxIndex
+}
+
+function parseDateBoundary(value: string | undefined, boundary: 'start' | 'end'): number | null {
+	if (!value) return null
+	const parts = value.split('-').map(Number)
+	if (parts.length !== 3 || parts.some(part => !Number.isFinite(part))) return null
+	const [year, month, day] = parts as [number, number, number]
+	const date = new Date(year, month - 1, day)
+	if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return null
+	date.setHours(boundary === 'start' ? 0 : 23, boundary === 'start' ? 0 : 59, boundary === 'start' ? 0 : 59, boundary === 'start' ? 0 : 999)
+	return date.getTime()
 }

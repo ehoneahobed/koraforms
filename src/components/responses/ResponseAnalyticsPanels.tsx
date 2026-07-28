@@ -3,6 +3,7 @@ import { Search } from 'lucide-react'
 import type { FormField } from '../../types'
 import {
 	buildFieldAnalyses,
+	buildSmartFieldSuggestions,
 	fieldHealthBarClass,
 	fieldInsightTone,
 	filledCountForAnalysis,
@@ -42,7 +43,15 @@ const TIME_RANGE_OPTIONS: { value: TimeRange; label: string }[] = [
 // AnalyticsView (full analytics dashboard under the Analytics sub-tab)
 // ============================================================================
 
-export function AnalyticsView({ fields, responses }: { fields: FormField[]; responses: Record<string, unknown>[] }) {
+export function AnalyticsView({
+	fields,
+	responses,
+	analyticsEvents = [],
+}: {
+	fields: FormField[]
+	responses: Record<string, unknown>[]
+	analyticsEvents?: Record<string, unknown>[]
+}) {
 	const [range, setRange] = useState<TimeRange>('30d')
 	const [filters, setFilters] = useState<ResponseFilter[]>([])
 	const [filterFieldId, setFilterFieldId] = useState('')
@@ -51,8 +60,8 @@ export function AnalyticsView({ fields, responses }: { fields: FormField[]; resp
 	const selectedFilterField = filterableFields.find(field => field.id === filterFieldId) ?? filterableFields[0]
 
 	const summary = useMemo(() => {
-		return buildResponsesAnalyticsSummary(fields, responses, range, filters)
-	}, [fields, filters, range, responses])
+		return buildResponsesAnalyticsSummary(fields, responses, range, filters, analyticsEvents)
+	}, [analyticsEvents, fields, filters, range, responses])
 	const filtered = summary.filteredResponses
 	const dailyCounts = summary.dailyCounts
 	const sparkline7 = summary.sparkline7
@@ -71,6 +80,9 @@ export function AnalyticsView({ fields, responses }: { fields: FormField[]; resp
 	const crossInsights = summary.crossInsights
 	const completionSparkline = summary.completionSparkline
 	const fillRateSparkline = summary.fillRateSparkline
+	const lifecycle = summary.lifecycle
+	const fieldJourney = summary.fieldJourney
+	const formVersions = summary.formVersions
 
 	const trendPct = (current: number, previous: number): number | null => {
 		return calculateTrendPct(current, previous, range)
@@ -162,6 +174,19 @@ export function AnalyticsView({ fields, responses }: { fields: FormField[]; resp
 				<SummaryCard label="Active Days" value={String(activeDays)} trend={trendPct(activeDays, prevActiveDays)} sparkData={sparkline7.map(v => (v > 0 ? 1 : 0))} />
 			</div>
 
+			<div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
+				<LifecycleCard label="Views" value={lifecycle.totalViews} helper={`${lifecycle.uniqueViewers} unique`} />
+				<LifecycleCard label="Started" value={lifecycle.started} helper={`${lifecycle.viewToStartRate}% of views`} />
+				<LifecycleCard label="Completed" value={lifecycle.completed} helper={`${lifecycle.startToCompleteRate}% of starts`} tone="good" />
+				<LifecycleCard label="Partial" value={lifecycle.partial} helper="Started but not submitted" tone={lifecycle.partial > 0 ? 'watch' : 'muted'} />
+				<LifecycleCard label="Abandoned" value={lifecycle.abandoned} helper={lifecycle.dropOffAnsweredCount === null ? 'No stale partials' : `Usually after ${lifecycle.dropOffAnsweredCount} answer${lifecycle.dropOffAnsweredCount === 1 ? '' : 's'}`} tone={lifecycle.abandoned > 0 ? 'review' : 'muted'} />
+				<LifecycleCard label="Unique complete" value={`${lifecycle.uniqueCompletionRate}%`} helper="Completed / unique viewers" tone={lifecycle.uniqueCompletionRate >= 70 ? 'good' : lifecycle.uniqueCompletionRate >= 40 ? 'watch' : 'review'} />
+			</div>
+
+			{fieldJourney.length > 0 && <FieldJourneyPanel steps={fieldJourney} />}
+
+			{formVersions.length > 0 && <FormVersionPanel versions={formVersions} />}
+
 			<ResponsesBarChart data={dailyCounts} />
 			<CalendarHeatmap responses={filtered} />
 
@@ -203,6 +228,151 @@ export function AnalyticsView({ fields, responses }: { fields: FormField[]; resp
 					</div>
 				</div>
 			)}
+		</div>
+	)
+}
+
+function FormVersionPanel({ versions }: { versions: ReturnType<typeof buildResponsesAnalyticsSummary>['formVersions'] }) {
+	const current = versions.find(version => version.isCurrent) ?? versions[0]
+	const olderVersions = versions.filter(version => version.versionHash !== current?.versionHash)
+	return (
+		<section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-surface-elevated-dark">
+			<div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+				<div>
+					<h3 className="text-[16px] font-semibold tracking-[-0.01em] text-slate-950 dark:text-gray-100">Version performance</h3>
+					<p className="mt-1 text-[13px] text-slate-500 dark:text-gray-400">
+						Compare published revisions without mixing old form behavior into the current experience.
+					</p>
+				</div>
+				{current && (
+					<span className="rounded-full bg-slate-50 px-3 py-1.5 text-[12px] font-semibold text-slate-600 dark:bg-gray-900 dark:text-gray-300">
+						{versions.length} version{versions.length === 1 ? '' : 's'}
+					</span>
+				)}
+			</div>
+			<div className="mt-5 grid gap-3 lg:grid-cols-[0.95fr_1.05fr]">
+				{current && (
+					<div className="rounded-2xl bg-slate-950 p-4 text-white dark:bg-white dark:text-slate-950">
+						<div className="flex items-center justify-between gap-3">
+							<p className="text-[12px] font-semibold uppercase tracking-wide text-white/55 dark:text-slate-500">Current version</p>
+							<span className="rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-semibold dark:bg-slate-100">Active</span>
+						</div>
+						<p className="mt-3 text-[18px] font-semibold">{current.label}</p>
+						<div className="mt-4 grid grid-cols-3 gap-2">
+							<VersionMetric value={current.responses} label="Responses" inverted />
+							<VersionMetric value={`${current.conversionRate}%`} label="Conversion" inverted />
+							<VersionMetric value={current.partialSessions} label="Partials" inverted />
+						</div>
+					</div>
+				)}
+				<div className="overflow-hidden rounded-2xl border border-slate-100 dark:border-gray-800">
+					{olderVersions.length === 0 ? (
+						<div className="px-4 py-6 text-[13px] text-slate-500 dark:text-gray-400">
+							No older published versions in this range.
+						</div>
+					) : olderVersions.slice(0, 5).map(version => (
+						<div key={version.versionHash} className="grid grid-cols-[minmax(0,1fr)_72px_88px_72px] items-center gap-3 border-b border-slate-100 px-4 py-3 last:border-b-0 dark:border-gray-800">
+							<div className="min-w-0">
+								<p className="truncate text-[13px] font-semibold text-slate-800 dark:text-gray-200">{version.label}</p>
+								<p className="mt-0.5 text-[11px] text-slate-400 dark:text-gray-500">{formatVersionDate(version.lastSeenAt)}</p>
+							</div>
+							<p className="text-right text-[13px] font-semibold tabular-nums text-slate-700 dark:text-gray-300">{version.responses}</p>
+							<p className="text-right text-[13px] font-semibold tabular-nums text-slate-700 dark:text-gray-300">{version.conversionRate}%</p>
+							<p className="text-right text-[13px] font-semibold tabular-nums text-slate-500 dark:text-gray-400">{version.partialSessions}</p>
+						</div>
+					))}
+				</div>
+			</div>
+		</section>
+	)
+}
+
+function VersionMetric({ value, label, inverted = false }: { value: number | string; label: string; inverted?: boolean }) {
+	return (
+		<div className={inverted ? 'rounded-xl bg-white/10 px-3 py-2 dark:bg-slate-100' : 'rounded-xl bg-slate-50 px-3 py-2 dark:bg-gray-900'}>
+			<p className="text-[18px] font-bold tabular-nums">{value}</p>
+			<p className={inverted ? 'mt-0.5 text-[11px] font-medium text-white/55 dark:text-slate-500' : 'mt-0.5 text-[11px] font-medium text-slate-500 dark:text-gray-500'}>{label}</p>
+		</div>
+	)
+}
+
+function formatVersionDate(timestamp: number): string {
+	if (!timestamp) return 'No timestamp'
+	return new Date(timestamp).toLocaleDateString('en', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+function FieldJourneyPanel({ steps }: { steps: ReturnType<typeof buildResponsesAnalyticsSummary>['fieldJourney'] }) {
+	const friction = steps.find(step => step.impact === 'high') ?? steps.find(step => step.impact === 'medium') ?? null
+	return (
+		<section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-surface-elevated-dark">
+			<div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+				<div>
+					<h3 className="text-[16px] font-semibold tracking-[-0.01em] text-slate-950 dark:text-gray-100">Respondent journey</h3>
+					<p className="mt-1 text-[13px] text-slate-500 dark:text-gray-400">
+						See where people reach, answer, skip, or abandon the form.
+					</p>
+				</div>
+				{friction && (
+					<span className="rounded-full bg-amber-50 px-3 py-1.5 text-[12px] font-semibold text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
+						Review {friction.label}
+					</span>
+				)}
+			</div>
+			<div className="mt-5 space-y-3">
+				{steps.slice(0, 10).map(step => (
+					<div key={step.field.id} className="grid gap-3 rounded-xl border border-slate-100 bg-slate-50/70 px-4 py-3 dark:border-gray-800 dark:bg-gray-900/45 sm:grid-cols-[minmax(0,1fr)_220px] sm:items-center">
+						<div className="min-w-0">
+							<div className="flex min-w-0 items-center gap-2">
+								<span className="text-[11px] text-slate-400 tabular-nums">{String(step.index + 1).padStart(2, '0')}</span>
+								<p className="truncate text-[13px] font-semibold text-slate-800 dark:text-gray-200">{step.label}</p>
+								<span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-semibold uppercase text-slate-400 dark:bg-gray-800 dark:text-gray-500">{step.fieldType}</span>
+							</div>
+							<p className="mt-1 text-[11px] text-slate-400 dark:text-gray-500">
+								{step.reached} reached · {step.answered} answered · {step.skipped} skipped · {step.abandoned} abandoned here
+							</p>
+						</div>
+						<div>
+							<div className="flex items-center justify-between text-[11px] font-medium text-slate-400 dark:text-gray-500">
+								<span>{step.answerRate}% answer rate</span>
+								<span className={step.impact === 'high' ? 'text-red-500' : step.impact === 'medium' ? 'text-amber-600' : 'text-emerald-600'}>{step.abandonRate}% abandon</span>
+							</div>
+							<div className="mt-2 h-2 overflow-hidden rounded-full bg-white dark:bg-gray-800">
+								<div
+									className={step.impact === 'high' ? 'h-full rounded-full bg-red-400' : step.impact === 'medium' ? 'h-full rounded-full bg-amber-400' : 'h-full rounded-full bg-emerald-400'}
+									style={{ width: `${Math.max(4, step.answerRate)}%` }}
+								/>
+							</div>
+						</div>
+					</div>
+				))}
+			</div>
+		</section>
+	)
+}
+
+function LifecycleCard({
+	label,
+	value,
+	helper,
+	tone = 'muted',
+}: {
+	label: string
+	value: number | string
+	helper: string
+	tone?: 'good' | 'watch' | 'review' | 'muted'
+}) {
+	const toneClass = tone === 'good'
+		? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300'
+		: tone === 'watch'
+			? 'bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300'
+			: tone === 'review'
+				? 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-300'
+				: 'bg-slate-50 text-slate-700 dark:bg-gray-900 dark:text-gray-300'
+	return (
+		<div className={`rounded-2xl border border-slate-100 p-4 shadow-sm dark:border-gray-800 ${toneClass}`}>
+			<p className="text-[11px] font-semibold uppercase tracking-wide opacity-70">{label}</p>
+			<p className="mt-2 text-[24px] font-bold tabular-nums tracking-[-0.01em]">{typeof value === 'number' ? value.toLocaleString() : value}</p>
+			<p className="mt-1 truncate text-[11px] font-medium opacity-70">{helper}</p>
 		</div>
 	)
 }
@@ -261,6 +431,7 @@ export function FieldInsightsView({ fields, responses }: { fields: FormField[]; 
 	const watchCount = fieldAnalytics.filter(analysis => analysis.fillRate >= 75 && analysis.fillRate < 90).length
 	const strongest = [...fieldAnalytics].sort((a, b) => b.fillRate - a.fillRate)[0]!
 	const weakest = sortedAnalytics[0]!
+	const suggestions = buildSmartFieldSuggestions(fieldAnalytics, totalResponses)
 
 	return (
 		<div className="space-y-5 animate-fade-in">
@@ -278,6 +449,40 @@ export function FieldInsightsView({ fields, responses }: { fields: FormField[]; 
 				<FieldInsightMetric label="Strongest field" value={`${strongest.fillRate}%`} tone="good" detail={staticFieldLabel(strongest.field)} />
 				<FieldInsightMetric label="Lowest field" value={`${weakest.fillRate}%`} tone={weakest.fillRate >= 90 ? 'good' : weakest.fillRate >= 75 ? 'watch' : 'review'} detail={staticFieldLabel(weakest.field)} />
 			</div>
+
+			{suggestions.length > 0 && (
+				<section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-surface-elevated-dark">
+					<div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+						<div>
+							<h4 className="text-[16px] font-semibold tracking-[-0.01em] text-slate-950 dark:text-gray-100">Suggestions</h4>
+							<p className="mt-1 text-[13px] text-slate-500 dark:text-gray-400">Practical improvements based on response behavior.</p>
+						</div>
+						<span className="rounded-full bg-slate-50 px-3 py-1.5 text-[12px] font-semibold text-slate-600 dark:bg-gray-900 dark:text-gray-300">
+							{suggestions.length} found
+						</span>
+					</div>
+					<div className="mt-4 grid gap-3 lg:grid-cols-3">
+						{suggestions.slice(0, 3).map(suggestion => (
+							<div key={suggestion.id} className="rounded-xl border border-slate-100 bg-slate-50/70 p-4 dark:border-gray-800 dark:bg-gray-900/45">
+								<div className="flex items-start justify-between gap-3">
+									<p className="text-[13px] font-semibold text-slate-800 dark:text-gray-200">{suggestion.title}</p>
+									<span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${
+										suggestion.severity === 'high'
+											? 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-300'
+											: suggestion.severity === 'medium'
+												? 'bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300'
+												: 'bg-slate-100 text-slate-500 dark:bg-gray-800 dark:text-gray-400'
+									}`}>
+										{suggestion.severity}
+									</span>
+								</div>
+								<p className="mt-2 text-[12px] leading-relaxed text-slate-500 dark:text-gray-400">{suggestion.reason}</p>
+								<p className="mt-3 text-[12px] font-medium leading-relaxed text-slate-700 dark:text-gray-300">{suggestion.action}</p>
+							</div>
+						))}
+					</div>
+				</section>
+			)}
 
 			<div className="grid grid-cols-1 gap-4 xl:grid-cols-[360px_1fr]">
 				<aside className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-surface-elevated-dark">

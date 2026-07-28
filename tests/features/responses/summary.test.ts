@@ -5,15 +5,25 @@ import {
 	buildDeviceBreakdown,
 	buildFunnelData,
 	buildNpsSummary,
+	buildFieldJourneySummary,
+	buildFormVersionAnalytics,
+	buildRespondentLifecycleSummary,
 	buildResponsesAnalyticsSummary,
 	calculateAverageCompletionTime,
 	calculateAverageFillRate,
 	calculateCompletionRate,
 	calculateTrendPct,
 	countActiveDays,
+	decodeFieldFilters,
+	encodeFieldFilters,
+	filterResponsesByAdvancedFilters,
 	filterResponses,
+	filterResponsesByDateRange,
 	formatResponseDateRange,
+	normalizeCompletionFilter,
 	paginateResponses,
+	presetDateFilter,
+	responseDateFilterLabel,
 	searchAndSortResponses,
 } from '../../../src/features/responses/summary'
 import type { FormField } from '../../../src/types'
@@ -53,7 +63,13 @@ test('buildResponsesAnalyticsSummary returns stable metrics from raw responses',
 		}),
 	]
 
-	const summary = buildResponsesAnalyticsSummary(fields, responses, '30d', [])
+	const events = [
+		{ type: 'viewed_form', sessionId: 's1', visitorKey: 'v1', occurredAt: day(0), answeredCount: 0 },
+		{ type: 'started_form', sessionId: 's1', visitorKey: 'v1', occurredAt: day(0), answeredCount: 0 },
+		{ type: 'submitted_form', sessionId: 's1', visitorKey: 'v1', occurredAt: day(0), answeredCount: 2 },
+	]
+
+	const summary = buildResponsesAnalyticsSummary(fields, responses, '30d', [], events)
 	assert.equal(summary.totalResponses, 2)
 	assert.equal(summary.completionRate, 50)
 	assert.equal(summary.averageFillRate, 83)
@@ -62,6 +78,82 @@ test('buildResponsesAnalyticsSummary returns stable metrics from raw responses',
 	assert.deepEqual(summary.deviceBreakdown.browsers, [['Chrome', 1], ['Safari', 1]])
 	assert.equal(summary.npsData?.nps, 0)
 	assert.equal(summary.funnelData.map(step => step.label).includes('Personal details'), false)
+	assert.equal(summary.lifecycle.uniqueViewers, 2)
+	assert.equal(summary.lifecycle.started, 2)
+	assert.equal(summary.lifecycle.completed, 2)
+})
+
+test('lifecycle summary counts views, starts, partials, and abandoned sessions', () => {
+	const now = new Date(2026, 0, 2, 12).getTime()
+	const events = [
+		{ type: 'viewed_form', sessionId: 's1', visitorKey: 'v1', occurredAt: now - 60_000, answeredCount: 0 },
+		{ type: 'started_form', sessionId: 's1', visitorKey: 'v1', occurredAt: now - 50_000, answeredCount: 0 },
+		{ type: 'submitted_form', sessionId: 's1', visitorKey: 'v1', occurredAt: now - 40_000, answeredCount: 2 },
+		{ type: 'viewed_form', sessionId: 's2', visitorKey: 'v2', occurredAt: now - 60 * 60_000, answeredCount: 0 },
+		{ type: 'started_form', sessionId: 's2', visitorKey: 'v2', occurredAt: now - 59 * 60_000, answeredCount: 0 },
+		{ type: 'answered_question', sessionId: 's2', visitorKey: 'v2', occurredAt: now - 58 * 60_000, answeredCount: 1 },
+	]
+
+	const summary = buildRespondentLifecycleSummary(events, [], now)
+	assert.equal(summary.totalViews, 2)
+	assert.equal(summary.uniqueViewers, 2)
+	assert.equal(summary.started, 2)
+	assert.equal(summary.completed, 1)
+	assert.equal(summary.partial, 1)
+	assert.equal(summary.abandoned, 1)
+	assert.equal(summary.startToCompleteRate, 50)
+	assert.equal(summary.dropOffAnsweredCount, 1)
+})
+
+test('field journey summary uses analytics sessions and accepted responses without double counting', () => {
+	const now = new Date(2026, 0, 2, 12).getTime()
+	const journeyFields: FormField[] = [
+		{ id: 'name', type: 'text', label: 'Your Name', required: true },
+		{ id: 'email', type: 'email', label: 'Email', required: true },
+		{ id: 'intro', type: 'section', label: 'Intro', required: false },
+		{ id: 'message', type: 'textarea', label: 'Message', required: false },
+	]
+	const responses = [
+		{ id: 'r1', data: JSON.stringify({ name: 'Ada', email: 'ada@example.com', message: 'Hi' }) },
+	]
+	const events = [
+		{ type: 'started_form', sessionId: 's1', occurredAt: now - 120_000, questionIndex: 0 },
+		{ type: 'answered_question', sessionId: 's1', occurredAt: now - 110_000, fieldId: 'name', questionIndex: 0 },
+		{ type: 'answered_question', sessionId: 's1', occurredAt: now - 100_000, fieldId: 'email', questionIndex: 1 },
+		{ type: 'submitted_form', sessionId: 's1', occurredAt: now - 90_000, questionIndex: 2 },
+		{ type: 'started_form', sessionId: 's2', occurredAt: now - 60 * 60_000, questionIndex: 0 },
+		{ type: 'answered_question', sessionId: 's2', occurredAt: now - 59 * 60_000, fieldId: 'name', questionIndex: 0 },
+	]
+
+	const summary = buildFieldJourneySummary(journeyFields, events, responses, now)
+	assert.deepEqual(summary.map(step => step.field.id), ['name', 'email', 'message'])
+	assert.equal(summary[0]?.reached, 2)
+	assert.equal(summary[0]?.answered, 2)
+	assert.equal(summary[1]?.reached, 2)
+	assert.equal(summary[1]?.abandoned, 1)
+	assert.equal(summary[2]?.answered, 1)
+})
+
+test('form version analytics separates current and older published revisions', () => {
+	const now = new Date(2026, 0, 2, 12).getTime()
+	const responses = [
+		{ id: 'r1', formVersionHash: 'v2hash', submittedAt: now, data: '{}' },
+	]
+	const events = [
+		{ type: 'viewed_form', formVersionHash: 'v1hash', sessionId: 's1', occurredAt: now - 90_000 },
+		{ type: 'started_form', formVersionHash: 'v1hash', sessionId: 's1', occurredAt: now - 80_000 },
+		{ type: 'viewed_form', formVersionHash: 'v2hash', sessionId: 's2', occurredAt: now - 70_000 },
+		{ type: 'started_form', formVersionHash: 'v2hash', sessionId: 's2', occurredAt: now - 60_000 },
+		{ type: 'submitted_form', formVersionHash: 'v2hash', sessionId: 's2', occurredAt: now - 50_000 },
+	]
+
+	const versions = buildFormVersionAnalytics(responses, events, 'v2hash')
+	assert.deepEqual(versions.map(version => version.versionHash), ['v2hash', 'v1hash'])
+	assert.equal(versions[0]?.isCurrent, true)
+	assert.equal(versions[0]?.responses, 1)
+	assert.equal(versions[0]?.conversionRate, 100)
+	assert.equal(versions[1]?.partialSessions, 1)
+	assert.equal(versions[1]?.conversionRate, 0)
 })
 
 test('filterResponses applies field filters against parsed response data', () => {
@@ -72,6 +164,58 @@ test('filterResponses applies field filters against parsed response data', () =>
 	const filtered = filterResponses(responses, '30d', [{ fieldId: 'name', value: 'grace' }])
 	assert.equal(filtered.length, 1)
 	assert.equal(JSON.parse(String(filtered[0]?.data)).name, 'Grace Hopper')
+})
+
+test('advanced response filters support completion and field predicates', () => {
+	const responses = [
+		{ id: '1', submittedAt: day(0), data: JSON.stringify({ name: 'Ada Lovelace', email: 'ada@example.com', likely: '10' }) },
+		{ id: '2', submittedAt: day(0), data: JSON.stringify({ name: 'Grace Hopper', email: '', likely: '' }) },
+		{ id: '3', submittedAt: day(0), data: JSON.stringify({ name: '', email: 'unknown@example.com', likely: '4' }) },
+	]
+
+	assert.deepEqual(
+		filterResponsesByAdvancedFilters(fields, responses, {
+			completion: 'complete',
+			fieldFilters: [{ fieldId: 'name', operator: 'contains', value: 'ada' }],
+		}).map(item => item.id),
+		['1'],
+	)
+	assert.deepEqual(
+		filterResponsesByAdvancedFilters(fields, responses, {
+			completion: 'partial',
+			fieldFilters: [{ fieldId: 'email', operator: 'missing' }],
+		}).map(item => item.id),
+		['2'],
+	)
+	assert.deepEqual(
+		filterResponsesByAdvancedFilters(fields, responses, {
+			completion: 'all',
+			fieldFilters: [{ fieldId: 'likely', operator: 'equals', value: '4' }],
+		}).map(item => item.id),
+		['3'],
+	)
+	assert.deepEqual(
+		filterResponsesByAdvancedFilters(fields, responses, {
+			completion: 'all',
+			fieldFilters: [{ fieldId: 'email', operator: 'present' }],
+		}).map(item => item.id),
+		['1', '3'],
+	)
+})
+
+test('advanced response filter URL encoding is strict and recoverable', () => {
+	const encoded = encodeFieldFilters([
+		{ fieldId: 'name', operator: 'contains', value: 'Ada' },
+		{ fieldId: 'email', operator: 'missing' },
+	])
+	assert.deepEqual(decodeFieldFilters(encoded), [
+		{ fieldId: 'name', operator: 'contains', value: 'Ada' },
+		{ fieldId: 'email', operator: 'missing' },
+	])
+	assert.deepEqual(decodeFieldFilters('%7Bbad-json'), [])
+	assert.equal(normalizeCompletionFilter('complete'), 'complete')
+	assert.equal(normalizeCompletionFilter('something-else'), 'all')
+	assert.equal(encodeFieldFilters([{ fieldId: '', operator: 'contains', value: 'x' }]), '')
 })
 
 test('inbox helpers search, sort, paginate, and format date ranges', () => {
@@ -94,6 +238,24 @@ test('inbox helpers search, sort, paginate, and format date ranges', () => {
 	assert.equal(page.start, 3)
 	assert.equal(page.end, 3)
 	assert.equal(formatResponseDateRange(responses), 'Jan 1, 2026 - Jan 3, 2026')
+})
+
+test('date range helpers drill into submitted responses by day boundaries', () => {
+	const jan1 = new Date(2026, 0, 1, 23, 59).getTime()
+	const jan2 = new Date(2026, 0, 2, 12).getTime()
+	const jan3 = new Date(2026, 0, 3, 0, 1).getTime()
+	const responses = [
+		{ id: '1', submittedAt: jan1, data: '{}' },
+		{ id: '2', submittedAt: jan2, data: '{}' },
+		{ id: '3', submittedAt: jan3, data: '{}' },
+	]
+
+	assert.deepEqual(
+		filterResponsesByDateRange(responses, { from: '2026-01-02', to: '2026-01-02' }).map(item => item.id),
+		['2'],
+	)
+	assert.equal(responseDateFilterLabel({ from: '2026-01-02', to: '2026-01-03' }), 'Jan 2, 2026 - Jan 3, 2026')
+	assert.deepEqual(presetDateFilter('today', new Date(2026, 0, 3, 12)), { from: '2026-01-03', to: '2026-01-03' })
 })
 
 test('summary helpers calculate completion, fill rate, active days, and trends', () => {

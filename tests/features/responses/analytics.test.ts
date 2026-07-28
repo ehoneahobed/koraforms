@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
 	buildFieldAnalyses,
+	buildSmartFieldSuggestions,
 	fieldHealthBarClass,
 	fieldInsightTone,
 	filledCountForAnalysis,
@@ -63,4 +64,28 @@ test('field insight tone helpers classify fill rates', () => {
 	assert.match(fieldHealthBarClass(95), /emerald/)
 	assert.match(fieldHealthBarClass(80), /amber/)
 	assert.match(fieldHealthBarClass(20), /brand/)
+})
+
+test('smart field suggestions flag low-fill required fields, unused optional fields, and repeated text', () => {
+	const suggestionFields: FormField[] = [
+		{ id: 'required', type: 'text', label: 'Required detail', required: true },
+		{ id: 'optional', type: 'text', label: 'Optional note', required: false },
+		{ id: 'department', type: 'text', label: 'Department', required: false },
+	]
+	const data = [
+		{ required: 'A', optional: '', department: 'Sales' },
+		{ required: 'B', optional: '', department: 'Sales' },
+		{ required: '', optional: '', department: 'Marketing' },
+		{ required: '', optional: '', department: 'Marketing' },
+		{ required: '', optional: '', department: 'Sales' },
+		{ required: '', optional: '', department: 'Marketing' },
+		{ required: '', optional: '', department: 'Sales' },
+		{ required: '', optional: '', department: 'Marketing' },
+	]
+	const analyses = buildFieldAnalyses(suggestionFields, data, data.length)
+	const suggestions = buildSmartFieldSuggestions(analyses, data.length)
+
+	assert.ok(suggestions.some(suggestion => suggestion.id === 'required:required-low-fill' && suggestion.severity === 'high'))
+	assert.ok(suggestions.some(suggestion => suggestion.id === 'optional:optional-unused'))
+	assert.ok(suggestions.some(suggestion => suggestion.id === 'department:text-to-choice'))
 })
