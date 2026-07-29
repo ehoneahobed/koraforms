@@ -1301,17 +1301,20 @@ async function buildOpsDiagnostics(store: ServerStore) {
 		responses,
 		resumeLinks,
 		sideEffects,
+		analyticsEvents,
 	] = await Promise.all([
 		store.queryCollection('forms', { includeDeleted: false }),
 		store.queryCollection('responses', { includeDeleted: false }),
 		store.queryCollection('resume_links', { includeDeleted: false }),
 		store.queryCollection('side_effect_deliveries', { includeDeleted: false }),
+		store.queryCollection('form_analytics_events', { includeDeleted: false }),
 	])
 	return buildOpsDiagnosticsSnapshot({
 		forms: allForms as Array<{ status?: unknown }>,
 		responses: responses as Array<{ clientSubmissionId?: unknown }>,
 		resumeLinks: resumeLinks as Array<{ status?: unknown }>,
 		sideEffects,
+		analyticsEvents: analyticsEvents as Array<{ type?: unknown; syncStatus?: unknown }>,
 	})
 }
 

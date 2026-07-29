@@ -1,5 +1,7 @@
 export type DeliveryStatus = 'pending' | 'delivering' | 'delivered' | 'failed'
 export type DeliveryType = 'webhook' | 'email'
+export type AnalyticsEventStatus = 'pending' | 'syncing' | 'accepted' | 'failed'
+export type AnalyticsEventType = 'viewed_form' | 'started_form' | 'answered_question' | 'saved_progress' | 'submitted_form'
 
 export interface OpsDiagnosticsFormRecord {
 	status?: unknown
@@ -26,11 +28,17 @@ export interface OpsDiagnosticsDeliveryRecord {
 	nextAttemptAt?: unknown
 }
 
+export interface OpsDiagnosticsAnalyticsEventRecord {
+	type?: unknown
+	syncStatus?: unknown
+}
+
 export interface OpsDiagnosticsInput {
 	forms: OpsDiagnosticsFormRecord[]
 	responses: OpsDiagnosticsResponseRecord[]
 	resumeLinks: OpsDiagnosticsResumeLinkRecord[]
 	sideEffects: OpsDiagnosticsDeliveryRecord[]
+	analyticsEvents?: OpsDiagnosticsAnalyticsEventRecord[]
 }
 
 export type OpsDiagnostics = {
@@ -49,6 +57,11 @@ export type OpsDiagnostics = {
 		active: number
 		expired: number
 		revoked: number
+	}
+	analyticsEvents: {
+		total: number
+		byStatus: Record<AnalyticsEventStatus, number>
+		byType: Record<AnalyticsEventType, number>
 	}
 	sideEffects: {
 		total: number
@@ -70,6 +83,7 @@ export type OpsDiagnostics = {
 }
 
 export function buildOpsDiagnosticsSnapshot(input: OpsDiagnosticsInput, now = Date.now()): OpsDiagnostics {
+	const analyticsEvents = input.analyticsEvents || []
 	return {
 		generatedAt: now,
 		forms: {
@@ -86,6 +100,11 @@ export function buildOpsDiagnosticsSnapshot(input: OpsDiagnosticsInput, now = Da
 			active: input.resumeLinks.filter(link => link.status === 'active').length,
 			expired: input.resumeLinks.filter(link => link.status === 'expired').length,
 			revoked: input.resumeLinks.filter(link => link.status === 'revoked').length,
+		},
+		analyticsEvents: {
+			total: analyticsEvents.length,
+			byStatus: countBy(analyticsEvents, 'syncStatus', ['pending', 'syncing', 'accepted', 'failed']),
+			byType: countBy(analyticsEvents, 'type', ['viewed_form', 'started_form', 'answered_question', 'saved_progress', 'submitted_form']),
 		},
 		sideEffects: {
 			total: input.sideEffects.length,

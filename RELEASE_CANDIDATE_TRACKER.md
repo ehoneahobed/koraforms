@@ -77,7 +77,7 @@ Acceptance:
 
 ### 6. Production Observability
 
-Status: Partially implemented
+Status: Partially implemented - protected diagnostics now include aggregate analytics event health
 
 Scope:
 - Add owner/admin views for rejected submissions, pending side effects, webhook/email failures, and sync health.
@@ -85,6 +85,9 @@ Scope:
 
 Acceptance:
 - Support can diagnose offline queue and side-effect issues without accessing respondent payloads.
+
+Verification:
+- 2026-07-29: Protected ops diagnostics aggregates forms, accepted responses, resume links, side-effect delivery health, and analytics event health without raw payloads or visitor/session identifiers.
 
 ## P1 - Product Polish
 
