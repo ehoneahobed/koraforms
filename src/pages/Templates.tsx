@@ -224,7 +224,7 @@ export function Templates({ navigate, userId, isPublic }: TemplatesProps) {
 					onUse={(key) => navigate(userId ? `/forms/new/edit?template=${key}` : `/signup?template=${key}`)}
 					onViewDetails={(key) => {
 						setPreviewTemplate(null)
-						navigate(`/templates/${key}`)
+						navigate(userId ? `/dashboard/templates/${key}` : `/templates/${key}`)
 					}}
 					isAuthenticated={!!userId}
 				/>

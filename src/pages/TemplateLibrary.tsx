@@ -387,7 +387,7 @@ function PrivateTemplatePreview({
 	if (typeof document === 'undefined') return null
 
 	const modal = (
-		<div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+		<div className="fixed inset-0 z-50 flex items-center justify-center p-4 md:left-[264px]">
 			<div className="absolute inset-0 bg-slate-950/35 backdrop-blur-sm" onClick={onClose} />
 			<div
 				ref={dialogRef}

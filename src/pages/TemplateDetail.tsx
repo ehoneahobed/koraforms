@@ -9,6 +9,7 @@ import { getInputFields } from '../domain/forms'
 interface TemplateDetailProps {
 	templateKey: string
 	navigate: (path: string) => void
+	source?: 'public' | 'dashboard'
 }
 
 const FIELD_TYPE_LABELS: Record<string, { label: string; color: string }> = {
@@ -42,10 +43,12 @@ function estimateCompletionTime(fieldCount: number): string {
 	return minutes === 1 ? '~1 minute' : `~${minutes} minutes`
 }
 
-export function TemplateDetail({ templateKey, navigate }: TemplateDetailProps) {
+export function TemplateDetail({ templateKey, navigate, source = 'public' }: TemplateDetailProps) {
 	const { isAuthenticated } = useAuth()
 	const template = FORM_TEMPLATES[templateKey]
 	const metadata = getTemplateMetadata(templateKey)
+	const isDashboardSource = source === 'dashboard'
+	const templatesPath = isDashboardSource ? '/dashboard/templates' : '/templates'
 
 	useEffect(() => {
 		if (template) {
@@ -64,9 +67,9 @@ export function TemplateDetail({ templateKey, navigate }: TemplateDetailProps) {
 
 	if (!template) {
 		return (
-			<div className="min-h-screen bg-white dark:bg-surface-dark">
-				<NavBar navigate={navigate} isAuthenticated={isAuthenticated} />
-				<div className="mx-auto max-w-3xl px-4 sm:px-6 py-32 text-center animate-fade-in">
+			<div className={isDashboardSource ? 'min-w-0' : 'min-h-screen bg-white dark:bg-surface-dark'}>
+				{!isDashboardSource && <NavBar navigate={navigate} isAuthenticated={isAuthenticated} />}
+				<div className="mx-auto max-w-3xl px-4 py-24 text-center animate-fade-in sm:px-6">
 					<div className="w-20 h-20 rounded-2xl bg-gray-100 dark:bg-gray-800 flex items-center justify-center mx-auto mb-6">
 						<FileText className="h-9 w-9 text-gray-300 dark:text-gray-600" />
 					</div>
@@ -77,7 +80,7 @@ export function TemplateDetail({ templateKey, navigate }: TemplateDetailProps) {
 						The template you're looking for doesn't exist or may have been removed.
 					</p>
 					<button
-						onClick={() => navigate('/templates')}
+						onClick={() => navigate(templatesPath)}
 						className="inline-flex items-center gap-2 rounded-xl bg-slate-950 px-5 py-2.5 text-sm font-semibold text-white transition-smooth hover:bg-slate-800 active:scale-[0.98] dark:bg-white dark:text-slate-950 dark:hover:bg-gray-200"
 					>
 						<ArrowLeft className="h-4 w-4" />
@@ -91,19 +94,20 @@ export function TemplateDetail({ templateKey, navigate }: TemplateDetailProps) {
 	const inputFields = getInputFields(template.fields)
 	const requiredCount = metadata?.requiredFieldCount || inputFields.filter(f => f.required).length
 	const templateHref = isAuthenticated ? `/forms/new/edit?template=${templateKey}` : `/signup?template=${templateKey}`
+	const relatedTemplatePath = (key: string) => isDashboardSource ? `/dashboard/templates/${key}` : `/templates/${key}`
 
 	return (
-		<div className="min-h-screen bg-white dark:bg-surface-dark">
+		<div className={isDashboardSource ? 'min-w-0' : 'min-h-screen bg-white dark:bg-surface-dark'}>
 			{/* Navigation */}
-			<NavBar navigate={navigate} isAuthenticated={isAuthenticated} />
+			{!isDashboardSource && <NavBar navigate={navigate} isAuthenticated={isAuthenticated} />}
 
 			{/* Hero */}
-			<section className="relative overflow-hidden border-b border-gray-100 dark:border-gray-800">
+			<section className={`relative overflow-hidden ${isDashboardSource ? '' : 'border-b border-gray-100 dark:border-gray-800'}`}>
 				<div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-slate-200 to-transparent dark:via-gray-800" />
 
-				<div className="relative mx-auto max-w-4xl px-4 sm:px-6 pt-12 sm:pt-16 pb-12 sm:pb-16">
+				<div className={`relative mx-auto max-w-4xl px-4 sm:px-6 ${isDashboardSource ? 'pb-10 pt-2' : 'pb-12 pt-12 sm:pb-16 sm:pt-16'}`}>
 					<button
-						onClick={() => navigate('/templates')}
+						onClick={() => navigate(templatesPath)}
 						className="inline-flex items-center gap-1.5 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 mb-6 transition-smooth"
 					>
 						<ArrowLeft className="h-4 w-4" />
@@ -144,7 +148,7 @@ export function TemplateDetail({ templateKey, navigate }: TemplateDetailProps) {
 			</section>
 
 			{/* Content */}
-			<section className="mx-auto max-w-4xl px-4 sm:px-6 py-12 sm:py-16">
+			<section className={`mx-auto max-w-4xl px-4 sm:px-6 ${isDashboardSource ? 'pb-12' : 'py-12 sm:py-16'}`}>
 				<div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
 					{/* Field list — main content */}
 					<div className="lg:col-span-2">
@@ -316,7 +320,7 @@ export function TemplateDetail({ templateKey, navigate }: TemplateDetailProps) {
 			)}
 
 			{/* Bottom CTA */}
-			<section className="border-t border-gray-100 dark:border-gray-800 py-16 sm:py-20">
+			<section className="border-t border-gray-100 py-16 dark:border-gray-800 sm:py-20">
 				<div className="mx-auto max-w-3xl px-4 sm:px-6 text-center">
 					<h2 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-gray-100 mb-4 tracking-tight">
 						Start collecting data today
@@ -333,7 +337,7 @@ export function TemplateDetail({ templateKey, navigate }: TemplateDetailProps) {
 							<ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
 						</button>
 						<button
-							onClick={() => navigate('/templates')}
+							onClick={() => navigate(templatesPath)}
 							className="inline-flex items-center gap-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-7 py-3.5 text-base font-medium text-gray-700 dark:text-gray-300 transition-smooth hover:bg-gray-50 dark:hover:bg-gray-700 hover:border-gray-300 dark:hover:border-gray-600"
 						>
 							Browse all templates
@@ -346,7 +350,7 @@ export function TemplateDetail({ templateKey, navigate }: TemplateDetailProps) {
 				<section className="mx-auto max-w-4xl px-4 sm:px-6 pb-16">
 					<div className="mb-4 flex items-center justify-between">
 						<h2 className="text-xl font-bold tracking-tight text-gray-900 dark:text-gray-100">Related templates</h2>
-						<button onClick={() => navigate('/templates')} className="text-sm font-semibold text-slate-500 transition-smooth hover:text-slate-900 dark:text-gray-400 dark:hover:text-gray-100">
+						<button onClick={() => navigate(templatesPath)} className="text-sm font-semibold text-slate-500 transition-smooth hover:text-slate-900 dark:text-gray-400 dark:hover:text-gray-100">
 							View all
 						</button>
 					</div>
@@ -357,7 +361,7 @@ export function TemplateDetail({ templateKey, navigate }: TemplateDetailProps) {
 							return (
 								<button
 									key={key}
-									onClick={() => navigate(`/templates/${key}`)}
+									onClick={() => navigate(relatedTemplatePath(key))}
 									className="rounded-2xl border border-slate-200 bg-white p-5 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-lg hover:shadow-slate-200/60 dark:border-gray-800 dark:bg-gray-950 dark:hover:border-gray-700 dark:hover:shadow-none"
 								>
 									<FileText className="mb-4 h-5 w-5 text-slate-400" />
@@ -371,7 +375,7 @@ export function TemplateDetail({ templateKey, navigate }: TemplateDetailProps) {
 			)}
 
 			{/* Footer */}
-			<footer className="border-t border-gray-100 dark:border-gray-800 py-10">
+			{!isDashboardSource && <footer className="border-t border-gray-100 dark:border-gray-800 py-10">
 				<div className="mx-auto max-w-6xl px-4 sm:px-6">
 					<div className="flex flex-col items-center gap-6">
 						<PoweredByBadge variant="prominent" />
@@ -394,7 +398,7 @@ export function TemplateDetail({ templateKey, navigate }: TemplateDetailProps) {
 						</div>
 					</div>
 				</div>
-			</footer>
+			</footer>}
 		</div>
 	)
 }

@@ -8,6 +8,13 @@ test.describe('authenticated creator workflow', () => {
 		await expect(page.getByRole('heading', { name: /start with structure/i })).toBeVisible()
 		await expect(page.getByText(/1-9 of \d+ templates/i)).toBeVisible()
 
+		await page.goto('/dashboard/templates/rsvp', { waitUntil: 'domcontentloaded' })
+		await expect(page).toHaveURL(/\/dashboard\/templates\/rsvp$/)
+		await expect(page.getByRole('heading', { name: /^rsvp$/i })).toBeVisible()
+		await page.getByRole('button', { name: /back to templates/i }).click()
+		await expect(page).toHaveURL(/\/dashboard\/templates$/)
+		await expect(page.getByRole('heading', { name: /start with structure/i })).toBeVisible()
+
 		const rsvpCard = page.locator('article').filter({
 			has: page.getByRole('heading', { name: /^rsvp$/i }),
 		}).first()

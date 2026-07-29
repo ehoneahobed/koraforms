@@ -98,7 +98,7 @@ Verification:
 
 ### 7. Template Library Final Pass
 
-Status: Partially implemented
+Status: Completed
 
 Scope:
 - Verify private pagination, preview modal positioning, start-from-template, and public/private template navigation.
@@ -107,6 +107,11 @@ Scope:
 Acceptance:
 - Private template preview stays centered within the app shell.
 - Preview/back flows return to the correct public or authenticated template surface.
+
+Verification:
+- 2026-07-29: Added authenticated `/dashboard/templates/:templateKey` detail route so creator previews/details stay inside the workspace instead of jumping to public SEO pages.
+- 2026-07-29: Private template preview modal is centered in the authenticated content area on desktop.
+- 2026-07-29: Authenticated and public Playwright route coverage passed for template preview/detail/back flows.
 
 ### 8. Backup And Restore E2E
 

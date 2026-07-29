@@ -341,6 +341,7 @@ function AuthenticatedRoutes() {
 			<Routes>
 				<Route path="/dashboard" element={<FormList navigate={navigate} userId={user?.id || ''} />} />
 				<Route path="/dashboard/templates" element={<TemplateLibrary navigate={navigate} />} />
+				<Route path="/dashboard/templates/:templateKey" element={<DashboardTemplateDetailPage />} />
 				<Route path="/forms/new/edit" element={<FormBuilderPage navigate={navigate} userId={user?.id || ''} />} />
 				<Route path="/forms/:formId" element={<FormPageShell navigate={navigate} userId={user?.id || ''} />}>
 					<Route path="edit" element={<FormBuilderInner />} />
@@ -920,6 +921,12 @@ function TemplateDetailPage() {
 	const { templateKey } = useParams()
 	const navigate = useAppNavigate()
 	return <TemplateDetail templateKey={templateKey!} navigate={navigate} />
+}
+
+function DashboardTemplateDetailPage() {
+	const { templateKey } = useParams()
+	const navigate = useAppNavigate()
+	return <TemplateDetail templateKey={templateKey!} navigate={navigate} source="dashboard" />
 }
 
 // ---------------------------------------------------------------------------
