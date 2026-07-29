@@ -153,10 +153,15 @@ Scope:
 
 ### 11. Owner Notifications Inbox
 
-Status: Not started
+Status: Completed
 
 Scope:
 - Product-level inbox for response alerts, failed side effects, and important sync events.
+
+Verification:
+- Dashboard owner inbox derives high-signal items from synced responses, side-effect deliveries, and sanitized audit events.
+- Items are scoped to the owner workspace forms and route directly to responses, settings, or builder views.
+- Unit coverage verifies ordering, filtering, and cross-form isolation.
 
 ### 12. Response Import/Export Presets
 

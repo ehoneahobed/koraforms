@@ -25,6 +25,25 @@ export interface ResponseRecord extends Record<string, unknown> {
 	submittedAt?: number
 }
 
+export interface SideEffectDeliveryRecord extends Record<string, unknown> {
+	id?: string
+	formId?: string
+	type?: string
+	status?: string
+	attempts?: number
+	lastError?: string
+	updatedAt?: number
+	nextAttemptAt?: number
+}
+
+export interface AuditEventRecord extends Record<string, unknown> {
+	id?: string
+	formId?: string
+	eventType?: string
+	summary?: string
+	createdAt?: number
+}
+
 export interface DashboardFormGroups<T extends FormRecord> {
 	activeForms: T[]
 	archivedForms: T[]
@@ -63,6 +82,19 @@ export interface WorkspaceHealthSnapshot {
 	offlineFormsWithIssues: number
 	offlineBlockingStoreIssues: number
 	offlineRecoveryRequired: boolean
+}
+
+export type OwnerInboxItemTone = 'new' | 'warning' | 'pending' | 'muted'
+
+export interface OwnerInboxItem {
+	id: string
+	tone: OwnerInboxItemTone
+	title: string
+	description: string
+	formId: string
+	formTitle: string
+	createdAt: number
+	action: 'responses' | 'settings' | 'build'
 }
 
 export interface OfflineFormHealthInput {
@@ -203,6 +235,88 @@ export function buildDashboardResponseStats(
 	}
 
 	return { responseCountMap, newResponseCountMap, totalResponses, newResponses }
+}
+
+export function buildOwnerNotificationsInbox({
+	forms,
+	responses,
+	lastSeen,
+	sideEffectDeliveries = [],
+	auditEvents = [],
+	limit = 6,
+}: {
+	forms: readonly FormRecord[]
+	responses: readonly ResponseRecord[]
+	lastSeen: Record<string, number>
+	sideEffectDeliveries?: readonly SideEffectDeliveryRecord[]
+	auditEvents?: readonly AuditEventRecord[]
+	limit?: number
+}): OwnerInboxItem[] {
+	const formById = new Map(forms.map(form => [String(form.id), form]))
+	const stats = buildDashboardResponseStats(forms, responses, lastSeen)
+	const items: OwnerInboxItem[] = []
+
+	for (const form of forms) {
+		const formId = String(form.id)
+		const count = stats.newResponseCountMap.get(formId) || 0
+		if (count === 0) continue
+		const latest = responses
+			.filter(response => String(response.formId || '') === formId)
+			.reduce((max, response) => Math.max(max, toFiniteTimestamp(response.submittedAt)), 0)
+		items.push({
+			id: `responses:${formId}`,
+			tone: 'new',
+			title: `${count} new response${count === 1 ? '' : 's'}`,
+			description: 'Review submissions that arrived since you last opened the dashboard.',
+			formId,
+			formTitle: safeFormTitle(form),
+			createdAt: latest,
+			action: 'responses',
+		})
+	}
+
+	for (const delivery of sideEffectDeliveries) {
+		const formId = String(delivery.formId || '')
+		const form = formById.get(formId)
+		if (!form) continue
+		const status = String(delivery.status || '')
+		if (status !== 'failed' && status !== 'pending') continue
+		const type = String(delivery.type || 'integration')
+		const attempts = typeof delivery.attempts === 'number' ? delivery.attempts : 0
+		const isFailed = status === 'failed'
+		items.push({
+			id: `delivery:${String(delivery.id || `${formId}:${type}:${delivery.updatedAt || ''}`)}`,
+			tone: isFailed ? 'warning' : 'pending',
+			title: isFailed ? `${capitalize(type)} delivery failed` : `${capitalize(type)} delivery pending`,
+			description: isFailed
+				? sanitizeInline(String(delivery.lastError || `Attempted ${attempts} time${attempts === 1 ? '' : 's'}.`))
+				: 'Delivery is queued and will run without blocking response collection.',
+			formId,
+			formTitle: safeFormTitle(form),
+			createdAt: toFiniteTimestamp(delivery.updatedAt),
+			action: 'settings',
+		})
+	}
+
+	for (const event of auditEvents) {
+		const formId = String(event.formId || '')
+		const form = formById.get(formId)
+		if (!form || !isImportantAuditEvent(String(event.eventType || ''))) continue
+		items.push({
+			id: `audit:${String(event.id || `${formId}:${event.eventType}:${event.createdAt || ''}`)}`,
+			tone: 'muted',
+			title: auditEventTitle(String(event.eventType || '')),
+			description: sanitizeInline(String(event.summary || 'Workspace activity recorded.')),
+			formId,
+			formTitle: safeFormTitle(form),
+			createdAt: toFiniteTimestamp(event.createdAt),
+			action: String(event.eventType) === 'form_published' ? 'build' : 'settings',
+		})
+	}
+
+	return items
+		.sort((a, b) => b.createdAt - a.createdAt)
+		.slice(0, Math.max(0, limit))
 }
 
 export function buildWorkspaceHealthSnapshot(
@@ -465,4 +579,37 @@ export function buildRestoredResponsePayload(
 
 export function publicFormIdentifier(form: FormRecord): string {
 	return form.slug ? String(form.slug) : String(form.id)
+}
+
+function safeFormTitle(form: Pick<FormRecord, 'title' | 'id'>): string {
+	return String(form.title || 'Untitled Form').trim().slice(0, 120) || String(form.id || 'Form')
+}
+
+function sanitizeInline(value: string): string {
+	return value.trim().replace(/\s+/g, ' ').slice(0, 180)
+}
+
+function toFiniteTimestamp(value: unknown): number {
+	return typeof value === 'number' && Number.isFinite(value) ? value : 0
+}
+
+function capitalize(value: string): string {
+	return value ? `${value.charAt(0).toUpperCase()}${value.slice(1)}` : 'Integration'
+}
+
+function isImportantAuditEvent(eventType: string): boolean {
+	return eventType === 'form_published' ||
+		eventType === 'form_closed' ||
+		eventType === 'form_reopened' ||
+		eventType === 'responses_deleted'
+}
+
+function auditEventTitle(eventType: string): string {
+	switch (eventType) {
+		case 'form_published': return 'Form published'
+		case 'form_closed': return 'Form closed'
+		case 'form_reopened': return 'Form reopened'
+		case 'responses_deleted': return 'Responses deleted'
+		default: return 'Workspace activity'
+	}
 }

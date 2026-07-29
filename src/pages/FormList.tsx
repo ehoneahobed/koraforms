@@ -30,6 +30,8 @@ import {
 	AlertCircle,
 	WifiOff,
 	Upload,
+	Bell,
+	AlertTriangle,
 } from 'lucide-react'
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { FORM_TEMPLATES, TEMPLATE_CATEGORIES, createFieldsFromTemplate } from '../templates'
@@ -46,6 +48,7 @@ import {
 	buildDuplicateFormPayload,
 	buildFormExportPayload,
 	buildLastSeenMap,
+	buildOwnerNotificationsInbox,
 	buildTemplateFormPayload,
 	buildWorkspaceHealthSnapshot,
 	buildWorkspaceBackupPayload,
@@ -61,6 +64,7 @@ import {
 	workspaceBackupFilename,
 	type DashboardFilter,
 	type FormRecord,
+	type OwnerInboxItem,
 	type ResponseRecord,
 } from '../features/forms/dashboard'
 import {
@@ -110,6 +114,8 @@ export function FormList({ navigate, userId }: Props) {
 			: app.forms.where({}).orderBy('createdAt', 'desc'),
 	)
 	const allResponses = useQuery(app.responses.where({}).orderBy('submittedAt', 'desc'))
+	const allSideEffectDeliveries = useQuery(app.side_effect_deliveries.where({}).orderBy('updatedAt', 'desc'))
+	const allAuditEvents = useQuery(app.audit_events.where({}).orderBy('createdAt', 'desc'))
 	const syncStatus = useSyncStatus()
 	const { mutateAsync: deleteForm } = useMutation((id: string) => app.forms.delete(id))
 	const { mutateAsync: createForm } = useMutation(
@@ -295,6 +301,16 @@ export function FormList({ navigate, userId }: Props) {
 		() => buildWorkspaceHealthSnapshot(allForms, allResponses, lastSeen, publicOfflineDiagnostics),
 		[allForms, allResponses, lastSeen, publicOfflineDiagnostics],
 	)
+	const ownerInbox = useMemo(() => (
+		buildOwnerNotificationsInbox({
+			forms: allForms,
+			responses: allResponses,
+			lastSeen,
+			sideEffectDeliveries: allSideEffectDeliveries,
+			auditEvents: allAuditEvents,
+			limit: 5,
+		})
+	), [allAuditEvents, allForms, allResponses, allSideEffectDeliveries, lastSeen])
 
 	// Update last seen timestamps when viewing dashboard
 	useEffect(() => {
@@ -351,6 +367,14 @@ export function FormList({ navigate, userId }: Props) {
 					onBackup={handleBackupWorkspace}
 					onRestore={() => restoreInputRef.current?.click()}
 				/>
+			<OwnerInboxPanel
+				items={ownerInbox}
+				onOpen={(item) => {
+					if (item.action === 'responses') navigate(`responses/${item.formId}`)
+					else if (item.action === 'settings') navigate(`/forms/${item.formId}/edit?panel=settings`)
+					else navigate(`build/${item.formId}`)
+				}}
+			/>
 				<input
 					ref={restoreInputRef}
 					type="file"
@@ -541,6 +565,81 @@ export function FormList({ navigate, userId }: Props) {
 	)
 }
 
+function OwnerInboxPanel({
+	items,
+	onOpen,
+}: {
+	items: OwnerInboxItem[]
+	onOpen: (item: OwnerInboxItem) => void
+}) {
+	if (items.length === 0) {
+		return (
+			<section className="mb-5 rounded-2xl border border-slate-200 bg-white/70 px-5 py-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/65" aria-label="Owner notifications">
+				<div className="flex items-center justify-between gap-4">
+					<div className="flex min-w-0 items-center gap-3">
+						<div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">
+							<Bell className="h-4.5 w-4.5" />
+						</div>
+						<div className="min-w-0">
+							<p className="text-[15px] font-semibold text-slate-950 dark:text-gray-100">Nothing needs attention</p>
+							<p className="mt-1 text-[13px] text-slate-500 dark:text-gray-400">New responses, failed deliveries, and important form events will appear here.</p>
+						</div>
+					</div>
+					<span className="hidden rounded-full bg-slate-50 px-3 py-1.5 text-[12px] font-semibold text-slate-500 dark:bg-slate-950/60 dark:text-gray-400 sm:inline-flex">
+						Inbox clear
+					</span>
+				</div>
+			</section>
+		)
+	}
+
+	const priorityCount = items.filter(item => item.tone === 'warning' || item.tone === 'new').length
+
+	return (
+		<section className="mb-5 rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/70" aria-label="Owner notifications">
+			<div className="mb-3 flex items-center justify-between gap-4">
+				<div className="flex min-w-0 items-center gap-3">
+					<div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-50 text-brand-700 dark:bg-brand-950/30 dark:text-brand-300">
+						<Bell className="h-4.5 w-4.5" />
+					</div>
+					<div className="min-w-0">
+						<p className="text-[15px] font-semibold text-slate-950 dark:text-gray-100">Owner inbox</p>
+						<p className="mt-1 text-[13px] text-slate-500 dark:text-gray-400">Response activity and delivery issues that need a quick look.</p>
+					</div>
+				</div>
+				<span className="rounded-full bg-brand-50 px-3 py-1.5 text-[12px] font-semibold text-brand-700 dark:bg-brand-950/30 dark:text-brand-300">
+					{priorityCount} priority
+				</span>
+			</div>
+			<div className="grid gap-2 lg:grid-cols-5">
+				{items.map(item => (
+					<button
+						key={item.id}
+						type="button"
+						onClick={() => onOpen(item)}
+						className="group rounded-xl border border-slate-200 bg-white p-3 text-left transition-all duration-150 hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-sm dark:border-slate-800 dark:bg-slate-950/35 dark:hover:border-slate-700"
+					>
+						<div className="flex items-start gap-2.5">
+							<span className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${ownerInboxToneClass(item.tone)}`}>
+								{item.tone === 'warning' ? <AlertTriangle className="h-3.5 w-3.5" /> : item.tone === 'new' ? <InboxIcon /> : <Bell className="h-3.5 w-3.5" />}
+							</span>
+							<div className="min-w-0">
+								<p className="line-clamp-1 text-[13px] font-semibold text-slate-900 dark:text-gray-100">{item.title}</p>
+								<p className="mt-0.5 line-clamp-1 text-[12px] font-medium text-slate-500 dark:text-gray-400">{item.formTitle}</p>
+							</div>
+						</div>
+						<p className="mt-3 line-clamp-2 min-h-[32px] text-[12px] leading-relaxed text-slate-500 dark:text-gray-500">{item.description}</p>
+						<div className="mt-3 flex items-center justify-between gap-2">
+							<span className="text-[11px] font-medium text-slate-400 dark:text-gray-600">{formatInboxTime(item.createdAt)}</span>
+							<ArrowRight className="h-3.5 w-3.5 text-slate-300 transition-transform group-hover:translate-x-0.5 group-hover:text-brand-500" />
+						</div>
+					</button>
+				))}
+			</div>
+		</section>
+	)
+}
+
 function WorkspaceHealthPanel({
 	health,
 	syncStatus,
@@ -653,6 +752,30 @@ function WorkspaceHealthPanel({
 			</div>
 		</section>
 	)
+}
+
+function InboxIcon() {
+	return <TrendingUp className="h-3.5 w-3.5" />
+}
+
+function ownerInboxToneClass(tone: OwnerInboxItem['tone']) {
+	if (tone === 'warning') return 'bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300'
+	if (tone === 'new') return 'bg-brand-50 text-brand-700 dark:bg-brand-950/30 dark:text-brand-300'
+	if (tone === 'pending') return 'bg-sky-50 text-sky-700 dark:bg-sky-950/30 dark:text-sky-300'
+	return 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
+}
+
+function formatInboxTime(timestamp: number) {
+	if (!timestamp) return 'Just now'
+	const deltaMs = Date.now() - timestamp
+	if (deltaMs < 60_000) return 'Just now'
+	const minutes = Math.floor(deltaMs / 60_000)
+	if (minutes < 60) return `${minutes}m ago`
+	const hours = Math.floor(minutes / 60)
+	if (hours < 24) return `${hours}h ago`
+	const days = Math.floor(hours / 24)
+	if (days < 7) return `${days}d ago`
+	return new Date(timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
 
 function getOfflineRecoveryCopy(health: ReturnType<typeof buildWorkspaceHealthSnapshot>) {

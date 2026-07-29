@@ -5,6 +5,7 @@ import {
 	buildDuplicateFormPayload,
 	buildFormExportPayload,
 	buildLastSeenMap,
+	buildOwnerNotificationsInbox,
 	buildTemplateFormPayload,
 	buildWorkspaceHealthSnapshot,
 	buildWorkspaceBackupPayload,
@@ -59,6 +60,35 @@ test('dashboard response stats count only owned forms and mark unseen responses'
 	assert.equal(stats.newResponses, 1)
 	assert.equal(stats.responseCountMap.get('a'), 2)
 	assert.equal(stats.newResponseCountMap.get('a'), 1)
+})
+
+test('owner notifications inbox derives high-signal items from synced records', () => {
+	const inbox = buildOwnerNotificationsInbox({
+		forms,
+		responses: [
+			{ id: 'r1', formId: 'a', submittedAt: 100 },
+			{ id: 'r2', formId: 'a', submittedAt: 400 },
+			{ id: 'r3', formId: 'missing', submittedAt: 900 },
+		],
+		lastSeen: { a: 150 },
+		sideEffectDeliveries: [
+			{ id: 'd1', formId: 'a', type: 'webhook', status: 'failed', attempts: 2, lastError: 'Timeout while calling hook', updatedAt: 500 },
+			{ id: 'd2', formId: 'b', type: 'email', status: 'pending', updatedAt: 300 },
+			{ id: 'd3', formId: 'missing', type: 'webhook', status: 'failed', updatedAt: 800 },
+		],
+		auditEvents: [
+			{ id: 'e1', formId: 'a', eventType: 'form_published', summary: 'Published form', createdAt: 250 },
+			{ id: 'e2', formId: 'a', eventType: 'form_updated', summary: 'Low-value noisy event', createdAt: 600 },
+		],
+	})
+
+	assert.deepEqual(inbox.map(item => [item.id, item.tone, item.formId, item.action]), [
+		['delivery:d1', 'warning', 'a', 'settings'],
+		['responses:a', 'new', 'a', 'responses'],
+		['delivery:d2', 'pending', 'b', 'settings'],
+		['audit:e1', 'muted', 'a', 'build'],
+	])
+	assert.equal(inbox[0]?.description, 'Timeout while calling hook')
 })
 
 test('workspace health summarizes local readiness and unseen response activity', () => {
