@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { FileText, Search, ArrowRight, ChevronLeft, Sparkles, Plus, LayoutTemplate, Eye, X, Check, ExternalLink } from 'lucide-react'
 import { FORM_TEMPLATES, TEMPLATE_CATEGORIES, getTemplateMetadata, getTemplateSearchText } from '../templates'
 import { setPageMeta } from '../utils/meta'
+import { useDialogAccessibility } from '../hooks/useDialogAccessibility'
 
 interface TemplatesProps {
 	navigate: (path: string) => void
@@ -320,14 +321,7 @@ function TemplatePreviewModal({
 	isAuthenticated?: boolean
 }) {
 	const template = FORM_TEMPLATES[templateKey]
-
-	useEffect(() => {
-		const handleKeyDown = (e: KeyboardEvent) => {
-			if (e.key === 'Escape') onClose()
-		}
-		document.addEventListener('keydown', handleKeyDown)
-		return () => document.removeEventListener('keydown', handleKeyDown)
-	}, [onClose])
+	const dialogRef = useDialogAccessibility<HTMLDivElement>({ onClose })
 
 	if (!template) return null
 
@@ -341,10 +335,12 @@ function TemplatePreviewModal({
 
 			{/* Modal card */}
 			<div
+				ref={dialogRef}
 				role="dialog"
 				aria-modal="true"
 				aria-labelledby="template-preview-title"
-				className="relative w-full max-w-xl bg-white dark:bg-surface-elevated-dark rounded-2xl shadow-2xl overflow-hidden animate-fade-in"
+				tabIndex={-1}
+				className="relative w-full max-w-xl bg-white dark:bg-surface-elevated-dark rounded-2xl shadow-2xl overflow-hidden animate-fade-in outline-none"
 				onClick={(e) => e.stopPropagation()}
 			>
 				{/* Color accent */}

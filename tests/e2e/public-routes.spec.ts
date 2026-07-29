@@ -39,6 +39,7 @@ test.describe('public release routes', () => {
 		const dialog = page.getByRole('dialog')
 		await expect(dialog).toBeVisible()
 		await expect(dialog.getByRole('heading', { name: /^rsvp$/i })).toBeVisible()
+		await expect.poll(() => page.evaluate(() => document.activeElement?.getAttribute('aria-label'))).toBe('Close preview')
 
 		const box = await dialog.boundingBox()
 		const viewport = page.viewportSize()
@@ -49,6 +50,11 @@ test.describe('public release routes', () => {
 			expect(Math.abs(modalCenter - viewport.width / 2)).toBeLessThan(8)
 		}
 
+		await page.keyboard.press('Escape')
+		await expect(dialog).toBeHidden()
+
+		await page.getByRole('button', { name: /rsvp/i }).first().click()
+		await expect(dialog).toBeVisible()
 		await dialog.getByRole('button', { name: /view full details/i }).click()
 		await expect(page).toHaveURL(/\/templates\/rsvp$/)
 		await expect(page.getByRole('heading', { name: /^rsvp$/i })).toBeVisible()

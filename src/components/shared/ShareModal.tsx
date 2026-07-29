@@ -4,6 +4,7 @@ import { copyToClipboard as copyText } from '../../utils/clipboard'
 import { downloadDataUrl } from '../../utils/download'
 import { buildEmbedCode, qrCodeFilename, type EmbedMode } from '../../utils/embed'
 import { createQrDataUrl } from '../../utils/qr'
+import { useDialogAccessibility } from '../../hooks/useDialogAccessibility'
 
 interface Props {
 	slug: string
@@ -21,6 +22,7 @@ export function ShareModal({ slug, title, onClose }: Props) {
 	const [qrDataUrl, setQrDataUrl] = useState<string>('')
 	const formUrl = `${window.location.origin}/f/${slug}`
 	const baseUrl = window.location.origin
+	const dialogRef = useDialogAccessibility<HTMLDivElement>({ onClose })
 
 	// Generate QR code
 	useEffect(() => {
@@ -51,10 +53,17 @@ export function ShareModal({ slug, title, onClose }: Props) {
 	return (
 		<>
 			<div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-			<div className="fixed inset-x-0 bottom-0 sm:inset-x-4 sm:bottom-auto sm:top-[15%] z-50 sm:mx-auto max-w-lg rounded-t-2xl sm:rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-2xl animate-slide-up sm:animate-scale-in max-h-[85vh] overflow-y-auto">
+			<div
+				ref={dialogRef}
+				role="dialog"
+				aria-modal="true"
+				aria-labelledby="share-dialog-title"
+				tabIndex={-1}
+				className="fixed inset-x-0 bottom-0 sm:inset-x-4 sm:bottom-auto sm:top-[15%] z-50 sm:mx-auto max-w-lg rounded-t-2xl sm:rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-2xl animate-slide-up sm:animate-scale-in max-h-[85vh] overflow-y-auto outline-none"
+			>
 				{/* Header */}
 				<div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-gray-800">
-					<h2 className="text-base font-semibold text-gray-900 dark:text-gray-100">
+					<h2 id="share-dialog-title" className="text-base font-semibold text-gray-900 dark:text-gray-100">
 						Share "{title}"
 					</h2>
 					<button

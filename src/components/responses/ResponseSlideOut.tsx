@@ -11,6 +11,7 @@ import {
 	responseFields,
 } from '../../features/responses/utils'
 import { copyToClipboard as copyTextToClipboard } from '../../utils/clipboard'
+import { useDialogAccessibility } from '../../hooks/useDialogAccessibility'
 
 interface ResponseSlideOutProps {
 	responseId: string
@@ -40,11 +41,11 @@ export function ResponseSlideOut({
 	const meta = parseResponseMeta(response || {})
 	const uaInfo = meta?.ua ? parseUA(meta.ua) : null
 	const submittedAt = response?.submittedAt ? new Date(Number(response.submittedAt)) : null
+	const dialogRef = useDialogAccessibility<HTMLDivElement>({ onClose, initialFocus: 'dialog' })
 
 	useEffect(() => {
 		const handleKeyDown = (event: KeyboardEvent) => {
-			if (event.key === 'Escape') onClose()
-			else if (event.key === 'ArrowUp' && hasPrev) onNavigate(String(responses[currentIndex - 1]?.id))
+			if (event.key === 'ArrowUp' && hasPrev) onNavigate(String(responses[currentIndex - 1]?.id))
 			else if (event.key === 'ArrowDown' && hasNext) onNavigate(String(responses[currentIndex + 1]?.id))
 		}
 		window.addEventListener('keydown', handleKeyDown)
@@ -82,10 +83,17 @@ export function ResponseSlideOut({
 				onClick={onClose}
 			/>
 
-			<div className="fixed inset-y-0 right-0 z-50 w-full max-w-[420px] bg-white dark:bg-surface-elevated-dark shadow-2xl flex flex-col animate-slide-in-right">
+			<div
+				ref={dialogRef}
+				role="dialog"
+				aria-modal="true"
+				aria-labelledby="response-slideout-title"
+				tabIndex={-1}
+				className="fixed inset-y-0 right-0 z-50 w-full max-w-[420px] bg-white dark:bg-surface-elevated-dark shadow-2xl flex flex-col animate-slide-in-right outline-none"
+			>
 				<div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-gray-800 shrink-0">
 					<div className="min-w-0">
-						<h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+						<h2 id="response-slideout-title" className="text-lg font-semibold text-gray-900 dark:text-gray-100">
 							Response #{responseNumber}
 						</h2>
 						{submittedAt && (
@@ -96,6 +104,7 @@ export function ResponseSlideOut({
 					</div>
 					<button
 						onClick={onClose}
+						aria-label="Close response details"
 						className="w-8 h-8 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 flex items-center justify-center transition-colors shrink-0"
 					>
 						<X className="h-4 w-4 text-gray-400" />
@@ -108,6 +117,7 @@ export function ResponseSlideOut({
 						<button
 							onClick={() => hasPrev && onNavigate(String(responses[currentIndex - 1]?.id))}
 							disabled={!hasPrev}
+							aria-label="Previous response"
 							className="w-7 h-7 rounded-md flex items-center justify-center text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
 						>
 							<ChevronLeft className="h-4 w-4" />
@@ -115,6 +125,7 @@ export function ResponseSlideOut({
 						<button
 							onClick={() => hasNext && onNavigate(String(responses[currentIndex + 1]?.id))}
 							disabled={!hasNext}
+							aria-label="Next response"
 							className="w-7 h-7 rounded-md flex items-center justify-center text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
 						>
 							<ChevronRight className="h-4 w-4" />

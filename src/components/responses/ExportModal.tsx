@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Download, FileJson, FileSpreadsheet, X } from 'lucide-react'
 import type { FormField } from '../../types'
 import { responseFields } from '../../features/responses/utils'
+import { useDialogAccessibility } from '../../hooks/useDialogAccessibility'
 
 type ExportFormat = 'csv' | 'json'
 
@@ -27,6 +28,7 @@ export function ExportModal({
 		new Set(responseFields(fields).map(field => field.id)),
 	)
 	const [includeMetadata, setIncludeMetadata] = useState(true)
+	const dialogRef = useDialogAccessibility<HTMLDivElement>({ onClose })
 
 	const dataFields = responseFields(fields)
 
@@ -49,10 +51,21 @@ export function ExportModal({
 	return (
 		<div className="fixed inset-0 z-50 flex items-center justify-center" onClick={event => { if (event.target === event.currentTarget) onClose() }}>
 			<div className="absolute inset-0 bg-black/40 backdrop-blur-sm animate-fade-in" />
-			<div className="relative z-10 w-full max-w-md mx-4 bg-white dark:bg-surface-elevated-dark rounded-2xl shadow-2xl overflow-hidden animate-fade-in">
+			<div
+				ref={dialogRef}
+				role="dialog"
+				aria-modal="true"
+				aria-labelledby="export-dialog-title"
+				tabIndex={-1}
+				className="relative z-10 w-full max-w-md mx-4 bg-white dark:bg-surface-elevated-dark rounded-2xl shadow-2xl overflow-hidden animate-fade-in outline-none"
+			>
 				<div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-gray-800">
-					<h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Export responses</h2>
-					<button onClick={onClose} className="w-8 h-8 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 flex items-center justify-center transition-colors">
+					<h2 id="export-dialog-title" className="text-lg font-semibold text-gray-900 dark:text-gray-100">Export responses</h2>
+					<button
+						onClick={onClose}
+						aria-label="Close export dialog"
+						className="w-8 h-8 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 flex items-center justify-center transition-colors"
+					>
 						<X className="h-4 w-4 text-gray-400" />
 					</button>
 				</div>

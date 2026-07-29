@@ -22,6 +22,7 @@ import {
 } from '../templates'
 import { setPageMeta } from '../utils/meta'
 import { readJsonFromStorage, writeJsonToStorage } from '../utils/storage'
+import { useDialogAccessibility } from '../hooks/useDialogAccessibility'
 
 interface TemplateLibraryProps {
 	navigate: (path: string) => void
@@ -380,6 +381,7 @@ function PrivateTemplatePreview({
 }) {
 	const template = FORM_TEMPLATES[templateKey]
 	const metadata = getTemplateMetadata(templateKey)
+	const dialogRef = useDialogAccessibility<HTMLDivElement>({ onClose })
 	if (!template || !metadata) return null
 
 	if (typeof document === 'undefined') return null
@@ -388,10 +390,12 @@ function PrivateTemplatePreview({
 		<div className="fixed inset-0 z-50 flex items-center justify-center p-4">
 			<div className="absolute inset-0 bg-slate-950/35 backdrop-blur-sm" onClick={onClose} />
 			<div
+				ref={dialogRef}
 				role="dialog"
 				aria-modal="true"
 				aria-labelledby="private-template-preview-title"
-				className="relative flex max-h-[88vh] w-full max-w-5xl flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl shadow-slate-900/20 dark:border-gray-800 dark:bg-gray-950"
+				tabIndex={-1}
+				className="relative flex max-h-[88vh] w-full max-w-5xl flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl shadow-slate-900/20 outline-none dark:border-gray-800 dark:bg-gray-950"
 			>
 				<div className="flex items-start justify-between gap-4 border-b border-slate-100 px-6 py-5 dark:border-gray-900">
 					<div className="min-w-0">
