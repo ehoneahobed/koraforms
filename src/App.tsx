@@ -274,6 +274,12 @@ function AuthenticatedLayout() {
 
 	return (
 		<div className="min-h-screen overflow-x-hidden bg-surface dark:bg-surface-dark transition-colors duration-200">
+			<a
+				href="#main-content"
+				className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[80] focus:rounded-xl focus:bg-slate-950 focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:text-white focus:shadow-lg dark:focus:bg-white dark:focus:text-slate-950"
+			>
+				Skip to content
+			</a>
 			{/* Mobile top bar */}
 			<header className="sticky top-0 z-40 md:hidden bg-white/80 dark:bg-surface-dark/80 backdrop-blur-xl border-b border-gray-100 dark:border-gray-800/60">
 				<div className="flex items-center justify-between px-4 h-12">
@@ -321,7 +327,7 @@ function AuthenticatedLayout() {
 			</aside>
 
 			{/* Main content area */}
-			<main className="min-w-0 overflow-x-hidden md:ml-[264px]">
+			<main id="main-content" tabIndex={-1} className="min-w-0 overflow-x-hidden outline-none md:ml-[264px]">
 				<div className="mx-auto w-full max-w-[1440px] box-border px-4 sm:px-8 lg:px-10 py-8 sm:py-10">
 					<div className="min-w-0 animate-fade-in">
 						<AuthenticatedRoutes />

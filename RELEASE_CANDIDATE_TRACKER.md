@@ -129,7 +129,7 @@ Verification:
 
 ### 9. Accessibility Pass
 
-Status: In progress - primary overlays now share accessible dialog behavior
+Status: Completed for release-candidate core workflows
 
 Scope:
 - Audit keyboard navigation, focus states, modal traps, builder sidebars, response tables, public fill flow, and public pages.
@@ -139,6 +139,8 @@ Acceptance:
 
 Verification:
 - 2026-07-29: Share, export, response detail, and template preview overlays now expose modal dialog semantics, restore focus on close, trap keyboard focus, and close with Escape.
+- 2026-07-29: Authenticated shell now includes a keyboard-visible skip link and focusable main landmark.
+- 2026-07-29: Focused public route accessibility coverage verifies modal focus, Escape close, and centered preview behavior.
 
 ## P2 - Competitive Enhancements
 
