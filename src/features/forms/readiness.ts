@@ -9,6 +9,7 @@ export interface ReadinessCheck {
 	label: string
 	status: ReadinessCheckStatus
 	detail: string
+	category: 'core' | 'optional'
 }
 
 export interface PublicFormReadiness {
@@ -18,6 +19,10 @@ export interface PublicFormReadiness {
 	checks: ReadinessCheck[]
 	blockedCount: number
 	warningCount: number
+	coreBlockedCount: number
+	coreWarningCount: number
+	optionalBlockedCount: number
+	optionalWarningCount: number
 }
 
 export function buildPublicFormReadiness(params: {
@@ -42,6 +47,7 @@ export function buildPublicFormReadiness(params: {
 		{
 			id: 'identity',
 			label: 'Public identity',
+			category: 'core',
 			status: params.title.trim() && (params.slug.trim() || params.status !== 'published') ? 'ready' : 'blocked',
 			detail: params.title.trim()
 				? params.slug.trim() || params.status !== 'published'
@@ -52,6 +58,7 @@ export function buildPublicFormReadiness(params: {
 		{
 			id: 'fields',
 			label: 'Questions',
+			category: 'core',
 			status: responseFields.length > 0 ? 'ready' : 'blocked',
 			detail: responseFields.length > 0
 				? `${responseFields.length} answerable field${responseFields.length === 1 ? '' : 's'} will collect responses.`
@@ -60,6 +67,7 @@ export function buildPublicFormReadiness(params: {
 		{
 			id: 'required-fields',
 			label: 'Required path',
+			category: 'core',
 			status: requiredFields.length > 0 ? 'ready' : 'warning',
 			detail: requiredFields.length > 0
 				? `${requiredFields.length} required field${requiredFields.length === 1 ? '' : 's'} define completion.`
@@ -68,6 +76,7 @@ export function buildPublicFormReadiness(params: {
 		{
 			id: 'schedule',
 			label: 'Schedule',
+			category: 'core',
 			status: opensAt > 0 && closesAt > 0 && closesAt <= opensAt ? 'blocked' : closesAt > 0 && closesAt < now ? 'warning' : 'ready',
 			detail: opensAt > 0 && closesAt > 0 && closesAt <= opensAt
 				? 'The close time must be after the open time.'
@@ -78,6 +87,7 @@ export function buildPublicFormReadiness(params: {
 		{
 			id: 'offline',
 			label: 'Offline readiness',
+			category: 'core',
 			status: params.hasPassword ? 'warning' : 'ready',
 			detail: params.hasPassword
 				? 'Password-protected forms are secure, but field teams should prepare them online before offline use.'
@@ -86,6 +96,7 @@ export function buildPublicFormReadiness(params: {
 		{
 			id: 'limits',
 			label: 'Response limit',
+			category: 'core',
 			status: Number(params.settings.maxResponses || 0) < 0 ? 'blocked' : 'ready',
 			detail: Number(params.settings.maxResponses || 0) > 0
 				? `The form will stop after ${Number(params.settings.maxResponses)} accepted response${Number(params.settings.maxResponses) === 1 ? '' : 's'}.`
@@ -94,9 +105,10 @@ export function buildPublicFormReadiness(params: {
 		{
 			id: 'integrations',
 			label: 'Integrations',
-			status: invalidWebhooks.length > 0 ? 'blocked' : 'ready',
+			category: 'optional',
+			status: invalidWebhooks.length > 0 ? 'warning' : 'ready',
 			detail: invalidWebhooks.length > 0
-				? 'Active webhooks must use HTTPS public URLs.'
+				? 'Active webhooks need HTTPS public URLs before integration delivery can run.'
 				: activeWebhooks.length > 0
 					? `${activeWebhooks.length} active webhook${activeWebhooks.length === 1 ? '' : 's'} will receive submissions.`
 					: 'Webhooks are optional. Responses will still be stored locally and synced.',
@@ -104,6 +116,7 @@ export function buildPublicFormReadiness(params: {
 		{
 			id: 'first-question',
 			label: 'First question',
+			category: 'core',
 			status: responseFields[0] ? 'ready' : 'blocked',
 			detail: responseFields[0]
 				? `Respondents start with "${staticFieldLabel(responseFields[0])}".`
@@ -113,18 +126,28 @@ export function buildPublicFormReadiness(params: {
 
 	const blockedCount = checks.filter(check => check.status === 'blocked').length
 	const warningCount = checks.filter(check => check.status === 'warning').length
-	const status: ReadinessCheckStatus = blockedCount > 0 ? 'blocked' : warningCount > 0 ? 'warning' : 'ready'
-	const score = Math.round((checks.filter(check => check.status === 'ready').length / checks.length) * 100)
+	const coreChecks = checks.filter(check => check.category === 'core')
+	const optionalChecks = checks.filter(check => check.category === 'optional')
+	const coreBlockedCount = coreChecks.filter(check => check.status === 'blocked').length
+	const coreWarningCount = coreChecks.filter(check => check.status === 'warning').length
+	const optionalBlockedCount = optionalChecks.filter(check => check.status === 'blocked').length
+	const optionalWarningCount = optionalChecks.filter(check => check.status === 'warning').length
+	const status: ReadinessCheckStatus = coreBlockedCount > 0 ? 'blocked' : coreWarningCount > 0 ? 'warning' : 'ready'
+	const score = Math.round((coreChecks.filter(check => check.status === 'ready').length / coreChecks.length) * 100)
 	return {
 		status,
 		score,
 		summary: status === 'blocked'
 			? 'Fix blocked items before sharing this form publicly.'
 			: status === 'warning'
-				? 'The form can be shared, but review the warnings for a stronger field experience.'
+				? 'The form can collect responses, but review the core warnings for a stronger field experience.'
 				: 'This form is ready for public and offline use.',
 		checks,
 		blockedCount,
 		warningCount,
+		coreBlockedCount,
+		coreWarningCount,
+		optionalBlockedCount,
+		optionalWarningCount,
 	}
 }

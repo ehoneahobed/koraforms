@@ -23,6 +23,9 @@ test('public form readiness marks a complete published form as ready', () => {
 	assert.equal(readiness.score, 100)
 	assert.equal(readiness.blockedCount, 0)
 	assert.equal(readiness.warningCount, 0)
+	assert.equal(readiness.coreBlockedCount, 0)
+	assert.equal(readiness.coreWarningCount, 0)
+	assert.equal(readiness.optionalWarningCount, 0)
 	assert.ok(readiness.checks.some(check => check.id === 'integrations' && check.status === 'ready'))
 })
 
@@ -44,7 +47,29 @@ test('public form readiness blocks forms that cannot collect answers safely', ()
 	assert.equal(readiness.status, 'blocked')
 	assert.ok(readiness.checks.some(check => check.id === 'fields' && check.status === 'blocked'))
 	assert.ok(readiness.checks.some(check => check.id === 'schedule' && check.status === 'blocked'))
-	assert.ok(readiness.checks.some(check => check.id === 'integrations' && check.status === 'blocked'))
+	assert.ok(readiness.checks.some(check => check.id === 'integrations' && check.status === 'warning'))
+	assert.equal(readiness.optionalWarningCount, 1)
+})
+
+test('public form readiness does not reduce core score for optional integration warnings', () => {
+	const readiness = buildPublicFormReadiness({
+		title: 'RSVP',
+		status: 'published',
+		slug: 'rsvp',
+		fields,
+		settings: {
+			webhooks: [{ url: 'http://localhost/hook', active: true }],
+		},
+		hasPassword: false,
+		now: new Date('2026-01-01T12:00:00Z').getTime(),
+	})
+
+	assert.equal(readiness.status, 'ready')
+	assert.equal(readiness.score, 100)
+	assert.equal(readiness.coreBlockedCount, 0)
+	assert.equal(readiness.coreWarningCount, 0)
+	assert.equal(readiness.optionalWarningCount, 1)
+	assert.ok(readiness.checks.some(check => check.id === 'integrations' && check.status === 'warning' && check.category === 'optional'))
 })
 
 test('public form readiness warns for choices that reduce field-use confidence', () => {
@@ -62,4 +87,5 @@ test('public form readiness warns for choices that reduce field-use confidence',
 	assert.ok(readiness.checks.some(check => check.id === 'required-fields' && check.status === 'warning'))
 	assert.ok(readiness.checks.some(check => check.id === 'offline' && check.status === 'warning'))
 	assert.ok(readiness.checks.some(check => check.id === 'integrations' && check.status === 'ready'))
+	assert.equal(readiness.coreWarningCount, 2)
 })

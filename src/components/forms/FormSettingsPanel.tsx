@@ -172,7 +172,10 @@ export function FormSettingsPanel({
 							</div>
 							<p className="mt-3 text-[13px] leading-relaxed text-slate-500 dark:text-gray-400">{readiness.summary}</p>
 							<p className="mt-3 text-[12px] font-medium text-slate-400 dark:text-gray-500">
-								{readiness.blockedCount} blocked · {readiness.warningCount} warning{readiness.warningCount === 1 ? '' : 's'}
+								{readiness.coreBlockedCount} core blocked · {readiness.coreWarningCount} core warning{readiness.coreWarningCount === 1 ? '' : 's'}
+								{readiness.optionalWarningCount > 0
+									? ` · ${readiness.optionalWarningCount} optional warning${readiness.optionalWarningCount === 1 ? '' : 's'}`
+									: ''}
 							</p>
 						</div>
 						<div className="grid gap-px bg-slate-100 dark:bg-gray-800 sm:grid-cols-2">
