@@ -81,10 +81,10 @@ Verification:
 
 ### 6. Production Observability
 
-Status: Partially implemented - protected diagnostics now include aggregate analytics event health
+Status: Completed for release-candidate protected diagnostics
 
 Scope:
-- Add owner/admin views for rejected submissions, pending side effects, webhook/email failures, and sync health.
+- Add protected diagnostics for rejected submissions, pending side effects, webhook/email failures, and sync health.
 - Keep diagnostics support-safe: no raw answers, passwords, tokens, or webhook secrets.
 
 Acceptance:
@@ -92,6 +92,7 @@ Acceptance:
 
 Verification:
 - 2026-07-29: Protected ops diagnostics aggregates forms, accepted responses, resume links, side-effect delivery health, and analytics event health without raw payloads or visitor/session identifiers.
+- 2026-07-29: Added `OPERATIONS_RUNBOOK.md` with deployment checks, diagnostics interpretation, incident response steps, Azure commands, and support-safety boundaries.
 
 ## P1 - Product Polish
 

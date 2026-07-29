@@ -94,6 +94,8 @@ az containerapp logs show --name koraforms --resource-group koraforms-rg --follo
 
 Visit the URL in a browser. You should see the KoraForms landing page.
 
+For interpretation, incident checks, token rotation, and support-safety rules, use [OPERATIONS_RUNBOOK.md](/Users/ehoneahobed/Work/koraforms/OPERATIONS_RUNBOOK.md).
+
 ---
 
 ## Step 5: Set Up CI/CD (auto-deploy on push)
