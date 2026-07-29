@@ -184,10 +184,15 @@ Scope:
 
 ### 14. Public Results Customization
 
-Status: Not started
+Status: Completed
 
 Scope:
 - Creator-controlled public result displays with privacy guardrails.
+
+Verification:
+- Creators can choose summary-only or summary-plus-text public results, hide empty fields, and hide respondent counts.
+- Public result payloads are sanitized server-side before delivery, so contact, URL, file, signature, calculated, and hidden fields are never exposed by configuration mistakes.
+- Unit coverage verifies default display settings and sanitization behavior.
 
 ### 15. Advanced Duplicate Detection
 

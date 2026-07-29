@@ -329,6 +329,36 @@ export function FormSettingsPanel({
 								disabled={!settings.publicResults}
 								onChange={(checked) => updateSetting('showResultsAfterSubmit', checked)}
 							/>
+							{settings.publicResults && (
+								<div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-gray-800 dark:bg-gray-900/55">
+									<label className="block">
+										<span className="mb-1.5 block text-[12px] font-medium text-slate-500 dark:text-gray-400">Public results display</span>
+										<select
+											value={settings.publicResultsMode === 'summary_text' ? 'summary_text' : 'summary'}
+											onChange={(event) => updateSetting('publicResultsMode', event.target.value as FormSettingsType['publicResultsMode'])}
+											className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[13px] font-semibold text-slate-700 outline-none focus:border-brand-300 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300"
+										>
+											<option value="summary">Summary only</option>
+											<option value="summary_text">Summary plus text excerpts</option>
+										</select>
+									</label>
+									<p className="mt-2 text-[12px] leading-relaxed text-slate-500 dark:text-gray-500">
+										Contact, URL, file, signature, calculated, and hidden values are never exposed on public results.
+									</p>
+									<div className="mt-3 space-y-3">
+										<SettingsCheckbox
+											label="Show respondent count"
+											checked={settings.publicResultsShowRespondentCount !== false}
+											onChange={(checked) => updateSetting('publicResultsShowRespondentCount', checked)}
+										/>
+										<SettingsCheckbox
+											label="Show fields with no public answers"
+											checked={settings.publicResultsShowEmpty === true}
+											onChange={(checked) => updateSetting('publicResultsShowEmpty', checked)}
+										/>
+									</div>
+								</div>
+							)}
 							<label className="block">
 								<span className="mb-1.5 block text-[12px] font-medium text-slate-500 dark:text-gray-400">Response limit</span>
 								<input

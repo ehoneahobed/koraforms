@@ -6,6 +6,7 @@ import { setPageMeta } from '../utils/meta'
 import { InlineLoader } from '../components/shared/BrandLoader'
 import { PoweredByBadge } from '../components/shared/PoweredByBadge'
 import { getResponseFields, parseFormFields, parseResponseData } from '../domain/forms'
+import { isPublicResultsFieldVisible, publicResultsDisplaySettings, type PublicResultsDisplaySettings } from '../domain/publicResults'
 
 interface Props {
 	slug: string
@@ -19,6 +20,7 @@ interface ResultsData {
 		description: string
 		fields: string
 		theme: string
+		results?: PublicResultsDisplaySettings
 	}
 	responses: { data: string; submittedAt: number }[]
 	pagination?: {
@@ -66,8 +68,13 @@ export function PublicResults({ slug, navigate }: Props) {
 	}
 
 	const fields: FormField[] = parseFormFields(data.form.fields)
-
+	const displaySettings = data.form.results || publicResultsDisplaySettings({})
+	const visibleFields = getResponseFields(fields).filter(field => isPublicResultsFieldVisible(field, displaySettings))
 	const responses = data.responses
+	const resultFields = visibleFields.map(field => {
+		const values = responses.map(r => parseResponseData(r.data)[field.id] || '').filter(Boolean)
+		return { field, values }
+	}).filter(({ values }) => values.length > 0 || displaySettings.showEmptyFields)
 	const hasMoreResults = data.pagination?.hasMore === true
 	const themeVars = getThemeCSSVars(data.form.theme || 'blue')
 
@@ -83,14 +90,16 @@ export function PublicResults({ slug, navigate }: Props) {
 						<p className="text-sm text-gray-500 dark:text-gray-400">{data.form.description}</p>
 					)}
 					<div className="flex items-center gap-4 mt-4 text-sm text-gray-400 dark:text-gray-500">
-						<span className="flex items-center gap-1.5">
-							<Users className="h-4 w-4" />
-							{responses.length} response{responses.length !== 1 ? 's' : ''}
-							{hasMoreResults ? ' shown' : ''}
-						</span>
+						{displaySettings.showRespondentCount && (
+							<span className="flex items-center gap-1.5">
+								<Users className="h-4 w-4" />
+								{responses.length} response{responses.length !== 1 ? 's' : ''}
+								{hasMoreResults ? ' shown' : ''}
+							</span>
+						)}
 						<span className="flex items-center gap-1.5">
 							<BarChart3 className="h-4 w-4" />
-							Live results
+							{displaySettings.mode === 'summary_text' ? 'Summaries and selected text' : 'Summary results'}
 						</span>
 					</div>
 					{hasMoreResults && (
@@ -103,31 +112,34 @@ export function PublicResults({ slug, navigate }: Props) {
 
 			{/* Results */}
 			<div className="max-w-3xl mx-auto px-4 py-8 space-y-6">
-				{getResponseFields(fields).map(field => {
-					const allValues = responses.map(r => {
-						return parseResponseData(r.data)[field.id] || ''
-					}).filter(Boolean)
-
+				{resultFields.map(({ field, values }) => {
 					return (
 						<div key={field.id} className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-surface-elevated-dark p-5">
 							<h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-1">
 								{field.label || field.id}
 							</h3>
 							<p className="text-xs text-gray-400 dark:text-gray-500 mb-4">
-								{allValues.length} response{allValues.length !== 1 ? 's' : ''}
+								{values.length} response{values.length !== 1 ? 's' : ''}
 							</p>
 
 							{/* Choice-based fields → bar chart */}
 							{['radio', 'select', 'checkbox', 'yesno'].includes(field.type) ? (
-								<ChoiceBarChart values={allValues} field={field} />
+								<ChoiceBarChart values={values} field={field} />
 							) : ['rating', 'scale', 'number'].includes(field.type) ? (
-								<NumericSummary values={allValues} />
+								<NumericSummary values={values} />
 							) : (
-								<TextResponses values={allValues} />
+								<TextResponses values={values} />
 							)}
 						</div>
 					)
 				})}
+				{resultFields.length === 0 && (
+					<div className="rounded-xl border border-gray-200 bg-white p-8 text-center dark:border-gray-800 dark:bg-surface-elevated-dark">
+						<BarChart3 className="mx-auto h-8 w-8 text-gray-300 dark:text-gray-700" />
+						<h2 className="mt-3 text-lg font-semibold text-gray-900 dark:text-gray-100">No public fields selected</h2>
+						<p className="mt-1 text-sm text-gray-500 dark:text-gray-400">The owner is sharing this results page without exposing individual answer fields.</p>
+					</div>
+				)}
 
 				<div className="pt-4 flex justify-center">
 					<PoweredByBadge slug={slug} variant="prominent" />

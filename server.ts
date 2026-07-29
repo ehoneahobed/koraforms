@@ -20,6 +20,7 @@ import type { UserStore } from '@korajs/auth/server'
 import type { ProductionHttpRouteContext, ProductionHttpRouteRequest, ProductionHttpRouteResponse } from '@korajs/server'
 import { isResponseField, parseFormFields, parseFormSettings, safeJsonParse, serializeFormSettings } from './src/domain/forms'
 import { hasFormAccessPasswordSecret, stripFormAccessSecrets, verifyFormAccessPasswordSecret } from './src/domain/formPassword'
+import { publicResultsDisplaySettings, sanitizePublicResultsResponseData } from './src/domain/publicResults'
 import { buildPublicResponseRejectionLogEvent } from './src/domain/publicResponseDiagnostics'
 import { evaluatePublicResponseAcceptance } from './src/domain/responseAcceptance'
 import { validatePublishedResponsePayload } from './src/domain/responseValidation'
@@ -27,13 +28,15 @@ import { buildEmailNotificationPayload, buildSideEffectDeliveryJobs, buildWebhoo
 import { buildOpsDiagnosticsSnapshot } from './src/domain/opsDiagnostics'
 import type { FormField, FormSettings } from './src/types'
 type AnalyticsEventMetadata = Record<string, unknown>
+type SavedAnalyticsFilters = Array<{ fieldId: string; value: string }>
+type ResponseExportPresetConfig = { selectedFieldIds: string[]; includeMetadata: boolean }
 
 // ---------------------------------------------------------------------------
 // KoraForms schema (shared between client and server for materialized tables)
 // ---------------------------------------------------------------------------
 
 const koraFormsSchema = defineSchema({
-	version: 16,
+	version: 18,
 	collections: {
 		forms: {
 			fields: {
@@ -100,6 +103,40 @@ const koraFormsSchema = defineSchema({
 				type: 'unique',
 				fields: ['formId', 'clientEventId'],
 				onConflict: 'first-write-wins',
+			}],
+		},
+		response_filter_views: {
+			fields: {
+				formId: t.string(),
+				ownerId: t.string().default(''),
+				name: t.string(),
+				timeRange: t.enum(['7d', '14d', '30d', '90d', 'all']).default('30d'),
+				filters: t.json<SavedAnalyticsFilters>().default([]),
+				createdAt: t.number(),
+				updatedAt: t.number(),
+			},
+			indexes: ['formId', 'ownerId', 'updatedAt'],
+			constraints: [{
+				type: 'unique',
+				fields: ['formId', 'ownerId', 'name'],
+				onConflict: 'last-write-wins',
+			}],
+		},
+		response_export_presets: {
+			fields: {
+				formId: t.string(),
+				ownerId: t.string().default(''),
+				name: t.string(),
+				format: t.enum(['csv', 'json']).default('csv'),
+				config: t.json<ResponseExportPresetConfig>().default({ selectedFieldIds: [], includeMetadata: true }),
+				createdAt: t.number(),
+				updatedAt: t.number(),
+			},
+			indexes: ['formId', 'ownerId', 'updatedAt'],
+			constraints: [{
+				type: 'unique',
+				fields: ['formId', 'ownerId', 'name'],
+				onConflict: 'last-write-wins',
 			}],
 		},
 		public_form_versions: {
@@ -897,6 +934,8 @@ async function main(): Promise<void> {
 						if (!formSettings.publicResults) {
 							return withCors({ status: 403, body: { error: 'Results are not public for this form' } })
 						}
+						const fields = parseFormFields(form.fields)
+						const displaySettings = publicResultsDisplaySettings(formSettings)
 						const responses = await req.kora.query('responses', {
 							where: { formId: String(form.id) },
 							limit: resultLimit + 1,
@@ -905,8 +944,18 @@ async function main(): Promise<void> {
 						return withCors({
 							status: 200,
 							body: {
-								form: { id: form.id, title: form.title, description: form.description, fields: form.fields, theme: form.theme },
-								responses: visibleResponses.map(r => ({ data: r.data, submittedAt: r.submittedAt })),
+								form: {
+									id: form.id,
+									title: form.title,
+									description: form.description,
+									fields: JSON.stringify(fields),
+									theme: form.theme,
+									results: displaySettings,
+								},
+								responses: visibleResponses.map(r => ({
+									data: JSON.stringify(sanitizePublicResultsResponseData(fields, r.data, displaySettings)),
+									submittedAt: r.submittedAt,
+								})),
 								pagination: {
 									limit: resultLimit,
 									returned: visibleResponses.length,

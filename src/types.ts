@@ -67,6 +67,9 @@ export interface FormSettings {
 	// Public results
 	publicResults?: boolean
 	showResultsAfterSubmit?: boolean
+	publicResultsMode?: 'summary' | 'summary_text'
+	publicResultsShowEmpty?: boolean
+	publicResultsShowRespondentCount?: boolean
 	// Multi-language
 	languages?: string[]
 	defaultLanguage?: string
