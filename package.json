@@ -9,7 +9,7 @@
     "dev:e2e": "vite --host 127.0.0.1 --port 4175 --strictPort",
     "dev:server": "node --import tsx --watch server.ts",
     "build": "vite build",
-    "preview:e2e": "pnpm run build && vite preview --host 127.0.0.1 --port 4175 --strictPort",
+    "preview:e2e": "VITE_AUTH_URL=http://127.0.0.1:4175 VITE_SYNC_URL=ws://127.0.0.1:4175/kora-sync pnpm run build && node --import tsx scripts/start-e2e-server.ts",
     "typecheck": "tsc --noEmit",
     "test": "node scripts/run-tests.js",
     "test:e2e": "playwright test",
