@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { AlertCircle, Ban, Calendar, CheckCircle2, Globe, History, Loader2, Lock, Mail, Plus, Send, Trash2, Webhook } from 'lucide-react'
+import { AlertCircle, Ban, Calendar, CheckCircle2, Globe, History, Loader2, Lock, Mail, Plus, RotateCcw, Send, Trash2, Webhook } from 'lucide-react'
 import { updateSettingsValue, datetimeLocalToTimestamp, timestampToDatetimeLocal } from '../../features/forms/shell'
 import { buildPublicFormReadiness } from '../../features/forms/readiness'
+import { buildDeliveryStatusSummary, type DeliveryStatusItem } from '../../features/forms/deliveries'
 import { THEME_PRESETS } from '../../themes'
 import type { FormField, FormSettings as FormSettingsType, WebhookConfig } from '../../types'
 
@@ -17,6 +18,7 @@ interface FormSettingsPanelProps {
 	theme: string
 	fields: FormField[]
 	auditEvents?: Record<string, unknown>[]
+	sideEffectDeliveries?: Record<string, unknown>[]
 	settings: FormSettingsType
 	hasPassword: boolean
 	onStatusChange: (status: string) => void
@@ -35,6 +37,7 @@ export function FormSettingsPanel({
 	theme,
 	fields,
 	auditEvents = [],
+	sideEffectDeliveries = [],
 	settings,
 	hasPassword,
 	onStatusChange,
@@ -49,6 +52,7 @@ export function FormSettingsPanel({
 		onSettingsChange(updateSettingsValue(settings, key, value))
 	}
 	const readiness = buildPublicFormReadiness({ title, status, slug, fields, settings, hasPassword })
+	const webhookDeliverySummary = buildDeliveryStatusSummary(sideEffectDeliveries, { type: 'webhook', limit: 4 })
 	const webhooks = settings.webhooks || []
 	const [testingWebhook, setTestingWebhook] = useState<number | null>(null)
 	const [testingEmail, setTestingEmail] = useState(false)
@@ -498,6 +502,7 @@ export function FormSettingsPanel({
 							})}
 						</div>
 					)}
+					<WebhookDeliveryHistory summary={webhookDeliverySummary} />
 				</div>
 
 				<div className="kf-panel p-6">
@@ -613,6 +618,92 @@ function PasswordProtectionControl({
 			)}
 		</div>
 	)
+}
+
+function WebhookDeliveryHistory({
+	summary,
+}: {
+	summary: ReturnType<typeof buildDeliveryStatusSummary>
+}) {
+	if (summary.total === 0) {
+		return (
+			<div className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-[13px] text-slate-500 dark:border-gray-800 dark:bg-gray-950/40 dark:text-gray-400">
+				Webhook delivery history will appear here after accepted responses create delivery jobs.
+			</div>
+		)
+	}
+
+	return (
+		<div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-950/40">
+			<div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+				<div>
+					<p className="text-[13px] font-semibold text-slate-900 dark:text-gray-100">Webhook delivery history</p>
+					<p className="mt-1 text-[12px] text-slate-500 dark:text-gray-400">
+						{summary.delivered} delivered · {summary.failed} failed · {summary.pending + summary.delivering} waiting
+					</p>
+				</div>
+				{summary.failed > 0 && (
+					<span className="inline-flex w-fit items-center rounded-full bg-red-50 px-2.5 py-1 text-[11px] font-semibold text-red-600 dark:bg-red-900/20 dark:text-red-300">
+						Needs attention
+					</span>
+				)}
+			</div>
+			<div className="mt-3 divide-y divide-slate-100 dark:divide-gray-800">
+				{summary.latest.map(item => (
+					<WebhookDeliveryRow key={item.id} item={item} />
+				))}
+			</div>
+		</div>
+	)
+}
+
+function WebhookDeliveryRow({ item }: { item: DeliveryStatusItem }) {
+	const tone = item.status === 'delivered'
+		? 'text-emerald-600 bg-emerald-50 dark:text-emerald-300 dark:bg-emerald-900/20'
+		: item.status === 'failed'
+			? 'text-red-600 bg-red-50 dark:text-red-300 dark:bg-red-900/20'
+			: 'text-amber-700 bg-amber-50 dark:text-amber-300 dark:bg-amber-900/20'
+	const Icon = item.status === 'delivered' ? CheckCircle2 : item.status === 'failed' ? AlertCircle : RotateCcw
+	return (
+		<div className="flex items-start gap-3 py-3">
+			<span className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${tone}`}>
+				<Icon className={`h-3.5 w-3.5 ${item.status === 'delivering' ? 'animate-spin' : ''}`} />
+			</span>
+			<div className="min-w-0 flex-1">
+				<div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+					<p className="truncate text-[13px] font-semibold text-slate-800 dark:text-gray-200">{item.targetLabel}</p>
+					<p className="shrink-0 text-[11px] text-slate-400 dark:text-gray-500">{formatDeliveryTime(item.updatedAt)}</p>
+				</div>
+				<p className="mt-1 text-[12px] text-slate-500 dark:text-gray-400">
+					{deliveryStatusCopy(item)}
+				</p>
+			</div>
+		</div>
+	)
+}
+
+function deliveryStatusCopy(item: DeliveryStatusItem): string {
+	if (item.status === 'delivered') return `Delivered after ${item.attempts || 1} attempt${(item.attempts || 1) === 1 ? '' : 's'}.`
+	if (item.status === 'failed') {
+		const retry = item.nextAttemptAt > Date.now() ? ` Next retry ${formatDeliveryTime(item.nextAttemptAt)}.` : ' Retry is queued.'
+		return `${item.lastError || 'Delivery failed.'}${retry}`
+	}
+	if (item.status === 'delivering') return 'Delivery is currently in progress.'
+	return 'Delivery is waiting for the next processor run.'
+}
+
+function formatDeliveryTime(value: number): string {
+	if (!value) return 'Unknown time'
+	try {
+		return new Intl.DateTimeFormat(undefined, {
+			month: 'short',
+			day: 'numeric',
+			hour: 'numeric',
+			minute: '2-digit',
+		}).format(new Date(value))
+	} catch {
+		return 'Unknown time'
+	}
 }
 
 function SettingsCheckbox({

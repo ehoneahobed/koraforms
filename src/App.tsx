@@ -368,8 +368,10 @@ function FormPageShell({ navigate, userId }: { navigate: (path: string) => void;
 	// Load form data
 	const allForms = useQuery(app.forms.where({}).orderBy('createdAt', 'desc'))
 	const allAuditEvents = useQuery(app.audit_events.where({}).orderBy('createdAt', 'desc'))
+	const allSideEffectDeliveries = useQuery(app.side_effect_deliveries.where({}).orderBy('updatedAt', 'desc'))
 	const form = allForms.find((f) => f.id === formId)
 	const auditEvents = allAuditEvents.filter(event => String(event.formId) === String(formId)).slice(0, 12)
+	const sideEffectDeliveries = allSideEffectDeliveries.filter(delivery => String(delivery.formId) === String(formId)).slice(0, 24)
 
 	const { mutate: updateForm } = useMutation(
 		(id: string, data: Record<string, unknown>) => app.forms.update(id, data),
@@ -685,6 +687,7 @@ function FormPageShell({ navigate, userId }: { navigate: (path: string) => void;
 					theme={formTheme}
 					fields={formFields}
 					auditEvents={auditEvents}
+					sideEffectDeliveries={sideEffectDeliveries}
 					settings={formSettings}
 					hasPassword={formHasPassword}
 					onStatusChange={handleStatusChange}

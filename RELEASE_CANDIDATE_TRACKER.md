@@ -59,7 +59,7 @@ Acceptance:
 
 ### 5. Webhook Delivery UX
 
-Status: Partially implemented
+Status: In progress - settings now surfaces recent per-form delivery status
 
 Scope:
 - Keep webhook delivery async and non-blocking for respondent submissions.
@@ -67,7 +67,7 @@ Scope:
 - Preserve SSRF protections and HTTPS-only public URL gating.
 
 Acceptance:
-- Owners can test webhooks and understand delivery outcomes without reading server logs.
+- Owners can test webhooks and understand recent delivery outcomes without reading server logs.
 - Webhook failures never block response acceptance.
 
 ### 6. Production Observability
