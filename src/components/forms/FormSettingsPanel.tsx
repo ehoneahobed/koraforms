@@ -413,7 +413,7 @@ export function FormSettingsPanel({
 
 					{webhooks.length === 0 ? (
 						<div className="mt-4 rounded-2xl border border-dashed border-slate-200 bg-slate-50/70 p-5 text-[13px] text-slate-500 dark:border-gray-800 dark:bg-gray-900/40 dark:text-gray-400">
-							No webhook is configured. This does not affect readiness; responses remain available in KoraForms.
+							No webhook is configured. This does not affect readiness; responses remain available in KoraForms. Add a webhook when you want to send a test event and inspect delivery history here.
 						</div>
 					) : (
 						<div className="mt-4 space-y-3">
@@ -671,7 +671,14 @@ function WebhookDeliveryRow({ item }: { item: DeliveryStatusItem }) {
 			</span>
 			<div className="min-w-0 flex-1">
 				<div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-					<p className="truncate text-[13px] font-semibold text-slate-800 dark:text-gray-200">{item.targetLabel}</p>
+					<div className="flex min-w-0 items-center gap-2">
+						<p className="truncate text-[13px] font-semibold text-slate-800 dark:text-gray-200">{item.targetLabel}</p>
+						{item.isTest && (
+							<span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:bg-gray-900 dark:text-gray-400">
+								Test
+							</span>
+						)}
+					</div>
 					<p className="shrink-0 text-[11px] text-slate-400 dark:text-gray-500">{formatDeliveryTime(item.updatedAt)}</p>
 				</div>
 				<p className="mt-1 text-[12px] text-slate-500 dark:text-gray-400">
@@ -683,13 +690,14 @@ function WebhookDeliveryRow({ item }: { item: DeliveryStatusItem }) {
 }
 
 function deliveryStatusCopy(item: DeliveryStatusItem): string {
-	if (item.status === 'delivered') return `Delivered after ${item.attempts || 1} attempt${(item.attempts || 1) === 1 ? '' : 's'}.`
+	const prefix = item.isTest ? 'Test event ' : ''
+	if (item.status === 'delivered') return `${prefix}delivered after ${item.attempts || 1} attempt${(item.attempts || 1) === 1 ? '' : 's'}.`
 	if (item.status === 'failed') {
 		const retry = item.nextAttemptAt > Date.now() ? ` Next retry ${formatDeliveryTime(item.nextAttemptAt)}.` : ' Retry is queued.'
-		return `${item.lastError || 'Delivery failed.'}${retry}`
+		return `${prefix}${item.lastError || 'delivery failed.'}${retry}`
 	}
-	if (item.status === 'delivering') return 'Delivery is currently in progress.'
-	return 'Delivery is waiting for the next processor run.'
+	if (item.status === 'delivering') return `${prefix}delivery is currently in progress.`
+	return `${prefix}delivery is waiting for the next processor run.`
 }
 
 function formatDeliveryTime(value: number): string {

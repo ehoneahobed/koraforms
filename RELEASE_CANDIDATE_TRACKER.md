@@ -64,7 +64,7 @@ Acceptance:
 
 ### 5. Webhook Delivery UX
 
-Status: In progress - settings now surfaces recent per-form delivery status
+Status: Completed
 
 Scope:
 - Keep webhook delivery async and non-blocking for respondent submissions.
@@ -74,6 +74,10 @@ Scope:
 Acceptance:
 - Owners can test webhooks and understand recent delivery outcomes without reading server logs.
 - Webhook failures never block response acceptance.
+
+Verification:
+- 2026-07-29: Webhook test events are processed through the same persisted delivery pipeline as response webhooks and appear in owner-visible delivery history as test events.
+- 2026-07-29: Authenticated Playwright coverage verifies webhook test controls are discoverable from form settings.
 
 ### 6. Production Observability
 

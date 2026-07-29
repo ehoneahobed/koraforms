@@ -43,6 +43,9 @@ test.describe('authenticated creator workflow', () => {
 		await expect(page.getByText(/readiness/i).first()).toBeVisible()
 		await expect(page.getByText(/no webhook is configured\. this does not affect readiness/i)).toBeVisible()
 		await expect(page.getByText(/prepared for launch, but turned off until resend is configured/i)).toBeVisible()
+		await page.getByRole('button', { name: /^add webhook$/i }).click()
+		await expect(page.getByPlaceholder(/https:\/\/hooks\.example\.com\/koraforms/i)).toBeVisible()
+		await expect(page.getByRole('button', { name: /^test$/i })).toBeVisible()
 
 		await formTabs(page).getByRole('button', { name: /^responses$/i }).click()
 		await expect(page).toHaveURL(/\/responses$/)

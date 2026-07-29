@@ -5,7 +5,7 @@ import { buildDeliveryStatusSummary } from '../../../src/features/forms/deliveri
 test('delivery status summary counts and sorts webhook deliveries', () => {
 	const summary = buildDeliveryStatusSummary([
 		{ id: 'old', type: 'webhook', status: 'delivered', target: 'https://hooks.example.com/a', attempts: 1, updatedAt: 100 },
-		{ id: 'latest', type: 'webhook', status: 'failed', target: 'https://api.example.com/hook', attempts: 3, lastError: 'Timeout', updatedAt: 300 },
+		{ id: 'latest', responseId: 'test:latest', type: 'webhook', status: 'failed', target: 'https://api.example.com/hook', attempts: 3, lastError: 'Timeout', updatedAt: 300 },
 		{ id: 'email', type: 'email', status: 'pending', target: 'owner@example.com', updatedAt: 400 },
 	], { type: 'webhook' })
 
@@ -16,6 +16,7 @@ test('delivery status summary counts and sorts webhook deliveries', () => {
 	assert.equal(summary.latest[0]?.id, 'latest')
 	assert.equal(summary.latest[0]?.targetLabel, 'api.example.com')
 	assert.equal(summary.latest[0]?.lastError, 'Timeout')
+	assert.equal(summary.latest[0]?.isTest, true)
 })
 
 test('delivery status summary ignores malformed records and bounds latest items', () => {
@@ -33,4 +34,3 @@ test('delivery status summary ignores malformed records and bounds latest items'
 	assert.equal(summary.latest[0]?.id, 'one')
 	assert.equal(summary.latest[0]?.targetLabel, 'Webhook endpoint')
 })
-

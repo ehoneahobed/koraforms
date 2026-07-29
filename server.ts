@@ -564,19 +564,44 @@ async function main(): Promise<void> {
 							{ label: field.label, type: field.type },
 						]))
 						const responseData = JSON.stringify(buildWebhookTestResponseData(fields))
-						await deliverWebhookNotification({
-							webhook: hook,
-							body: {
-								...buildWebhookPayload({
-									id: String(form.id),
-									title: String(form.title || 'Untitled Form'),
-									slug: String(form.slug || ''),
-								}, responseData, fieldsMap, Date.now()),
-								test: true,
+						const now = Date.now()
+						const deliveryId = randomUUID()
+						const delivery = {
+							id: deliveryId,
+							responseId: `test:${deliveryId}`,
+							formId,
+							type: 'webhook',
+							target: hook.url,
+							payload: {
+								webhook: hook,
+								body: {
+									...buildWebhookPayload({
+										id: String(form.id),
+										title: String(form.title || 'Untitled Form'),
+										slug: String(form.slug || ''),
+									}, responseData, fieldsMap, now),
+									test: true,
+								},
 							},
-						})
+							status: 'pending',
+							attempts: 0,
+							lastError: '',
+							nextAttemptAt: now,
+							createdAt: now,
+							updatedAt: now,
+						} satisfies SideEffectDeliveryRecord
 
-						return withCors({ status: 200, body: { message: 'Test event sent.' } })
+						await insertRouteRecord(req.kora, 'side_effect_deliveries', deliveryId, delivery)
+						await processDelivery(req.kora, delivery)
+						const result = await req.kora.findById('side_effect_deliveries', deliveryId) as SideEffectDeliveryRecord | null
+						if (result?.status === 'failed') {
+							return withCors({
+								status: 502,
+								body: { error: String(result.lastError || 'Webhook test failed.') },
+							})
+						}
+
+						return withCors({ status: 200, body: { message: 'Test event sent and logged.' } })
 					} catch (error) {
 						return withCors({
 							status: 502,

@@ -10,6 +10,7 @@ export interface DeliveryStatusItem {
 	lastError: string
 	nextAttemptAt: number
 	updatedAt: number
+	isTest: boolean
 }
 
 export interface DeliveryStatusSummary {
@@ -61,6 +62,7 @@ function toDeliveryStatusItem(record: Record<string, unknown>): DeliveryStatusIt
 		lastError: toBoundedString(record.lastError, 180),
 		nextAttemptAt: toNumber(record.nextAttemptAt),
 		updatedAt: toNumber(record.updatedAt),
+		isTest: toBoundedString(record.responseId, 180).startsWith('test:'),
 	}
 }
 
@@ -96,4 +98,3 @@ function toNumber(value: unknown): number {
 function toBoundedString(value: unknown, maxLength: number): string {
 	return typeof value === 'string' ? value.trim().slice(0, maxLength) : ''
 }
-
