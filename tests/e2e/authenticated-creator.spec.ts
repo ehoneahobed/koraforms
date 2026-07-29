@@ -51,6 +51,14 @@ test.describe('authenticated creator workflow', () => {
 		await expect(page).toHaveURL(/\/responses$/)
 		await expect(page.getByRole('heading', { name: /^responses$/i })).toBeVisible()
 		await expect(page.getByText(/review, organise and understand every submission/i)).toBeVisible()
+		await responseTabs(page).getByRole('button', { name: /analytics/i }).click()
+		await expect(page).toHaveURL(/[?&]tab=analytics/)
+		await expect(page.getByRole('heading', { name: /no responses yet/i })).toBeVisible()
+		await responseTabs(page).getByRole('button', { name: /field insights/i }).click()
+		await expect(page).toHaveURL(/[?&]tab=insights/)
+		await expect(page.getByRole('heading', { name: /no responses yet/i })).toBeVisible()
+		await responseTabs(page).getByRole('button', { name: /to do/i }).click()
+		await expect(page).toHaveURL(/[?&]tab=todo/)
 	})
 
 	test('backs up and restores workspace forms as draft copies', async ({ page }) => {
@@ -114,4 +122,8 @@ function formTabs(page: import('@playwright/test').Page) {
 	return page.getByRole('navigation').filter({
 		has: page.getByRole('button', { name: /^build$/i }),
 	})
+}
+
+function responseTabs(page: import('@playwright/test').Page) {
+	return page.getByRole('navigation', { name: /response tabs/i })
 }

@@ -6,7 +6,7 @@ This document tracks the remaining work before KoraForms should be treated as re
 
 ### 1. Authenticated E2E Coverage
 
-Status: In progress - authenticated creator smoke coverage added
+Status: Completed for release-candidate critical coverage
 
 Scope:
 - Cover creator signup/signin, form creation, builder editing, publishing, settings, sharing, templates, responses, analytics, backup, and restore.
@@ -15,7 +15,7 @@ Scope:
 
 Acceptance:
 - Playwright coverage exists for the critical authenticated creator journeys.
-- The current authenticated smoke covers signup, template creation, publish feedback, URL/share/settings/responses tabs, and tab persistence across refresh.
+- The current authenticated smoke covers signup, template creation, publish feedback, URL/share/settings/responses/analytics/field-insights/to-do tabs, webhook control discoverability, backup, restore, and tab persistence across refresh.
 - `pnpm run check` and the relevant E2E suites pass locally before deployment.
 
 Verification:
