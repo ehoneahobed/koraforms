@@ -188,10 +188,14 @@ Scope:
 
 ### 16. Saved Analytics Filters
 
-Status: Not started
+Status: Completed
 
 Scope:
 - Save date ranges, field filters, and response segments for repeat analysis.
+
+Verification:
+- 2026-07-29: Added offline-first saved analytics views as Kora records with form/owner scoping, bounded filter payloads, and synced apply/delete controls in the analytics UI.
+- 2026-07-29: Unit coverage verifies saved analytics view payloads and persisted records are normalized safely.
 
 ## Current Verification Commands
 

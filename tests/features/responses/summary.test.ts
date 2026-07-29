@@ -9,6 +9,7 @@ import {
 	buildFormVersionAnalytics,
 	buildRespondentLifecycleSummary,
 	buildResponsesAnalyticsSummary,
+	buildSavedAnalyticsFilterViewPayload,
 	calculateAverageCompletionTime,
 	calculateAverageFillRate,
 	calculateCompletionRate,
@@ -21,6 +22,7 @@ import {
 	filterResponsesByDateRange,
 	formatResponseDateRange,
 	normalizeCompletionFilter,
+	normalizeSavedAnalyticsFilterViews,
 	paginateResponses,
 	presetDateFilter,
 	responseDateFilterLabel,
@@ -216,6 +218,48 @@ test('advanced response filter URL encoding is strict and recoverable', () => {
 	assert.equal(normalizeCompletionFilter('complete'), 'complete')
 	assert.equal(normalizeCompletionFilter('something-else'), 'all')
 	assert.equal(encodeFieldFilters([{ fieldId: '', operator: 'contains', value: 'x' }]), '')
+})
+
+test('saved analytics filter views normalize persisted records', () => {
+	const now = day(0)
+	const payload = buildSavedAnalyticsFilterViewPayload({
+		formId: 'form-1',
+		ownerId: 'user-1',
+		name: '  Recent VIPs  ',
+		timeRange: '90d',
+		filters: [
+			{ fieldId: 'name', value: 'Ada' },
+			{ fieldId: '', value: 'ignored' },
+			{ fieldId: 'email', value: 'example.com' },
+		],
+		now,
+	})
+
+	assert.deepEqual(payload, {
+		formId: 'form-1',
+		ownerId: 'user-1',
+		name: 'Recent VIPs',
+		timeRange: '90d',
+		filters: [
+			{ fieldId: 'name', value: 'Ada' },
+			{ fieldId: 'email', value: 'example.com' },
+		],
+		createdAt: now,
+		updatedAt: now,
+	})
+
+	const views = normalizeSavedAnalyticsFilterViews([
+		{ id: 'old', formId: 'form-1', ownerId: 'user-1', name: 'Older', timeRange: 'bad', filters: 'bad', updatedAt: 1 },
+		{ id: 'other-form', formId: 'form-2', ownerId: 'user-1', name: 'Wrong form', updatedAt: 3 },
+		{ id: 'new', formId: 'form-1', ownerId: 'user-1', name: 'Newer', timeRange: '7d', filters: [{ fieldId: 'email', value: 'x' }], updatedAt: 2 },
+		{ id: 'other-user', formId: 'form-1', ownerId: 'user-2', name: 'Wrong owner', updatedAt: 4 },
+		{ id: '', formId: 'form-1', ownerId: 'user-1', name: 'Invalid', updatedAt: 5 },
+	], 'form-1', 'user-1')
+
+	assert.deepEqual(views.map(view => [view.id, view.name, view.timeRange, view.filters]), [
+		['new', 'Newer', '7d', [{ fieldId: 'email', value: 'x' }]],
+		['old', 'Older', '30d', []],
+	])
 })
 
 test('inbox helpers search, sort, paginate, and format date ranges', () => {

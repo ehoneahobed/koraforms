@@ -4,9 +4,10 @@ import type { FormField, FormSettings } from './types'
 type ResponseData = Record<string, unknown>
 type SideEffectPayload = Record<string, unknown>
 type AnalyticsEventMetadata = Record<string, unknown>
+type SavedAnalyticsFilters = Array<{ fieldId: string; value: string }>
 
 export default defineSchema({
-	version: 16,
+	version: 17,
 	collections: {
 		// A form definition (e.g. "Customer Feedback", "Event Registration")
 		forms: {
@@ -81,6 +82,24 @@ export default defineSchema({
 				type: 'unique',
 				fields: ['formId', 'clientEventId'],
 				onConflict: 'first-write-wins',
+			}],
+		},
+
+		response_filter_views: {
+			fields: {
+				formId: t.string(),
+				ownerId: t.string().default(''),
+				name: t.string(),
+				timeRange: t.enum(['7d', '14d', '30d', '90d', 'all']).default('30d'),
+				filters: t.json<SavedAnalyticsFilters>().default([]),
+				createdAt: t.number(),
+				updatedAt: t.number(),
+			},
+			indexes: ['formId', 'ownerId', 'updatedAt'],
+			constraints: [{
+				type: 'unique',
+				fields: ['formId', 'ownerId', 'name'],
+				onConflict: 'last-write-wins',
 			}],
 		},
 

@@ -12,6 +12,7 @@ import {
 import {
 	buildResponsesAnalyticsSummary,
 	calculateTrendPct,
+	type SavedAnalyticsFilterView,
 	type ResponseFilter,
 } from '../../features/responses/summary'
 import {
@@ -47,15 +48,25 @@ export function AnalyticsView({
 	fields,
 	responses,
 	analyticsEvents = [],
+	savedViews = [],
+	onSaveView,
+	onDeleteView,
 }: {
 	fields: FormField[]
 	responses: Record<string, unknown>[]
 	analyticsEvents?: Record<string, unknown>[]
+	savedViews?: SavedAnalyticsFilterView[]
+	onSaveView?: (view: { name: string; timeRange: TimeRange; filters: ResponseFilter[] }) => Promise<void> | void
+	onDeleteView?: (id: string) => Promise<void> | void
 }) {
 	const [range, setRange] = useState<TimeRange>('30d')
 	const [filters, setFilters] = useState<ResponseFilter[]>([])
 	const [filterFieldId, setFilterFieldId] = useState('')
 	const [filterValue, setFilterValue] = useState('')
+	const [showSaveView, setShowSaveView] = useState(false)
+	const [saveViewName, setSaveViewName] = useState('')
+	const [savedViewBusyId, setSavedViewBusyId] = useState<string | null>(null)
+	const [isSavingView, setIsSavingView] = useState(false)
 	const filterableFields = useMemo(() => responseFields(fields), [fields])
 	const selectedFilterField = filterableFields.find(field => field.id === filterFieldId) ?? filterableFields[0]
 
@@ -96,16 +107,131 @@ export function AnalyticsView({
 		setFilterFieldId(selectedFilterField.id)
 	}
 
+	const saveCurrentView = async () => {
+		const name = saveViewName.trim()
+		if (!name || !onSaveView) return
+		setIsSavingView(true)
+		try {
+			await onSaveView({ name, timeRange: range, filters })
+			setSaveViewName('')
+			setShowSaveView(false)
+		} finally {
+			setIsSavingView(false)
+		}
+	}
+
+	const applySavedView = (view: SavedAnalyticsFilterView) => {
+		setRange(view.timeRange)
+		setFilters(view.filters)
+		setFilterValue('')
+		setFilterFieldId(view.filters[0]?.fieldId ?? selectedFilterField?.id ?? '')
+	}
+
+	const deleteSavedView = async (view: SavedAnalyticsFilterView) => {
+		if (!onDeleteView) return
+		setSavedViewBusyId(view.id)
+		try {
+			await onDeleteView(view.id)
+		} finally {
+			setSavedViewBusyId(null)
+		}
+	}
+
 	return (
 		<div className="space-y-5 animate-fade-in">
-			{/* Time range selector */}
-			<div className="flex items-center gap-1 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-surface-elevated-dark p-1 w-fit">
-				{TIME_RANGE_OPTIONS.map(opt => (
-					<button key={opt.value} onClick={() => setRange(opt.value)} className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all duration-200 ${range === opt.value ? 'bg-brand-500 text-white shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800'}`}>
-						{opt.label}
-					</button>
-				))}
+			<div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+				{/* Time range selector */}
+				<div className="flex items-center gap-1 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-surface-elevated-dark p-1 w-fit">
+					{TIME_RANGE_OPTIONS.map(opt => (
+						<button key={opt.value} onClick={() => setRange(opt.value)} className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all duration-200 ${range === opt.value ? 'bg-brand-500 text-white shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800'}`}>
+							{opt.label}
+						</button>
+					))}
+				</div>
+
+				{onSaveView && (
+					<div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center">
+						{showSaveView ? (
+							<form
+								onSubmit={event => {
+									event.preventDefault()
+									void saveCurrentView()
+								}}
+								className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white p-1 dark:border-gray-800 dark:bg-surface-elevated-dark"
+							>
+								<input
+									value={saveViewName}
+									onChange={event => setSaveViewName(event.target.value)}
+									placeholder="View name"
+									className="h-8 w-40 rounded-lg border-0 bg-transparent px-2 text-xs font-medium text-slate-700 outline-none placeholder:text-slate-400 dark:text-gray-200"
+									aria-label="Saved analytics view name"
+									maxLength={64}
+								/>
+								<button
+									type="submit"
+									disabled={!saveViewName.trim() || isSavingView}
+									className="h-8 rounded-lg bg-slate-950 px-3 text-xs font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-white dark:text-slate-950"
+								>
+									Save
+								</button>
+								<button
+									type="button"
+									onClick={() => {
+										setShowSaveView(false)
+										setSaveViewName('')
+									}}
+									className="h-8 rounded-lg px-2 text-xs font-semibold text-slate-400 transition-colors hover:bg-slate-50 hover:text-slate-700 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+								>
+									Cancel
+								</button>
+							</form>
+						) : (
+							<button
+								onClick={() => setShowSaveView(true)}
+								className="inline-flex h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-50 dark:border-gray-800 dark:bg-surface-elevated-dark dark:text-gray-300 dark:hover:bg-gray-800"
+							>
+								Save view
+							</button>
+						)}
+					</div>
+				)}
 			</div>
+
+			{savedViews.length > 0 && (
+				<section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-gray-800 dark:bg-surface-elevated-dark">
+					<div className="mb-2 flex items-center justify-between gap-3">
+						<div>
+							<h3 className="text-[13px] font-semibold text-slate-800 dark:text-gray-200">Saved views</h3>
+							<p className="text-[11px] text-slate-400 dark:text-gray-500">Reuse common response segments across devices.</p>
+						</div>
+					</div>
+					<div className="flex gap-2 overflow-x-auto pb-1">
+						{savedViews.map(view => (
+							<div key={view.id} className="inline-flex shrink-0 items-center gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1 dark:border-gray-800 dark:bg-gray-900/60">
+								<button
+									onClick={() => applySavedView(view)}
+									className="rounded-lg px-3 py-1.5 text-left text-xs font-semibold text-slate-700 transition-colors hover:bg-white dark:text-gray-300 dark:hover:bg-gray-950"
+								>
+									{view.name}
+									<span className="ml-1 font-medium text-slate-400 dark:text-gray-500">
+										{view.timeRange}{view.filters.length > 0 ? ` · ${view.filters.length}` : ''}
+									</span>
+								</button>
+								{onDeleteView && (
+									<button
+										onClick={() => void deleteSavedView(view)}
+										disabled={savedViewBusyId === view.id}
+										className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-white hover:text-red-500 disabled:opacity-40 dark:hover:bg-gray-950"
+										aria-label={`Delete saved view ${view.name}`}
+									>
+										&times;
+									</button>
+								)}
+							</div>
+						))}
+					</div>
+				</section>
+			)}
 
 			{/* Response filters */}
 			<div className="flex flex-wrap items-center gap-2">

@@ -19,6 +19,28 @@ export interface ResponseFilter {
 	value: string
 }
 
+export interface SavedAnalyticsFilterViewRecord {
+	id?: unknown
+	formId?: unknown
+	ownerId?: unknown
+	name?: unknown
+	timeRange?: unknown
+	filters?: unknown
+	createdAt?: unknown
+	updatedAt?: unknown
+}
+
+export interface SavedAnalyticsFilterView {
+	id: string
+	formId: string
+	ownerId: string
+	name: string
+	timeRange: TimeRange
+	filters: ResponseFilter[]
+	createdAt: number
+	updatedAt: number
+}
+
 export interface ResponseDateFilter {
 	from?: string
 	to?: string
@@ -194,6 +216,63 @@ export function buildResponsesAnalyticsSummary(
 		crossInsights: computeCrossInsights(fields, responseData),
 		completionSparkline: buildCompletionSparkline(fields, filteredResponses, responseData, dailyCounts),
 		fillRateSparkline: buildFillRateSparkline(fields, filteredResponses, responseData, dailyCounts),
+	}
+}
+
+export function buildSavedAnalyticsFilterViewPayload({
+	formId,
+	ownerId,
+	name,
+	timeRange,
+	filters,
+	now = Date.now(),
+}: {
+	formId: string
+	ownerId: string
+	name: string
+	timeRange: TimeRange
+	filters: ResponseFilter[]
+	now?: number
+}): Omit<SavedAnalyticsFilterView, 'id'> | null {
+	const safeName = normalizeSavedViewName(name)
+	if (!formId || !ownerId || !safeName) return null
+	return {
+		formId,
+		ownerId,
+		name: safeName,
+		timeRange: normalizeTimeRange(timeRange),
+		filters: normalizeResponseFilters(filters),
+		createdAt: now,
+		updatedAt: now,
+	}
+}
+
+export function normalizeSavedAnalyticsFilterViews(
+	records: readonly SavedAnalyticsFilterViewRecord[],
+	formId: string,
+	ownerId: string,
+): SavedAnalyticsFilterView[] {
+	return records
+		.map(record => normalizeSavedAnalyticsFilterView(record))
+		.filter((record): record is SavedAnalyticsFilterView => Boolean(record && record.formId === formId && record.ownerId === ownerId))
+		.sort((a, b) => b.updatedAt - a.updatedAt)
+}
+
+function normalizeSavedAnalyticsFilterView(record: SavedAnalyticsFilterViewRecord): SavedAnalyticsFilterView | null {
+	const id = typeof record.id === 'string' ? record.id : ''
+	const formId = typeof record.formId === 'string' ? record.formId : ''
+	const ownerId = typeof record.ownerId === 'string' ? record.ownerId : ''
+	const name = normalizeSavedViewName(record.name)
+	if (!id || !formId || !ownerId || !name) return null
+	return {
+		id,
+		formId,
+		ownerId,
+		name,
+		timeRange: normalizeTimeRange(record.timeRange),
+		filters: normalizeResponseFilters(record.filters),
+		createdAt: toFiniteNumber(record.createdAt),
+		updatedAt: toFiniteNumber(record.updatedAt),
 	}
 }
 
@@ -884,4 +963,34 @@ function parseDateBoundary(value: string | undefined, boundary: 'start' | 'end')
 	if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return null
 	date.setHours(boundary === 'start' ? 0 : 23, boundary === 'start' ? 0 : 59, boundary === 'start' ? 0 : 59, boundary === 'start' ? 0 : 999)
 	return date.getTime()
+}
+
+function normalizeTimeRange(value: unknown): TimeRange {
+	return value === '7d' || value === '14d' || value === '30d' || value === '90d' || value === 'all'
+		? value
+		: '30d'
+}
+
+function normalizeSavedViewName(value: unknown): string {
+	if (typeof value !== 'string') return ''
+	return value.trim().replace(/\s+/g, ' ').slice(0, 64)
+}
+
+function normalizeResponseFilters(value: unknown): ResponseFilter[] {
+	if (!Array.isArray(value)) return []
+	const filters: ResponseFilter[] = []
+	for (const item of value) {
+		if (!item || typeof item !== 'object') continue
+		const record = item as Record<string, unknown>
+		const fieldId = typeof record.fieldId === 'string' ? record.fieldId.trim() : ''
+		const filterValue = typeof record.value === 'string' ? record.value.trim() : ''
+		if (!fieldId || !filterValue) continue
+		filters.push({ fieldId: fieldId.slice(0, 120), value: filterValue.slice(0, 160) })
+		if (filters.length >= 8) break
+	}
+	return filters
+}
+
+function toFiniteNumber(value: unknown): number {
+	return typeof value === 'number' && Number.isFinite(value) ? value : 0
 }

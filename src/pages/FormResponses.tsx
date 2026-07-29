@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
-import { useQuery } from '@korajs/react'
+import { useMutation, useQuery } from '@korajs/react'
 import { app } from '../kora'
 import { setPageMeta } from '../utils/meta'
 import { downloadJsonFile, downloadTextFile } from '../utils/download'
@@ -33,10 +33,12 @@ import {
 import {
 	formatResponseDateRange,
 	activeResponseFilterCount,
+	buildSavedAnalyticsFilterViewPayload,
 	decodeFieldFilters,
 	encodeFieldFilters,
 	filterResponsesByAdvancedFilters,
 	filterResponsesByDateRange,
+	normalizeSavedAnalyticsFilterViews,
 	normalizeCompletionFilter,
 	paginateResponses,
 	presetDateFilter,
@@ -143,10 +145,22 @@ export function FormResponses({ formId, navigate, userId = '' }: Props) {
 	const allAnalyticsEvents = useQuery(
 		app.form_analytics_events.where({}).orderBy('occurredAt', 'desc'),
 	)
+	const allSavedAnalyticsViews = useQuery(
+		app.response_filter_views.where({}).orderBy('updatedAt', 'desc'),
+	)
+	const { mutateAsync: createSavedAnalyticsView } = useMutation(
+		(data: Record<string, unknown>) => app.response_filter_views.insert(data),
+	)
+	const { mutateAsync: deleteSavedAnalyticsView } = useMutation(
+		(id: string) => app.response_filter_views.delete(id),
+	)
 
 	const form = allForms.find((f) => f.id === formId)
 	const responses = allResponses.filter((r) => String(r.formId) === formId)
 	const analyticsEvents = allAnalyticsEvents.filter((event) => String(event.formId) === formId)
+	const savedAnalyticsViews = useMemo(() => (
+		normalizeSavedAnalyticsFilterViews(allSavedAnalyticsViews, formId, userId)
+	), [allSavedAnalyticsViews, formId, userId])
 
 	useEffect(() => {
 		setPageMeta({
@@ -808,7 +822,24 @@ export function FormResponses({ formId, navigate, userId = '' }: Props) {
 					{responses.length === 0 ? (
 						<EmptyState formId={formId} navigate={navigate} form={form} />
 					) : (
-						<AnalyticsView fields={fields} responses={responses} analyticsEvents={analyticsEvents} />
+						<AnalyticsView
+							fields={fields}
+							responses={responses}
+							analyticsEvents={analyticsEvents}
+							savedViews={savedAnalyticsViews}
+							onSaveView={async (view) => {
+								const payload = buildSavedAnalyticsFilterViewPayload({
+									...view,
+									formId,
+									ownerId: userId,
+								})
+								if (!payload) return
+								await createSavedAnalyticsView(payload)
+							}}
+							onDeleteView={async (id) => {
+								await deleteSavedAnalyticsView(id)
+							}}
+						/>
 					)}
 				</>
 			)}
