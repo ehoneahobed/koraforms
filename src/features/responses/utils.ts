@@ -105,7 +105,7 @@ export function parseResponseData(response: Record<string, unknown>): Record<str
 	return parsePersistedResponseData(response.data)
 }
 
-export function parseResponseMeta(response: Record<string, unknown>): { duration?: number; ua?: string; screen?: string; startedAt?: number } | undefined {
+export function parseResponseMeta(response: Record<string, unknown>): { duration?: number; ua?: string; screen?: string; lang?: string; startedAt?: number } | undefined {
 	return parsePersistedResponseMeta(response.data)
 }
 

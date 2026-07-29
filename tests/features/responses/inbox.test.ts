@@ -51,13 +51,17 @@ test('buildResponseOverview summarizes timing, devices, fill rates, and required
 })
 
 test('buildFollowUpReview identifies incomplete, slow, low-fill, and duplicate responses', () => {
+	const duplicateFields = [
+		...fields,
+		{ id: 'phone', type: 'phone', label: 'Phone', required: false } satisfies FormField,
+	]
 	const responses = [
-		response('1', { name: 'Ada', email: 'ada@example.com', message: 'One', _meta: { duration: 60 } }),
-		response('2', { name: 'Ada', email: 'ada@example.com', message: '', _meta: { duration: 700 } }),
+		response('1', { name: 'Ada', email: 'ada@example.com', phone: '(555) 010-2000', message: 'One', _meta: { duration: 60 } }),
+		response('2', { name: 'Ada', email: 'ada@example.com', phone: '555.010.2000', message: '', _meta: { duration: 700 } }),
 		response('3', { name: 'Grace', email: '', message: '', _meta: { duration: 70 } }),
 	]
 
-	const review = buildFollowUpReview(fields, responses)
+	const review = buildFollowUpReview(duplicateFields, responses)
 	assert.equal(review.incomplete.length, 1)
 	assert.equal(review.incomplete[0]?.missingFields[0]?.id, 'email')
 	assert.equal(review.slow.length, 1)
@@ -66,6 +70,7 @@ test('buildFollowUpReview identifies incomplete, slow, low-fill, and duplicate r
 	assert.deepEqual(review.duplicateGroups.map(group => [group.field.id, group.value, group.responses.length]), [
 		['name', 'ada', 2],
 		['email', 'ada@example.com', 2],
+		['phone', '5550102000', 2],
 	])
 	assert.equal(review.qualitySignals.some(signal => signal.type === 'duplicate_identity'), true)
 	assert.equal(review.qualitySignals.some(signal => signal.type === 'slow_submit'), true)
@@ -83,13 +88,13 @@ test('buildResponseQualitySignals flags fast, duplicate, incomplete, repeated, a
 		{
 			response: response('1', {}),
 			data: { name: 'Ada', email: 'ada@example.com', city: 'same', notes: 'same', file: 'blob:1' },
-			meta: { duration: 4 },
+			meta: { duration: 4, ua: 'Mozilla/5.0 (Macintosh) AppleWebKit Chrome/125.0.0.0 Safari/537.36', screen: '1440x900', lang: 'en-US' },
 			completion: 100,
 		},
 		{
 			response: response('2', {}),
 			data: { name: 'Ada', email: 'ada@example.com', city: 'same', notes: 'same', file: 'blob:1' },
-			meta: { duration: 400 },
+			meta: { duration: 400, ua: 'Mozilla/5.0 (Macintosh) AppleWebKit Chrome/125.0.0.0 Safari/537.36', screen: '1440x900', lang: 'en-US' },
 			completion: 100,
 		},
 		{
@@ -105,6 +110,7 @@ test('buildResponseQualitySignals flags fast, duplicate, incomplete, repeated, a
 	assert.equal(types.has('fast_submit'), true)
 	assert.equal(types.has('duplicate_identity'), true)
 	assert.equal(types.has('duplicate_payload'), true)
+	assert.equal(types.has('duplicate_device'), true)
 	assert.equal(types.has('incomplete'), true)
 	assert.equal(types.has('low_completion'), true)
 	assert.equal(types.has('attachment_review'), true)

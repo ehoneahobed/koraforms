@@ -53,7 +53,7 @@ export interface ResponseQualitySignal {
 	id: string
 	responseId: string
 	severity: 'info' | 'watch' | 'review'
-	type: 'incomplete' | 'duplicate_identity' | 'duplicate_payload' | 'fast_submit' | 'slow_submit' | 'low_completion' | 'repeated_values' | 'attachment_review'
+	type: 'incomplete' | 'duplicate_identity' | 'duplicate_payload' | 'duplicate_device' | 'fast_submit' | 'slow_submit' | 'low_completion' | 'repeated_values' | 'attachment_review'
 	title: string
 	detail: string
 	action: string
@@ -133,7 +133,7 @@ export function buildFollowUpReview(fields: FormField[], responses: Record<strin
 	const duplicateGroups = identityFields.flatMap(field => {
 		const counts = new Map<string, Record<string, unknown>[]>()
 		for (const item of parsed) {
-			const value = item.data[field.id]?.trim().toLowerCase()
+			const value = normalizeIdentityValue(field, item.data[field.id])
 			if (!value) continue
 			counts.set(value, [...(counts.get(value) || []), item.response])
 		}
@@ -163,7 +163,7 @@ export function buildResponseQualitySignals(
 	for (const field of identityFields) {
 		const counts = new Map<string, number>()
 		for (const item of parsed) {
-			const value = item.data[field.id]?.trim().toLowerCase()
+			const value = normalizeIdentityValue(field, item.data[field.id])
 			if (!value) continue
 			counts.set(`${field.id}:${value}`, (counts.get(`${field.id}:${value}`) ?? 0) + 1)
 		}
@@ -177,6 +177,13 @@ export function buildResponseQualitySignals(
 		const payload = responsePayloadFingerprint(dataFields, item.data)
 		if (!payload) continue
 		payloadCounts.set(payload, (payloadCounts.get(payload) ?? 0) + 1)
+	}
+
+	const deviceCounts = new Map<string, number>()
+	for (const item of parsed) {
+		const fingerprint = responseDeviceFingerprint(item)
+		if (!fingerprint) continue
+		deviceCounts.set(fingerprint, (deviceCounts.get(fingerprint) ?? 0) + 1)
 	}
 
 	const signals: ResponseQualitySignal[] = []
@@ -197,7 +204,10 @@ export function buildResponseQualitySignals(
 			})
 		}
 
-		const duplicateIdentityField = identityFields.find(field => duplicateIdentityValues.has(`${field.id}:${item.data[field.id]?.trim().toLowerCase()}`))
+		const duplicateIdentityField = identityFields.find(field => {
+			const value = normalizeIdentityValue(field, item.data[field.id])
+			return Boolean(value && duplicateIdentityValues.has(`${field.id}:${value}`))
+		})
 		if (duplicateIdentityField) {
 			signals.push({
 				id: `${responseId}:duplicate-identity:${duplicateIdentityField.id}`,
@@ -222,6 +232,21 @@ export function buildResponseQualitySignals(
 				detail: 'This response has the same answer set as another submission.',
 				action: 'Check whether the respondent submitted twice or copied a previous entry.',
 				fieldIds: dataFields.map(field => field.id),
+			})
+		}
+
+		const deviceFingerprint = responseDeviceFingerprint(item)
+		if (deviceFingerprint && (deviceCounts.get(deviceFingerprint) ?? 0) > 1 && item.completion >= 80) {
+			const parsedUA = item.meta?.ua ? parseUA(item.meta.ua) : null
+			signals.push({
+				id: `${responseId}:duplicate-device`,
+				responseId,
+				severity: 'info',
+				type: 'duplicate_device',
+				title: 'Same device pattern',
+				detail: `${deviceCounts.get(deviceFingerprint)} completed responses share ${parsedUA ? `${parsedUA.browser} on ${parsedUA.os}` : 'the same browser'} and screen profile.`,
+				action: 'Useful when investigating repeated submissions from shared devices.',
+				fieldIds: [],
 			})
 		}
 
@@ -316,6 +341,30 @@ function responsePayloadFingerprint(fields: FormField[], data: Record<string, st
 		.filter(([, value]) => value.length > 0)
 	if (entries.length === 0) return ''
 	return JSON.stringify(entries)
+}
+
+function normalizeIdentityValue(field: FormField, value: unknown): string {
+	const text = String(value || '').trim().toLowerCase()
+	if (!text) return ''
+	if (field.type === 'email' || /email/i.test(field.label)) return text
+	if (field.type === 'phone' || /phone|mobile|cell/i.test(field.label)) {
+		const digits = text.replace(/\D/g, '')
+		return digits.length >= 7 ? digits : ''
+	}
+	return text
+		.normalize('NFKD')
+		.replace(/[\u0300-\u036f]/g, '')
+		.replace(/[^a-z0-9]+/g, ' ')
+		.trim()
+		.replace(/\s+/g, ' ')
+}
+
+function responseDeviceFingerprint(item: ParsedResponseRecord): string {
+	const ua = typeof item.meta?.ua === 'string' ? item.meta.ua.trim() : ''
+	const screen = typeof item.meta?.screen === 'string' ? item.meta.screen.trim() : ''
+	const lang = typeof item.meta?.lang === 'string' ? item.meta.lang.trim().toLowerCase() : ''
+	if (!ua || !screen) return ''
+	return `${ua.slice(0, 180)}|${screen.slice(0, 40)}|${lang.slice(0, 16)}`
 }
 
 function repeatedAnswerValues(fields: FormField[], data: Record<string, string>): string[] {

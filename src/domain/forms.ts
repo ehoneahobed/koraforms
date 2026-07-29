@@ -65,6 +65,7 @@ export interface ResponseMeta {
 	duration?: number
 	ua?: string
 	screen?: string
+	lang?: string
 	startedAt?: number
 	completedAt?: number
 }

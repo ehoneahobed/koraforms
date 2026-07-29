@@ -191,10 +191,15 @@ Scope:
 
 ### 15. Advanced Duplicate Detection
 
-Status: Not started
+Status: Completed
 
 Scope:
 - Better duplicate signals across name, email, phone, IP/device/session metadata, and repeated answers.
+
+Verification:
+- Duplicate detection normalizes identity fields by type, including email case, phone punctuation, and name spacing/punctuation.
+- Response quality signals include repeated answer payloads, repeated values, unusually fast/slow submissions, low completion, attachment review, and privacy-preserving same-device patterns from stored browser/screen/language metadata.
+- No IP address collection was added; this keeps the release aligned with privacy and offline-first trust goals.
 
 ### 16. Saved Analytics Filters
 
