@@ -182,10 +182,16 @@ Verification:
 
 ### 13. Team And Workspace Roles
 
-Status: Not started
+Status: Deferred until server-enforced collaboration authorization
 
 Scope:
 - Owner/admin/editor/viewer roles for collaborative form management.
+
+Release decision:
+- Do not ship client-only role labels or local-only collaborators. That would imply enterprise access control without enforcing it in the authoritative sync path.
+- The current release remains single-owner workspace scoped by `forms.ownerId`, with authenticated owner routes for privileged server actions.
+- Proper collaboration requires server-enforced workspace membership, role-scoped sync authorization, invitation acceptance/revocation, audit events for membership changes, and collection-level operation validation before owner-visible materialization.
+- This is post-RC product work, not a blocker for public release of the single-owner offline-first product.
 
 ### 14. Public Results Customization
 
