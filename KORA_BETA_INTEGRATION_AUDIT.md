@@ -1,23 +1,27 @@
-# Kora Beta.6 Integration Audit
+# Kora Beta Integration Audit
 
-Date: July 25, 2026
+Date: July 29, 2026
 
-This audit records the KoraForms integration baseline for Kora.js beta.6. KoraForms is not in production yet, so the app intentionally drops beta.5 compatibility paths instead of preserving deprecated framework behavior.
+This audit records the KoraForms integration baseline for the latest published Kora.js beta. KoraForms is not in production yet, so the app intentionally drops compatibility paths for older beta framework behavior instead of preserving deprecated workarounds.
 
 ## Installed Baseline
 
-- `korajs`: `1.0.0-beta.6`
-- `@korajs/store`: `1.0.0-beta.6`
-- `@korajs/react`: `1.0.0-beta.6`
-- `@korajs/core`, `@korajs/server`, `@korajs/auth`, `@korajs/cli`: still `1.0.0-beta.5`, because matching beta.6 packages are not published on npm for those modules.
+- `korajs`: `1.0.0-beta.7`
+- `@korajs/store`: `1.0.0-beta.7`
+- `@korajs/react`: `1.0.0-beta.7`
+- `@korajs/core`: `1.0.0-beta.6`
+- `@korajs/server`: `1.0.0-beta.6`
+- `@korajs/auth`: `1.0.0-beta.6`
+- `@korajs/cli`: `1.0.0-beta.6`
 
-## Beta.6 Capabilities Adopted
+## Framework Capabilities Adopted
 
 - SharedWorker-hosted SQLite is no longer a durable storage path for KoraForms. Both authenticated and public runtimes use the standard `sqlite-wasm` worker path.
 - Kora's leader/follower multi-tab storage coordination is now the browser coordination layer for public forms.
 - Kora's OPFS-to-IndexedDB fallback is treated as a durable storage mode. KoraForms records `store:storage-fallback` as an informational diagnostic, not as an offline-readiness failure.
 - The old active-tab `BroadcastChannel` form-payload handoff has been removed. Public cached form versions, progress, and queued submissions must hydrate from Kora's local database.
 - `store:opfs-unavailable`, persistence errors, quota errors, and database-name collisions remain blocking diagnostics because those can imply non-durable or unsafe local state.
+- KoraForms no longer patches installed Kora packages during `postinstall`. The server body parsing, structured-field materialization, and IndexedDB dump-only restore fixes are now framework-owned.
 
 ## Verification Target
 

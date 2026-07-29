@@ -4,7 +4,7 @@
 
 KoraForms is an offline-first form builder and response product, not a traditional always-online web app.
 
-This plan should align with Kora.js beta.6 as currently integrated in this project and with the official Kora.js docs at <https://korajs.dev>. The relevant Kora philosophy is:
+This plan should align with the latest Kora.js beta currently integrated in this project and with the official Kora.js docs at <https://korajs.dev>. The relevant Kora philosophy is:
 
 - Offline is the normal state. Every core code path should work without a network connection; connectivity enables sync and side effects, but it should not gate user action.
 - Kora owns the data plane. The product should define schemas and mutations, then let Kora handle local storage, operation logs, conflict resolution, sync, replay, and diagnostics.
@@ -116,7 +116,7 @@ Confirmed gap for KoraForms:
 
 ## Current Release Gate
 
-Latest local verification target is Kora.js beta.6:
+Latest local verification target is the current Kora.js beta baseline:
 
 - `pnpm run check`
 - `pnpm run test:e2e`
@@ -168,7 +168,7 @@ Remaining framework-aligned gap:
 - Public response IDs now use the stable `clientSubmissionId` when available, matching the future Kora conditional-apply idempotency key and preventing retry semantics from depending on a server-only random id.
 - Public response acceptance now uses Kora `request.kora.applyConditional(...)` so the accepted response record and `forms.responseCount` increment are one idempotent admitted set on the trusted route path, including horizontally scaled Postgres deployments after environment validation.
 - Kora's timestamp helpers distinguish server-managed values from product-owned values. KoraForms uses product-supplied numeric timestamps for public cache times, local submission times, progress update times, and side-effect retry times so offline respondent state can be created and replayed deterministically.
-- KoraForms uses Kora's primary browser database target, `sqlite-wasm`, for respondent form versions, progress, and queued submissions. Kora beta.6 exposes OPFS-backed blob primitives, multi-tab leader/follower coordination, OPFS fallback diagnostics, durable IndexedDB fallback, abandoned transaction reclaim, and gap-free sync delivery. KoraForms no longer passes `sharedWorkerUrl` and no longer retains a non-durable active-tab handoff. KoraForms uses Kora blobs for newly captured file/signature bytes with an IndexedDB compatibility fallback for browsers or older local data.
+- KoraForms uses Kora's primary browser database target, `sqlite-wasm`, for respondent form versions, progress, and queued submissions. The current Kora beta exposes OPFS-backed blob primitives, multi-tab leader/follower coordination, OPFS fallback diagnostics, durable IndexedDB fallback, abandoned transaction reclaim, gap-free sync delivery, structured-field server materialization, and hardened sync/auth transitions. KoraForms no longer passes `sharedWorkerUrl`, no longer retains a non-durable active-tab handoff, and no longer patches Kora packages during install. KoraForms uses Kora blobs for newly captured file/signature bytes with an IndexedDB compatibility fallback for browsers or older local data.
 - Kora includes browser/server blob storage primitives and production-server live-ref access for garbage collection. KoraForms has adopted the browser OPFS blob store and configured server blob persistence callbacks, but the current dynamic response schema still stores answer values as JSON manifests for compatibility with the existing REST acceptance bridge. The remaining KoraForms product migration is to model submission attachments as explicit Kora blob fields or a companion `submission_blobs` collection once anonymous validated submission materialization is available.
 - Kora includes `t.json()`, `t.object()`, and `t.secret()`. KoraForms now uses `t.json()` for dynamic form and response payloads and `t.secret().hashed()` for form access passwords. `t.object()` should be used for future fixed-shape nested records; current form definitions, answers, settings, and side-effect payloads are intentionally dynamic and belong on `t.json()`.
 - Kora quotes generated SQL identifiers consistently through `quoteIdent(...)`. KoraForms can keep snake_case collection names for readability, but case-preserving identifiers such as camelCase/PascalCase are no longer a framework blocker. Arbitrary respondent-facing labels with spaces or punctuation should remain product data, not schema identifiers.
@@ -518,7 +518,7 @@ Plan:
 
 KoraForms is intentionally stress-testing Kora.js. These production-readiness findings suggest useful framework-level improvements:
 
-- Browser storage durability remains release-critical. Kora beta.6 should keep the public offline suite green on OPFS and IndexedDB fallback paths, including multi-tab, reload, tab close, browser restart, and queued attachment submission.
+- Browser storage durability remains release-critical. The current Kora beta should keep the public offline suite green on OPFS and IndexedDB fallback paths, including multi-tab, reload, tab close, browser restart, and queued attachment submission.
 - Operation-level ACLs for sync, especially anonymous/public scopes.
 - Server-side collection validators that run before sync-created operations materialize, and that can also be reused by any temporary compatibility adapter.
 - First-class local pending-submission lifecycle primitives for anonymous/public submissions, built on the existing operation queue rather than a second persistence model.

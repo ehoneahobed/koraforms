@@ -21,18 +21,17 @@
     "studio:live": "kora studio --connect ws://localhost:3001/kora-sync --schema ./src/schema.ts",
     "studio:prod": "node scripts/studio-prod.js",
     "studio:lab": "kora studio --lab --schema ./src/schema.ts",
-    "logs": "kora logs --url http://localhost:3001",
-    "postinstall": "node scripts/patch-server.js"
+    "logs": "kora logs --url http://localhost:3001"
   },
   "dependencies": {
-    "@korajs/auth": "1.0.0-beta.5",
-    "@korajs/core": "1.0.0-beta.5",
-    "@korajs/react": "1.0.0-beta.6",
-    "@korajs/server": "1.0.0-beta.5",
-    "@korajs/store": "1.0.0-beta.6",
+    "@korajs/auth": "1.0.0-beta.6",
+    "@korajs/core": "1.0.0-beta.6",
+    "@korajs/react": "1.0.0-beta.7",
+    "@korajs/server": "1.0.0-beta.6",
+    "@korajs/store": "1.0.0-beta.7",
     "@sqlite.org/sqlite-wasm": ">=3.51.0-build1",
     "better-sqlite3": "^12.9.0",
-    "korajs": "1.0.0-beta.6",
+    "korajs": "1.0.0-beta.7",
     "lucide-react": "^0.468.0",
     "postgres": "^3.4.0",
     "qrcode": "^1.5.4",
@@ -51,7 +50,7 @@
     ]
   },
   "devDependencies": {
-    "@korajs/cli": "1.0.0-beta.5",
+    "@korajs/cli": "1.0.0-beta.6",
     "@playwright/test": "^1.61.1",
     "@tailwindcss/vite": "^4.0.0",
     "@types/better-sqlite3": "^7.6.13",
