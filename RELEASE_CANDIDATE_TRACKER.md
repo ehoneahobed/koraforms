@@ -146,10 +146,15 @@ Verification:
 
 ### 10. Form Version History And Rollback
 
-Status: Not started
+Status: Completed
 
 Scope:
 - Let creators inspect published revisions and restore a prior draft.
+
+Verification:
+- Publishing writes immutable public-version snapshots with publish-time timestamps and stable content hashes.
+- Settings exposes published revisions and restores any prior revision as a draft, keeping the live public form unchanged until the creator explicitly publishes again.
+- Unit coverage verifies snapshot creation, newest-first sorting, and draft restore payloads.
 
 ### 11. Owner Notifications Inbox
 

@@ -65,6 +65,8 @@ import {
 	sanitizeSlug,
 	type FormShellTab,
 } from './features/forms/shell'
+import { buildPublishedFormVersionRecord, buildVersionRestorePayload, sortPublishedVersions } from './features/forms/versionHistory'
+import type { PublicFormVersionRecord } from './features/form-fill/offlineModel'
 import { recordAuditEvent } from './features/audit/events'
 
 // ---------------------------------------------------------------------------
@@ -376,12 +378,19 @@ function FormPageShell({ navigate, userId }: { navigate: (path: string) => void;
 	const allForms = useQuery(app.forms.where({}).orderBy('createdAt', 'desc'))
 	const allAuditEvents = useQuery(app.audit_events.where({}).orderBy('createdAt', 'desc'))
 	const allSideEffectDeliveries = useQuery(app.side_effect_deliveries.where({}).orderBy('updatedAt', 'desc'))
+	const allPublicFormVersions = useQuery(app.public_form_versions.where({}).orderBy('publishedAt', 'desc'))
 	const form = allForms.find((f) => f.id === formId)
 	const auditEvents = allAuditEvents.filter(event => String(event.formId) === String(formId)).slice(0, 12)
 	const sideEffectDeliveries = allSideEffectDeliveries.filter(delivery => String(delivery.formId) === String(formId)).slice(0, 24)
+	const versionRecords = sortPublishedVersions(
+		allPublicFormVersions.filter(version => String(version.formId) === String(formId)) as PublicFormVersionRecord[],
+	)
 
 	const { mutate: updateForm } = useMutation(
 		(id: string, data: Record<string, unknown>) => app.forms.update(id, data),
+	)
+	const { mutateAsync: createPublicFormVersion } = useMutation(
+		(data: Record<string, unknown>) => app.public_form_versions.insert(data),
 	)
 
 	const isPublished = form ? String(form.status) === 'published' : false
@@ -398,6 +407,20 @@ function FormPageShell({ navigate, userId }: { navigate: (path: string) => void;
 		return parseFormFields(form.fields)
 	}, [form])
 	const formUrl = getPublicFormUrl(slug || formId || '')
+
+	const recordPublishedVersion = async (nextSlug: string) => {
+		if (!form || !nextSlug) return
+		const version = buildPublishedFormVersionRecord({
+			form: { ...form, slug: nextSlug, status: 'published' },
+			slug: nextSlug,
+		})
+		try {
+			await createPublicFormVersion(version as unknown as Record<string, unknown>)
+		} catch {
+			// Publishing identical content can hit the slug/versionHash uniqueness guard.
+			// The existing immutable snapshot is already the correct history entry.
+		}
+	}
 
 	const updateSettings = (next: FormSettingsType) => {
 		if (!formId) return
@@ -461,6 +484,7 @@ function FormPageShell({ navigate, userId }: { navigate: (path: string) => void;
 			summary: isPublished ? 'Published form changes' : 'Published form',
 			metadata: { slug: payload.slug },
 		})
+		void recordPublishedVersion(payload.slug)
 		window.setTimeout(() => {
 			setPublishFeedback('saved')
 			window.setTimeout(() => setPublishFeedback('idle'), 1800)
@@ -486,7 +510,8 @@ function FormPageShell({ navigate, userId }: { navigate: (path: string) => void;
 
 	const handleStatusChange = (status: string) => {
 		if (!formId || !form) return
-		updateForm(formId, buildStatusPayload(status, slug, formTitle))
+		const payload = buildStatusPayload(status, slug, formTitle)
+		updateForm(formId, payload)
 		const eventType = status === 'published'
 			? 'form_published'
 			: status === 'closed'
@@ -498,6 +523,24 @@ function FormPageShell({ navigate, userId }: { navigate: (path: string) => void;
 			eventType,
 			summary: `Changed status to ${status}`,
 			metadata: { status },
+		})
+		if (status === 'published') {
+			void recordPublishedVersion(String(payload.slug || slug))
+		}
+	}
+
+	const handleRestoreVersion = async (version: PublicFormVersionRecord) => {
+		if (!formId) return
+		updateForm(formId, buildVersionRestorePayload(version))
+		await recordAuditEvent(app.audit_events, {
+			formId,
+			actorId: userId,
+			eventType: 'form_updated',
+			summary: 'Restored a published revision as draft',
+			metadata: {
+				versionHash: version.versionHash,
+				publishedAt: version.publishedAt,
+			},
 		})
 	}
 
@@ -695,6 +738,7 @@ function FormPageShell({ navigate, userId }: { navigate: (path: string) => void;
 					fields={formFields}
 					auditEvents={auditEvents}
 					sideEffectDeliveries={sideEffectDeliveries}
+					versionRecords={versionRecords}
 					settings={formSettings}
 					hasPassword={formHasPassword}
 					onStatusChange={handleStatusChange}
@@ -713,6 +757,7 @@ function FormPageShell({ navigate, userId }: { navigate: (path: string) => void;
 					onPasswordClear={clearPassword}
 					onWebhookTest={handleWebhookTest}
 					onEmailTest={handleEmailTest}
+					onRestoreVersion={handleRestoreVersion}
 				/>
 			)}
 

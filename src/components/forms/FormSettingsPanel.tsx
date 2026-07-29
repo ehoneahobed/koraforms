@@ -5,6 +5,7 @@ import { buildPublicFormReadiness } from '../../features/forms/readiness'
 import { buildDeliveryStatusSummary, type DeliveryStatusItem } from '../../features/forms/deliveries'
 import { THEME_PRESETS } from '../../themes'
 import type { FormField, FormSettings as FormSettingsType, WebhookConfig } from '../../types'
+import type { PublicFormVersionRecord } from '../../features/form-fill/offlineModel'
 
 type WebhookTestResult = { ok: boolean; message: string }
 type EmailTestResult = { ok: boolean; message: string }
@@ -19,6 +20,7 @@ interface FormSettingsPanelProps {
 	fields: FormField[]
 	auditEvents?: Record<string, unknown>[]
 	sideEffectDeliveries?: Record<string, unknown>[]
+	versionRecords?: PublicFormVersionRecord[]
 	settings: FormSettingsType
 	hasPassword: boolean
 	onStatusChange: (status: string) => void
@@ -28,6 +30,7 @@ interface FormSettingsPanelProps {
 	onPasswordClear: () => void
 	onWebhookTest?: (webhook: WebhookConfig) => Promise<WebhookTestResult>
 	onEmailTest?: (email: string) => Promise<EmailTestResult>
+	onRestoreVersion?: (version: PublicFormVersionRecord) => Promise<void> | void
 }
 
 export function FormSettingsPanel({
@@ -38,6 +41,7 @@ export function FormSettingsPanel({
 	fields,
 	auditEvents = [],
 	sideEffectDeliveries = [],
+	versionRecords = [],
 	settings,
 	hasPassword,
 	onStatusChange,
@@ -47,6 +51,7 @@ export function FormSettingsPanel({
 	onPasswordClear,
 	onWebhookTest,
 	onEmailTest,
+	onRestoreVersion,
 }: FormSettingsPanelProps) {
 	const updateSetting = <K extends keyof FormSettingsType>(key: K, value: FormSettingsType[K]) => {
 		onSettingsChange(updateSettingsValue(settings, key, value))
@@ -56,8 +61,10 @@ export function FormSettingsPanel({
 	const webhooks = settings.webhooks || []
 	const [testingWebhook, setTestingWebhook] = useState<number | null>(null)
 	const [testingEmail, setTestingEmail] = useState(false)
+	const [restoringVersionHash, setRestoringVersionHash] = useState('')
 	const [webhookMessages, setWebhookMessages] = useState<Record<number, { kind: 'success' | 'error' | 'muted'; text: string }>>({})
 	const [emailMessage, setEmailMessage] = useState<{ kind: 'success' | 'error' | 'muted'; text: string } | null>(null)
+	const [versionMessage, setVersionMessage] = useState<{ kind: 'success' | 'error'; text: string } | null>(null)
 	const [headerDrafts, setHeaderDrafts] = useState<Record<number, string>>({})
 
 	const updateWebhook = (index: number, patch: Partial<WebhookConfig>) => {
@@ -124,6 +131,20 @@ export function FormSettingsPanel({
 			})
 		} finally {
 			setTestingWebhook(null)
+		}
+	}
+
+	const restoreVersion = async (version: PublicFormVersionRecord) => {
+		if (!onRestoreVersion) return
+		setRestoringVersionHash(version.versionHash)
+		setVersionMessage(null)
+		try {
+			await onRestoreVersion(version)
+			setVersionMessage({ kind: 'success', text: 'Restored as a draft. Publish changes when you are ready.' })
+		} catch (error) {
+			setVersionMessage({ kind: 'error', text: error instanceof Error ? error.message : 'Could not restore this version.' })
+		} finally {
+			setRestoringVersionHash('')
 		}
 	}
 
@@ -203,6 +224,59 @@ export function FormSettingsPanel({
 								</div>
 							))}
 						</div>
+					</div>
+				</div>
+
+				<div className="kf-panel p-6">
+					<div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+						<div>
+							<h3 className="flex items-center gap-2 text-[15px] font-semibold text-slate-950 dark:text-gray-100">
+								<History className="h-4 w-4 text-slate-400" />
+								Published revisions
+							</h3>
+							<p className="mt-1 text-[13px] text-slate-500 dark:text-gray-400">
+								Restore a previous published version into the builder without changing the live form.
+							</p>
+						</div>
+						<span className="rounded-full bg-slate-100 px-3 py-1 text-[12px] font-semibold text-slate-500 dark:bg-gray-900 dark:text-gray-400">
+							{versionRecords.length} saved
+						</span>
+					</div>
+					{versionMessage && (
+						<div className={`mt-4 rounded-xl border px-3 py-2 text-[13px] ${
+							versionMessage.kind === 'success'
+								? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-900/20 dark:text-emerald-300'
+								: 'border-red-200 bg-red-50 text-red-700 dark:border-red-900/50 dark:bg-red-900/20 dark:text-red-300'
+						}`}>
+							{versionMessage.text}
+						</div>
+					)}
+					<div className="mt-4 divide-y divide-slate-100 overflow-hidden rounded-2xl border border-slate-200 dark:divide-gray-800 dark:border-gray-800">
+						{versionRecords.length === 0 ? (
+							<div className="bg-slate-50 p-4 text-[13px] text-slate-500 dark:bg-gray-900/50 dark:text-gray-400">
+								Published snapshots will appear here after you publish this form.
+							</div>
+						) : versionRecords.slice(0, 6).map((version, index) => (
+							<div key={`${version.versionHash}:${version.publishedAt}`} className="flex flex-col gap-3 bg-white p-4 dark:bg-gray-950/20 sm:flex-row sm:items-center sm:justify-between">
+								<div className="min-w-0">
+									<p className="truncate text-[13px] font-semibold text-slate-800 dark:text-gray-200">
+										{index === 0 ? 'Current published version' : `Revision ${versionRecords.length - index}`}
+									</p>
+									<p className="mt-1 text-[12px] text-slate-500 dark:text-gray-500">
+										{new Date(version.publishedAt).toLocaleString()} · {String(version.versionHash).slice(0, 8)}
+									</p>
+								</div>
+								<button
+									type="button"
+									onClick={() => restoreVersion(version)}
+									disabled={!onRestoreVersion || restoringVersionHash === version.versionHash}
+									className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[13px] font-semibold text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-wait disabled:opacity-60 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
+								>
+									{restoringVersionHash === version.versionHash ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
+									Restore as draft
+								</button>
+							</div>
+						))}
 					</div>
 				</div>
 
