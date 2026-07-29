@@ -160,10 +160,15 @@ Scope:
 
 ### 12. Response Import/Export Presets
 
-Status: Not started
+Status: Completed for manual export presets
 
 Scope:
-- Saved export filters and recurring export formats.
+- Saved export field selections, format, and metadata choices.
+- Recurring exports remain future server-job work because they need scheduled infrastructure and a delivery destination.
+
+Verification:
+- `response_export_presets` is a synced Kora collection, so presets are available across authenticated devices.
+- Export preset normalization is covered by unit tests.
 
 ### 13. Team And Workspace Roles
 

@@ -5,9 +5,10 @@ type ResponseData = Record<string, unknown>
 type SideEffectPayload = Record<string, unknown>
 type AnalyticsEventMetadata = Record<string, unknown>
 type SavedAnalyticsFilters = Array<{ fieldId: string; value: string }>
+type ResponseExportPresetConfig = { selectedFieldIds: string[]; includeMetadata: boolean }
 
 export default defineSchema({
-	version: 17,
+	version: 18,
 	collections: {
 		// A form definition (e.g. "Customer Feedback", "Event Registration")
 		forms: {
@@ -92,6 +93,24 @@ export default defineSchema({
 				name: t.string(),
 				timeRange: t.enum(['7d', '14d', '30d', '90d', 'all']).default('30d'),
 				filters: t.json<SavedAnalyticsFilters>().default([]),
+				createdAt: t.number(),
+				updatedAt: t.number(),
+			},
+			indexes: ['formId', 'ownerId', 'updatedAt'],
+			constraints: [{
+				type: 'unique',
+				fields: ['formId', 'ownerId', 'name'],
+				onConflict: 'last-write-wins',
+			}],
+		},
+
+		response_export_presets: {
+			fields: {
+				formId: t.string(),
+				ownerId: t.string().default(''),
+				name: t.string(),
+				format: t.enum(['csv', 'json']).default('csv'),
+				config: t.json<ResponseExportPresetConfig>().default({ selectedFieldIds: [], includeMetadata: true }),
 				createdAt: t.number(),
 				updatedAt: t.number(),
 			},

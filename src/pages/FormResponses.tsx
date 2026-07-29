@@ -25,9 +25,11 @@ import {
 	staticFieldLabel,
 } from '../features/responses/utils'
 import {
+	buildResponseExportPresetPayload,
 	buildResponsesCsvExport,
 	buildResponsesJsonExport,
 	deleteResponsesMessage,
+	normalizeResponseExportPresets,
 	responseIdsForDeletion,
 } from '../features/responses/actions'
 import {
@@ -148,11 +150,20 @@ export function FormResponses({ formId, navigate, userId = '' }: Props) {
 	const allSavedAnalyticsViews = useQuery(
 		app.response_filter_views.where({}).orderBy('updatedAt', 'desc'),
 	)
+	const allResponseExportPresets = useQuery(
+		app.response_export_presets.where({}).orderBy('updatedAt', 'desc'),
+	)
 	const { mutateAsync: createSavedAnalyticsView } = useMutation(
 		(data: Record<string, unknown>) => app.response_filter_views.insert(data),
 	)
 	const { mutateAsync: deleteSavedAnalyticsView } = useMutation(
 		(id: string) => app.response_filter_views.delete(id),
+	)
+	const { mutateAsync: createResponseExportPreset } = useMutation(
+		(data: Record<string, unknown>) => app.response_export_presets.insert(data),
+	)
+	const { mutateAsync: deleteResponseExportPreset } = useMutation(
+		(id: string) => app.response_export_presets.delete(id),
 	)
 
 	const form = allForms.find((f) => f.id === formId)
@@ -161,6 +172,9 @@ export function FormResponses({ formId, navigate, userId = '' }: Props) {
 	const savedAnalyticsViews = useMemo(() => (
 		normalizeSavedAnalyticsFilterViews(allSavedAnalyticsViews, formId, userId)
 	), [allSavedAnalyticsViews, formId, userId])
+	const responseExportPresets = useMemo(() => (
+		normalizeResponseExportPresets(allResponseExportPresets, formId, userId)
+	), [allResponseExportPresets, formId, userId])
 
 	useEffect(() => {
 		setPageMeta({
@@ -965,6 +979,22 @@ export function FormResponses({ formId, navigate, userId = '' }: Props) {
 					}
 					onExportCsv={(fieldIds, sourceResponses, includeMetadata) => exportCsv(fieldIds, sourceResponses ?? filteredResponses, includeMetadata)}
 					onExportJson={(fieldIds, sourceResponses, includeMetadata) => exportJson(fieldIds, sourceResponses ?? filteredResponses, includeMetadata)}
+					savedPresets={responseExportPresets}
+					onSavePreset={async (preset) => {
+						const payload = buildResponseExportPresetPayload({
+							formId,
+							ownerId: userId,
+							name: preset.name,
+							format: preset.format,
+							selectedFieldIds: preset.selectedFieldIds,
+							includeMetadata: preset.includeMetadata,
+						})
+						if (!payload) return
+						await createResponseExportPreset(payload)
+					}}
+					onDeletePreset={async (id) => {
+						await deleteResponseExportPreset(id)
+					}}
 					onClose={() => setShowExportModal(false)}
 				/>
 			)}

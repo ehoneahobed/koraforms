@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Download, FileJson, FileSpreadsheet, X } from 'lucide-react'
 import type { FormField } from '../../types'
 import { responseFields } from '../../features/responses/utils'
+import type { ResponseExportPreset } from '../../features/responses/actions'
 import { useDialogAccessibility } from '../../hooks/useDialogAccessibility'
 
 type ExportFormat = 'csv' | 'json'
@@ -12,6 +13,9 @@ interface ExportModalProps {
 	scopeLabel?: string
 	onExportCsv: (fieldIds?: string[], sourceResponses?: Record<string, unknown>[], includeMetadata?: boolean) => void
 	onExportJson: (fieldIds?: string[], sourceResponses?: Record<string, unknown>[], includeMetadata?: boolean) => void
+	savedPresets?: ResponseExportPreset[]
+	onSavePreset?: (preset: { name: string; format: ExportFormat; selectedFieldIds: string[]; includeMetadata: boolean }) => Promise<void> | void
+	onDeletePreset?: (id: string) => Promise<void> | void
 	onClose: () => void
 }
 
@@ -21,6 +25,9 @@ export function ExportModal({
 	scopeLabel,
 	onExportCsv,
 	onExportJson,
+	savedPresets = [],
+	onSavePreset,
+	onDeletePreset,
 	onClose,
 }: ExportModalProps) {
 	const [format, setFormat] = useState<ExportFormat>('csv')
@@ -28,9 +35,14 @@ export function ExportModal({
 		new Set(responseFields(fields).map(field => field.id)),
 	)
 	const [includeMetadata, setIncludeMetadata] = useState(true)
+	const [showSavePreset, setShowSavePreset] = useState(false)
+	const [presetName, setPresetName] = useState('')
+	const [isSavingPreset, setIsSavingPreset] = useState(false)
+	const [busyPresetId, setBusyPresetId] = useState<string | null>(null)
 	const dialogRef = useDialogAccessibility<HTMLDivElement>({ onClose })
 
 	const dataFields = responseFields(fields)
+	const validFieldIds = new Set(dataFields.map(field => field.id))
 
 	const toggleField = (id: string) => {
 		setSelectedFieldIds(prev => {
@@ -46,6 +58,41 @@ export function ExportModal({
 		if (format === 'csv') onExportCsv(ids, undefined, includeMetadata)
 		else onExportJson(ids, undefined, includeMetadata)
 		onClose()
+	}
+
+	const applyPreset = (preset: ResponseExportPreset) => {
+		const ids = preset.selectedFieldIds.filter(id => validFieldIds.has(id))
+		setFormat(preset.format)
+		setSelectedFieldIds(new Set(ids.length > 0 ? ids : dataFields.map(field => field.id)))
+		setIncludeMetadata(preset.includeMetadata)
+	}
+
+	const savePreset = async () => {
+		const name = presetName.trim()
+		if (!name || !onSavePreset) return
+		setIsSavingPreset(true)
+		try {
+			await onSavePreset({
+				name,
+				format,
+				selectedFieldIds: Array.from(selectedFieldIds),
+				includeMetadata,
+			})
+			setPresetName('')
+			setShowSavePreset(false)
+		} finally {
+			setIsSavingPreset(false)
+		}
+	}
+
+	const deletePreset = async (preset: ResponseExportPreset) => {
+		if (!onDeletePreset) return
+		setBusyPresetId(preset.id)
+		try {
+			await onDeletePreset(preset.id)
+		} finally {
+			setBusyPresetId(null)
+		}
 	}
 
 	return (
@@ -77,6 +124,85 @@ export function ExportModal({
 							{scopeLabel || 'All responses currently visible in this view'}
 						</p>
 					</div>
+
+					{(savedPresets.length > 0 || onSavePreset) && (
+						<div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900/40">
+							<div className="mb-2 flex items-center justify-between gap-3">
+								<div>
+									<p className="text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-gray-500">Presets</p>
+									<p className="mt-0.5 text-xs text-slate-400 dark:text-gray-500">Save field and format choices for repeat exports.</p>
+								</div>
+								{onSavePreset && !showSavePreset && (
+									<button
+										onClick={() => setShowSavePreset(true)}
+										className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+									>
+										Save preset
+									</button>
+								)}
+							</div>
+							{showSavePreset && (
+								<form
+									onSubmit={event => {
+										event.preventDefault()
+										void savePreset()
+									}}
+									className="mb-2 flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1 dark:border-gray-800 dark:bg-gray-950"
+								>
+									<input
+										value={presetName}
+										onChange={event => setPresetName(event.target.value)}
+										placeholder="Preset name"
+										maxLength={64}
+										className="h-8 min-w-0 flex-1 rounded-md border-0 bg-transparent px-2 text-xs font-medium text-slate-700 outline-none placeholder:text-slate-400 dark:text-gray-200"
+										aria-label="Export preset name"
+									/>
+									<button
+										type="submit"
+										disabled={!presetName.trim() || isSavingPreset}
+										className="h-8 rounded-md bg-slate-950 px-3 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40 dark:bg-white dark:text-slate-950"
+									>
+										Save
+									</button>
+									<button
+										type="button"
+										onClick={() => {
+											setShowSavePreset(false)
+											setPresetName('')
+										}}
+										className="h-8 rounded-md px-2 text-xs font-semibold text-slate-400 transition-colors hover:text-slate-700 dark:hover:text-gray-200"
+									>
+										Cancel
+									</button>
+								</form>
+							)}
+							{savedPresets.length > 0 && (
+								<div className="flex gap-2 overflow-x-auto pb-1">
+									{savedPresets.map(preset => (
+										<div key={preset.id} className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-slate-50 p-1 ring-1 ring-slate-200 dark:bg-gray-950 dark:ring-gray-800">
+											<button
+												onClick={() => applyPreset(preset)}
+												className="rounded-md px-2.5 py-1.5 text-left text-xs font-semibold text-slate-700 transition-colors hover:bg-white dark:text-gray-300 dark:hover:bg-gray-900"
+											>
+												{preset.name}
+												<span className="ml-1 font-medium uppercase text-slate-400 dark:text-gray-500">{preset.format}</span>
+											</button>
+											{onDeletePreset && (
+												<button
+													onClick={() => void deletePreset(preset)}
+													disabled={busyPresetId === preset.id}
+													className="inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-white hover:text-red-500 disabled:opacity-40 dark:hover:bg-gray-900"
+													aria-label={`Delete export preset ${preset.name}`}
+												>
+													&times;
+												</button>
+											)}
+										</div>
+									))}
+								</div>
+							)}
+						</div>
+					)}
 
 					<div>
 						<label className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 block">Format</label>
@@ -146,7 +272,8 @@ export function ExportModal({
 					</button>
 					<button
 						onClick={handleExport}
-						className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-brand-500 transition-colors shadow-sm"
+						disabled={selectedFieldIds.size === 0}
+						className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-brand-500 disabled:cursor-not-allowed disabled:opacity-45"
 					>
 						<Download className="h-4 w-4" />
 						Export {responseCount} responses
