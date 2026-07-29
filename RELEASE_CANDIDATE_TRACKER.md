@@ -20,7 +20,7 @@ Acceptance:
 
 Verification:
 - 2026-07-29: `pnpm run check` passed.
-- 2026-07-29: `pnpm run test:e2e` passed with 12/12 browser tests.
+- 2026-07-29: `pnpm run test:e2e` passed with 13/13 browser tests.
 
 ### 2. Public Respondent Offline UX
 
@@ -105,7 +105,7 @@ Acceptance:
 
 ### 8. Backup And Restore E2E
 
-Status: Implemented, needs E2E
+Status: Completed
 
 Scope:
 - Verify workspace backup and restore from the UI.
@@ -113,6 +113,9 @@ Scope:
 
 Acceptance:
 - Backup/restore works in authenticated E2E and preserves expected form/response data.
+
+Verification:
+- 2026-07-29: Authenticated Playwright coverage downloads a workspace backup and restores it through the UI as a draft copy.
 
 ### 9. Accessibility Pass
 

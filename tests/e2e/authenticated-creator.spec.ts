@@ -2,21 +2,7 @@ import { expect, test } from '@playwright/test'
 
 test.describe('authenticated creator workflow', () => {
 	test('signs up, creates from a private template, publishes, and keeps owner tabs addressable', async ({ page }) => {
-		const unique = `${Date.now()}-${test.info().workerIndex}`
-		const email = `creator-${unique}@example.test`
-		const password = 'Passw0rd!e2e'
-
-		await page.goto('/signup', { waitUntil: 'domcontentloaded' })
-		await expect(page.getByRole('heading', { name: /create your account/i })).toBeVisible()
-
-		await page.getByLabel(/name/i).fill('Release Candidate Owner')
-		await page.getByLabel(/^email$/i).fill(email)
-		await page.getByLabel(/^password$/i).fill(password)
-		await page.getByLabel(/confirm password/i).fill(password)
-		await page.getByRole('button', { name: /create account/i }).click()
-
-		await expect(page).toHaveURL(/\/dashboard$/, { timeout: 20_000 })
-		await expect(page.getByRole('heading', { name: /^forms$/i })).toBeVisible()
+		await signUpOwner(page, 'creator')
 
 		await page.goto('/dashboard/templates', { waitUntil: 'domcontentloaded' })
 		await expect(page.getByRole('heading', { name: /start with structure/i })).toBeVisible()
@@ -63,7 +49,52 @@ test.describe('authenticated creator workflow', () => {
 		await expect(page.getByRole('heading', { name: /^responses$/i })).toBeVisible()
 		await expect(page.getByText(/review, organise and understand every submission/i)).toBeVisible()
 	})
+
+	test('backs up and restores workspace forms as draft copies', async ({ page }) => {
+		await signUpOwner(page, 'backup')
+
+		await page.goto('/forms/new/edit?template=contact-form', { waitUntil: 'domcontentloaded' })
+		await expect(page).toHaveURL(/\/forms\/[^/]+\/edit$/, { timeout: 20_000 })
+		await expect(page.getByRole('heading', { name: /contact form/i }).first()).toBeVisible()
+
+		await page.getByRole('button', { name: /back to forms/i }).click()
+		await expect(page).toHaveURL(/\/dashboard$/)
+		await expect(page.getByRole('heading', { name: /^forms$/i })).toBeVisible()
+		await expect(page.getByRole('heading', { name: /contact form/i }).first()).toBeVisible()
+
+		const downloadPromise = page.waitForEvent('download')
+		await page.getByRole('button', { name: /^backup$/i }).click()
+		const download = await downloadPromise
+		const backupPath = await download.path()
+		expect(backupPath).toBeTruthy()
+
+		const fileChooserPromise = page.waitForEvent('filechooser')
+		await page.getByRole('button', { name: /^restore$/i }).click()
+		const fileChooser = await fileChooserPromise
+		await fileChooser.setFiles(backupPath!)
+
+		await expect(page.getByText(/restored 1 form and 0 responses as draft copies/i)).toBeVisible({ timeout: 15_000 })
+		await expect(page.getByRole('heading', { name: /contact form \(restored\)/i })).toBeVisible()
+	})
 })
+
+async function signUpOwner(page: import('@playwright/test').Page, prefix: string) {
+	const unique = `${Date.now()}-${test.info().workerIndex}-${Math.random().toString(36).slice(2)}`
+	const email = `${prefix}-${unique}@example.test`
+	const password = 'Passw0rd!e2e'
+
+	await page.goto('/signup', { waitUntil: 'domcontentloaded' })
+	await expect(page.getByRole('heading', { name: /create your account/i })).toBeVisible()
+
+	await page.getByLabel(/name/i).fill('Release Candidate Owner')
+	await page.getByLabel(/^email$/i).fill(email)
+	await page.getByLabel(/^password$/i).fill(password)
+	await page.getByLabel(/confirm password/i).fill(password)
+	await page.getByRole('button', { name: /create account/i }).click()
+
+	await expect(page).toHaveURL(/\/dashboard$/, { timeout: 20_000 })
+	await expect(page.getByRole('heading', { name: /^forms$/i })).toBeVisible()
+}
 
 async function closeShareModalIfOpen(page: import('@playwright/test').Page) {
 	const modal = page.getByText(/share "rsvp"/i)
