@@ -8,7 +8,7 @@ type SavedAnalyticsFilters = Array<{ fieldId: string; value: string }>
 type ResponseExportPresetConfig = { selectedFieldIds: string[]; includeMetadata: boolean }
 
 export default defineSchema({
-	version: 18,
+	version: 19,
 	collections: {
 		// A form definition (e.g. "Customer Feedback", "Event Registration")
 		forms: {
@@ -242,6 +242,30 @@ export default defineSchema({
 			indexes: ['responseId', 'formId', 'type', 'status', 'nextAttemptAt', 'createdAt'],
 		},
 
+		form_collaborators: {
+			fields: {
+				formId: t.string(),
+				userId: t.string().default(''),
+				email: t.string(),
+				role: t.enum(['viewer', 'editor', 'admin']).default('editor'),
+				status: t.enum(['pending', 'accepted', 'declined']).default('pending').transitions({
+					pending: ['accepted', 'declined'],
+					accepted: [],
+					declined: [],
+				}),
+				invitedBy: t.string().default(''),
+				inviteToken: t.string().default(''),
+				expiresAt: t.number(),
+				createdAt: t.number(),
+			},
+			indexes: ['formId', 'userId', 'email', 'status', 'inviteToken', 'invitedBy'],
+			constraints: [{
+				type: 'unique',
+				fields: ['formId', 'email'],
+				onConflict: 'last-write-wins',
+			}],
+		},
+
 		audit_events: {
 			fields: {
 				formId: t.string(),
@@ -264,6 +288,12 @@ export default defineSchema({
 					'password_cleared',
 					'responses_exported',
 					'responses_deleted',
+					'collaborator_invited',
+					'collaborator_accepted',
+					'collaborator_declined',
+					'collaborator_removed',
+					'collaborator_left',
+					'collaborator_role_changed',
 				]),
 				summary: t.string(),
 				metadata: t.json<Record<string, unknown>>().default({}),

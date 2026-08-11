@@ -1,3 +1,7 @@
+// Collaborator roles for shared form access
+export type CollaboratorRole = 'viewer' | 'editor' | 'admin'
+export type CollaboratorStatus = 'pending' | 'accepted' | 'declined'
+
 // Form field types supported by the form builder
 export type FieldType = 'text' | 'number' | 'email' | 'phone' | 'textarea' | 'select' | 'radio' | 'checkbox' | 'date' | 'rating' | 'scale' | 'yesno' | 'time' | 'url' | 'section' | 'statement' | 'signature' | 'file' | 'calculated' | 'hidden' | 'ranking' | 'matrix'
 

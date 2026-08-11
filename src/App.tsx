@@ -10,6 +10,7 @@ import { generateSlug } from './utils/slug'
 import { FormSettingsPanel } from './components/forms/FormSettingsPanel'
 import { FormSharePanel } from './components/forms/FormSharePanel'
 import { FormUrlPanel } from './components/forms/FormUrlPanel'
+import { CollaboratorsPanel } from './components/forms/CollaboratorsPanel'
 import { BrandLoader, InlineLoader } from './components/shared/BrandLoader'
 import { ShareModal } from './components/shared/ShareModal'
 import {
@@ -45,6 +46,7 @@ const FormResponses = lazy(() => import('./pages/FormResponses').then(m => ({ de
 const Templates = lazy(() => import('./pages/Templates').then(m => ({ default: m.Templates })))
 const TemplateLibrary = lazy(() => import('./pages/TemplateLibrary').then(m => ({ default: m.TemplateLibrary })))
 const TemplateDetail = lazy(() => import('./pages/TemplateDetail').then(m => ({ default: m.TemplateDetail })))
+const AcceptInvite = lazy(() => import('./pages/AcceptInvite').then(m => ({ default: m.AcceptInvite })))
 const HowItWorks = lazy(() => import('./pages/HowItWorks').then(m => ({ default: m.HowItWorks })))
 const Help = lazy(() => import('./pages/Help').then(m => ({ default: m.Help })))
 const Privacy = lazy(() => import('./pages/Privacy').then(m => ({ default: m.Privacy })))
@@ -68,6 +70,9 @@ import {
 import { buildPublishedFormVersionRecord, buildVersionRestorePayload, sortPublishedVersions } from './features/forms/versionHistory'
 import type { PublicFormVersionRecord } from './features/form-fill/offlineModel'
 import { recordAuditEvent } from './features/audit/events'
+import { useFormCollaborators, useFormRole, useSharedFormIds } from './features/collaborators/hooks'
+import { hasFormAccess } from './features/collaborators/access'
+import type { CollaboratorRecord } from './features/collaborators/access'
 
 // ---------------------------------------------------------------------------
 // Dark mode management
@@ -371,6 +376,7 @@ function FormPageShell({ navigate, userId }: { navigate: (path: string) => void;
 	const routerNav = useNavigate()
 	const [searchParams] = useSearchParams()
 	const syncStatus = useSyncStatus()
+	const { user } = useAuth()
 	const [showShareModal, setShowShareModal] = useState(false)
 	const [publishFeedback, setPublishFeedback] = useState<'idle' | 'saving' | 'saved'>('idle')
 
@@ -598,11 +604,20 @@ function FormPageShell({ navigate, userId }: { navigate: (path: string) => void;
 		return 'bg-emerald-400'
 	})()
 
+	// Collaborator data
+	const formCollaborators = useFormCollaborators(formId || '')
+	const formRole = useFormRole(
+		form ? String(form.ownerId || '') : '',
+		userId,
+		formId || '',
+	)
+
 	const tabs: { key: FormShellTab; label: string }[] = [
 		{ key: 'build', label: 'Build' },
 		{ key: 'responses', label: 'Responses' },
 		{ key: 'url', label: 'URL' },
 		{ key: 'share', label: 'Share' },
+		{ key: 'collaborators', label: 'People' },
 		{ key: 'settings', label: 'Settings' },
 	]
 
@@ -727,6 +742,16 @@ function FormPageShell({ navigate, userId }: { navigate: (path: string) => void;
 					resultsUrl={`${formUrl}/results`}
 					publicResults={!!formSettings.publicResults}
 					onPublish={handlePublish}
+				/>
+			)}
+			{activePanel === 'collaborators' && form && (
+				<CollaboratorsPanel
+					formId={formId}
+					formTitle={formTitle}
+					collaborators={formCollaborators}
+					userRole={formRole?.role || 'owner'}
+					userId={userId}
+					userEmail={user?.email || ''}
 				/>
 			)}
 			{activePanel === 'settings' && form && (
@@ -998,6 +1023,7 @@ export function App() {
 					<Route path="/help" element={<HelpPage />} />
 					<Route path="/privacy" element={<PrivacyPage />} />
 					<Route path="/terms" element={<TermsPage />} />
+					<Route path="/invite/:token" element={<Suspense fallback={<InlineLoader message="Loading..." />}><AcceptInvite /></Suspense>} />
 					<Route path="/templates/:templateKey" element={<TemplateDetailPage />} />
 					<Route path="/templates" element={<PublicTemplatesPage />} />
 

@@ -32,6 +32,7 @@ import {
 	Upload,
 	Bell,
 	AlertTriangle,
+	Users,
 } from 'lucide-react'
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { FORM_TEMPLATES, TEMPLATE_CATEGORIES, createFieldsFromTemplate } from '../templates'
@@ -73,6 +74,7 @@ import {
 	type PublicOfflineFormDiagnostics,
 } from '../features/form-fill/offlineRuntime'
 import { recordAuditEvent } from '../features/audit/events'
+import { useSharedFormIds } from '../features/collaborators/hooks'
 
 interface Props {
 	navigate: (path: string) => void
@@ -112,6 +114,12 @@ export function FormList({ navigate, userId }: Props) {
 		userId
 			? app.forms.where({ ownerId: userId }).orderBy('createdAt', 'desc')
 			: app.forms.where({}).orderBy('createdAt', 'desc'),
+	)
+	const sharedFormIds = useSharedFormIds(userId)
+	const allFormsForShared = useQuery(app.forms.where({}).orderBy('createdAt', 'desc'))
+	const sharedForms = useMemo(
+		() => allFormsForShared.filter(f => sharedFormIds.includes(String(f.id))),
+		[allFormsForShared, sharedFormIds],
 	)
 	const allResponses = useQuery(app.responses.where({}).orderBy('submittedAt', 'desc'))
 	const allSideEffectDeliveries = useQuery(app.side_effect_deliveries.where({}).orderBy('updatedAt', 'desc'))
@@ -549,6 +557,31 @@ export function FormList({ navigate, userId }: Props) {
 					</p>
 				</div>
 			) : null}
+
+			{/* Shared with me */}
+			{sharedForms.length > 0 && (
+				<div className="mt-10">
+					<div className="flex items-center gap-2.5 mb-5">
+						<Users className="h-5 w-5 text-slate-400 dark:text-gray-500" />
+						<h2 className="text-[20px] font-bold text-slate-950 dark:text-gray-100 tracking-tight">
+							Shared with me
+						</h2>
+						<span className="text-[13px] text-slate-400 dark:text-gray-500 font-medium">
+							{sharedForms.length} form{sharedForms.length !== 1 ? 's' : ''}
+						</span>
+					</div>
+					<div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+						{sharedForms.map((form) => (
+							<SharedFormCard
+								key={String(form.id)}
+								form={form}
+								navigate={navigate}
+								responseCount={responseStats.responseCountMap.get(String(form.id)) || 0}
+							/>
+						))}
+					</div>
+				</div>
+			)}
 
 			{/* Empty state */}
 			{allForms.length === 0 && <EmptyState onCreateClick={() => setShowTemplates(true)} onBrowseTemplates={() => navigate('/dashboard/templates')} />}
@@ -1305,4 +1338,58 @@ function formatTimeAgo(timestamp: number): string {
 	if (days < 7) return `${days}d ago`
 	if (days < 30) return `${Math.floor(days / 7)}w ago`
 	return new Date(timestamp).toLocaleDateString('en', { month: 'short', day: 'numeric' })
+}
+
+function SharedFormCard({
+	form,
+	navigate,
+	responseCount,
+}: {
+	form: Record<string, unknown>
+	navigate: (path: string) => void
+	responseCount: number
+}) {
+	const title = String(form.title || 'Untitled Form')
+	const description = String(form.description || '')
+	const status = String(form.status || 'draft')
+	const themeId = String(form.theme || 'red')
+	const theme = getThemeById(themeId)
+
+	return (
+		<button
+			onClick={() => navigate(`/forms/${form.id}/edit`)}
+			className="group kf-panel p-0 text-left hover:shadow-md hover:border-slate-300 dark:hover:border-gray-600 transition-all duration-200 overflow-hidden"
+		>
+			{/* Gradient header strip */}
+			<div
+				className="h-2.5 w-full"
+				style={{ background: `linear-gradient(135deg, ${theme.colors[400]} 0%, ${theme.colors[600]} 100%)` }}
+			/>
+			<div className="px-5 py-4">
+				<div className="flex items-start justify-between gap-2 mb-2">
+					<h3 className="text-[16px] font-semibold text-slate-900 dark:text-gray-100 line-clamp-1 group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors">
+						{title}
+					</h3>
+					<div className="flex items-center gap-1.5 shrink-0">
+						<Users className="h-3.5 w-3.5 text-slate-400 dark:text-gray-500" />
+						<span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${
+							status === 'published'
+								? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400'
+								: 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400'
+						}`}>
+							{status === 'published' ? 'Published' : 'Draft'}
+						</span>
+					</div>
+				</div>
+				{description && (
+					<p className="text-[13px] text-slate-500 dark:text-gray-400 line-clamp-2 mb-3">{description}</p>
+				)}
+				<div className="flex items-center gap-3 text-[12px] text-slate-400 dark:text-gray-500">
+					<span>{responseCount} response{responseCount !== 1 ? 's' : ''}</span>
+					<span className="text-slate-200 dark:text-gray-700">|</span>
+					<span>Shared with you</span>
+				</div>
+			</div>
+		</button>
+	)
 }

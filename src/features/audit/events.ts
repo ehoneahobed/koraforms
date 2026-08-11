@@ -17,6 +17,12 @@ export type AuditEventType =
 	| 'password_cleared'
 	| 'responses_exported'
 	| 'responses_deleted'
+	| 'collaborator_invited'
+	| 'collaborator_accepted'
+	| 'collaborator_declined'
+	| 'collaborator_removed'
+	| 'collaborator_left'
+	| 'collaborator_role_changed'
 
 export interface AuditEventInput {
 	formId: string

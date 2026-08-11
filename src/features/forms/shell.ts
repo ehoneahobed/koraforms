@@ -1,11 +1,11 @@
 import type { FormSettings } from '../../types'
 import { generateSlug } from '../../utils/slug'
 
-export type FormShellTab = 'build' | 'responses' | 'url' | 'share' | 'settings'
-export type FormShellPanel = Extract<FormShellTab, 'url' | 'share' | 'settings'>
+export type FormShellTab = 'build' | 'responses' | 'url' | 'share' | 'collaborators' | 'settings'
+export type FormShellPanel = Extract<FormShellTab, 'url' | 'share' | 'collaborators' | 'settings'>
 
 export function parseFormShellPanel(value: string | null | undefined): FormShellPanel | null {
-	return value === 'url' || value === 'share' || value === 'settings' ? value : null
+	return value === 'url' || value === 'share' || value === 'collaborators' || value === 'settings' ? value : null
 }
 
 export function activeFormShellTab(pathname: string, panel: FormShellPanel | null): FormShellTab {
