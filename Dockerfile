@@ -7,7 +7,6 @@ RUN corepack enable && corepack prepare pnpm@10.11.0 --activate
 
 # Install dependencies
 COPY package.json pnpm-lock.yaml .npmrc ./
-COPY scripts/patch-server.js ./scripts/
 RUN pnpm install --frozen-lockfile
 
 # Copy source and build frontend
@@ -29,9 +28,8 @@ COPY --from=builder /app/src/utils/formula.ts ./src/utils/formula.ts
 COPY --from=builder /app/package.json ./
 COPY --from=builder /app/pnpm-lock.yaml ./
 COPY --from=builder /app/.npmrc ./
-COPY --from=builder /app/scripts/patch-server.js ./scripts/
 
-# Install production dependencies only (postinstall applies the patch)
+# Install production dependencies only
 RUN pnpm install --frozen-lockfile --prod
 
 # Create data directory for SQLite
