@@ -31,11 +31,13 @@ jobs:
       - run: pnpm run check
       - name: Install Playwright Chromium
         run: |
-          # GitHub runners sometimes include a stale Google Chrome apt source that
-          # fails with "Hash Sum mismatch" and breaks `playwright install --with-deps`.
-          sudo rm -f /etc/apt/sources.list.d/google-chrome*.list || true
-          pnpm exec playwright install --with-deps chromium
+          # Avoid `install --with-deps` apt path: GitHub runners currently hit a
+          # persistent Hash Sum mismatch on dl.google.com/linux/chrome-stable.
+          pnpm exec playwright install chromium
       - run: pnpm run test:e2e
+        env:
+          # Prefer Playwright's bundled Chromium over any system Chrome.
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '0'
 
   deploy:
     name: Deploy to Azure Container Apps
