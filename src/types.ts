@@ -1,5 +1,5 @@
 // Collaborator roles for shared form access
-import { escapeHtml, htmlToPlainText, looksLikeHtml } from './utils/richText'
+import { escapeHtml, htmlToPlainText, looksLikeHtml } from './utils/plainText'
 
 export type CollaboratorRole = 'viewer' | 'editor' | 'admin'
 export type CollaboratorStatus = 'pending' | 'accepted' | 'declined'

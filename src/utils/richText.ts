@@ -1,4 +1,17 @@
 import DOMPurify from 'isomorphic-dompurify'
+import {
+	escapeHtml,
+	htmlToPlainText,
+	isRichTextEmpty,
+	looksLikeHtml,
+} from './plainText'
+
+export {
+	escapeHtml,
+	htmlToPlainText,
+	isRichTextEmpty,
+	looksLikeHtml,
+} from './plainText'
 
 const RICH_TEXT_TAGS = [
 	'p', 'br', 'strong', 'b', 'em', 'i', 'u', 's', 'a',
@@ -6,38 +19,6 @@ const RICH_TEXT_TAGS = [
 ] as const
 
 const RICH_TEXT_ATTRS = ['href', 'target', 'rel', 'class'] as const
-
-/** True when the string contains HTML-like tags. */
-export function looksLikeHtml(value: string): boolean {
-	return /<\/?[a-z][\s\S]*>/i.test(value)
-}
-
-/** Escape text for safe insertion into an HTML string. */
-export function escapeHtml(value: string): string {
-	return value
-		.replace(/&/g, '&amp;')
-		.replace(/</g, '&lt;')
-		.replace(/>/g, '&gt;')
-		.replace(/"/g, '&quot;')
-		.replace(/'/g, '&#39;')
-}
-
-/** Strip tags and decode to plain text (for meta tags, lists, piping keys). */
-export function htmlToPlainText(value: string): string {
-	if (!value) return ''
-	if (!looksLikeHtml(value)) return value
-	if (typeof document !== 'undefined') {
-		const el = document.createElement('div')
-		el.innerHTML = value
-		return (el.textContent || '').replace(/\u00a0/g, ' ').trim()
-	}
-	return value.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
-}
-
-/** True when rich text has no visible content. */
-export function isRichTextEmpty(value: string): boolean {
-	return !htmlToPlainText(value).trim()
-}
 
 /**
  * Normalize TipTap / editor HTML for storage.

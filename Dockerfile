@@ -24,7 +24,10 @@ COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/server.ts ./
 COPY --from=builder /app/src/domain ./src/domain
 COPY --from=builder /app/src/types.ts ./src/types.ts
+# Server imports shared helpers from src/utils (via types/domain). Keep this in
+# sync with server.ts imports — missing files crash the container at boot.
 COPY --from=builder /app/src/utils/formula.ts ./src/utils/formula.ts
+COPY --from=builder /app/src/utils/plainText.ts ./src/utils/plainText.ts
 COPY --from=builder /app/package.json ./
 COPY --from=builder /app/pnpm-lock.yaml ./
 COPY --from=builder /app/.npmrc ./

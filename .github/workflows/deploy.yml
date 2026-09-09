@@ -72,13 +72,41 @@ jobs:
             KORA_METRICS_TOKEN=secretref:kora-metrics-token
             DATABASE_URL=secretref:database-url
             NODE_ENV=production
-            PUBLIC_URL=${{ vars.PUBLIC_URL }}
+            PUBLIC_URL=${{ vars.PUBLIC_URL || 'https://forms.korajs.dev' }}
 
       - name: Health check
         run: |
+          set -euo pipefail
+          APP="${{ vars.AZURE_APP || 'koraforms' }}"
+          RG="${{ vars.AZURE_RG || 'koraforms-rg' }}"
           FQDN=$(az containerapp show \
-            --name "${{ vars.AZURE_APP || 'koraforms' }}" \
-            --resource-group "${{ vars.AZURE_RG || 'koraforms-rg' }}" \
+            --name "$APP" \
+            --resource-group "$RG" \
             --query "properties.configuration.ingress.fqdn" \
             --output tsv)
-          curl -fsS "https://${FQDN}/health"
+
+          # Single-revision mode always points traffic at "latest". A bare
+          # /health curl can still succeed against a leftover healthy replica
+          # while the new revision is crash-looping — verify latest explicitly.
+          for _ in $(seq 1 30); do
+            NAME=$(az containerapp revision list -n "$APP" -g "$RG" \
+              --query "reverse(sort_by([].{name:name,created:properties.createdTime}, &created))[0].name" -o tsv)
+            STATE=$(az containerapp revision show -n "$APP" -g "$RG" --revision "$NAME" \
+              --query "{running:properties.runningState,health:properties.healthState,replicas:properties.replicas}" -o json)
+            echo "latest=$NAME $STATE"
+            RUNNING=$(echo "$STATE" | python3 -c "import json,sys; print(json.load(sys.stdin)['running'])")
+            HEALTH=$(echo "$STATE" | python3 -c "import json,sys; print(json.load(sys.stdin)['health'])")
+            REPLICAS=$(echo "$STATE" | python3 -c "import json,sys; print(json.load(sys.stdin)['replicas'])")
+            if [ "$RUNNING" = "Running" ] && [ "$HEALTH" = "Healthy" ] && [ "$REPLICAS" -ge 1 ]; then
+              curl -fsS "https://${FQDN}/health"
+              echo
+              exit 0
+            fi
+            if [ "$RUNNING" = "ActivationFailed" ] || [ "$RUNNING" = "Failed" ]; then
+              echo "Latest revision failed to activate: $NAME ($RUNNING)"
+              exit 1
+            fi
+            sleep 5
+          done
+          echo "Timed out waiting for a healthy latest revision"
+          exit 1
