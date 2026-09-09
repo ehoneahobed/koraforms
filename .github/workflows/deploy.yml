@@ -111,7 +111,8 @@ jobs:
             RUNNING=$(echo "$STATE" | python3 -c "import json,sys; print(json.load(sys.stdin)['running'])")
             HEALTH=$(echo "$STATE" | python3 -c "import json,sys; print(json.load(sys.stdin)['health'])")
             REPLICAS=$(echo "$STATE" | python3 -c "import json,sys; print(json.load(sys.stdin)['replicas'])")
-            if [ "$RUNNING" = "Running" ] && [ "$HEALTH" = "Healthy" ] && [ "$REPLICAS" -ge 1 ]; then
+            if { [ "$RUNNING" = "Running" ] || [ "$RUNNING" = "RunningAtMaxScale" ]; } \
+              && [ "$HEALTH" = "Healthy" ] && [ "$REPLICAS" -ge 1 ]; then
               curl -fsS "https://${FQDN}/health"
               echo
               MIN=$(az containerapp show -n "$APP" -g "$RG" --query "properties.template.scale.minReplicas" -o tsv)
