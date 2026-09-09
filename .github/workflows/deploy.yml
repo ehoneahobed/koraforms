@@ -85,7 +85,7 @@ jobs:
             --name "$APP" \
             --resource-group "$RG" \
             --min-replicas "${{ vars.AZURE_MIN_REPLICAS || 1 }}" \
-            --max-replicas "${{ vars.AZURE_MAX_REPLICAS || 3 }}" \
+            --max-replicas "${{ vars.AZURE_MAX_REPLICAS || 1 }}" \
             --output none
 
       - name: Health check
