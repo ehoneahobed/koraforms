@@ -29,7 +29,12 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
       - run: pnpm run check
-      - run: pnpm exec playwright install --with-deps chromium
+      - name: Install Playwright Chromium
+        run: |
+          # GitHub runners sometimes include a stale Google Chrome apt source that
+          # fails with "Hash Sum mismatch" and breaks `playwright install --with-deps`.
+          sudo rm -f /etc/apt/sources.list.d/google-chrome*.list || true
+          pnpm exec playwright install --with-deps chromium
       - run: pnpm run test:e2e
 
   deploy:
