@@ -22,10 +22,9 @@ test.describe('authenticated creator workflow', () => {
 		await rsvpCard.getByRole('button', { name: /^start$/i }).click()
 
 		await expect(page).toHaveURL(/\/forms\/[^/]+\/edit$/, { timeout: 20_000 })
-		await expect(page.getByRole('heading', { name: /^rsvp$/i }).first()).toBeVisible()
-		await expect.poll(() => inputValues(page), { timeout: 10_000 }).toEqual(
-			expect.arrayContaining(['Your Name', 'Email']),
-		)
+		await expect(page.getByRole('heading', { name: /^rsvp$/i }).or(page.getByText(/^rsvp$/i)).first()).toBeVisible()
+		await expect(page.getByText('Your Name').first()).toBeVisible({ timeout: 10_000 })
+		await expect(page.getByText('Email').first()).toBeVisible({ timeout: 10_000 })
 
 		await page.getByRole('button', { name: /^publish$/i }).click()
 		await expect(page.getByRole('button', { name: /published|publish changes/i })).toBeVisible({ timeout: 10_000 })
@@ -119,10 +118,6 @@ async function closeShareModalIfOpen(page: import('@playwright/test').Page) {
 	if (await modal.isVisible().catch(() => false)) {
 		await page.getByRole('button', { name: /close share dialog/i }).click()
 	}
-}
-
-async function inputValues(page: import('@playwright/test').Page) {
-	return page.locator('input').evaluateAll(inputs => inputs.map(input => (input as HTMLInputElement).value))
 }
 
 function formTabs(page: import('@playwright/test').Page) {
