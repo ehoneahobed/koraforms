@@ -33,6 +33,26 @@ export function AuthenticatedAppShell() {
 
 	useEffect(() => {
 		bootstrapCreatorSync()
+
+		// If Azure (or the network) drops the socket, retry while the tab is open.
+		const onDisconnected = () => {
+			window.setTimeout(() => {
+				void ensureSyncConnected().catch(() => {})
+			}, 1_000)
+		}
+		app.events.on('sync:disconnected', onDisconnected)
+
+		const retryTimer = window.setInterval(() => {
+			const status = app.sync?.getStatus()?.status
+			if (status === 'offline' || status === 'error') {
+				void ensureSyncConnected().catch(() => {})
+			}
+		}, 15_000)
+
+		return () => {
+			app.events.off('sync:disconnected', onDisconnected)
+			window.clearInterval(retryTimer)
+		}
 	}, [])
 
 	return (

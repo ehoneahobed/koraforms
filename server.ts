@@ -1700,9 +1700,62 @@ async function main(): Promise<void> {
 	sideEffectProcessor = createSideEffectProcessor(server.kora)
 	sideEffectProcessor.start()
 
+	// Azure Container Apps closes idle WebSockets after ~240s. Protocol-level
+	// ping/pong resets that timer so creator sync can stay connected.
+	await installWebSocketKeepalive()
+
 	const url = await server.start()
 	createCentralBlobGarbageCollector(server, blobStore).start()
 	console.log(`KoraForms running at ${url}`)
+}
+
+/**
+ * Patch `ws` so every upgraded socket gets a 30s ping. Must run before
+ * `createProductionServer().start()` constructs its WebSocketServer.
+ */
+async function installWebSocketKeepalive(): Promise<void> {
+	const pingMs = readPositiveIntegerEnv('KORA_WS_PING_MS', 30_000)
+	const wsMod = await import('ws')
+	const WebSocketServer = wsMod.WebSocketServer
+	const originalHandleUpgrade = WebSocketServer.prototype.handleUpgrade
+
+	WebSocketServer.prototype.handleUpgrade = function patchedHandleUpgrade(
+		this: InstanceType<typeof WebSocketServer>,
+		request: Parameters<typeof originalHandleUpgrade>[0],
+		socket: Parameters<typeof originalHandleUpgrade>[1],
+		head: Parameters<typeof originalHandleUpgrade>[2],
+		callback: Parameters<typeof originalHandleUpgrade>[3],
+	) {
+		return originalHandleUpgrade.call(this, request, socket, head, (ws, upgradeRequest) => {
+			attachSocketKeepalive(ws, pingMs)
+			callback(ws, upgradeRequest)
+		})
+	}
+}
+
+function attachSocketKeepalive(
+	ws: { ping: (data?: Buffer) => void; terminate: () => void; on: (event: string, listener: (...args: unknown[]) => void) => void },
+	pingMs: number,
+): void {
+	let alive = true
+	ws.on('pong', () => {
+		alive = true
+	})
+	const timer = setInterval(() => {
+		if (!alive) {
+			clearInterval(timer)
+			ws.terminate()
+			return
+		}
+		alive = false
+		try {
+			ws.ping()
+		} catch {
+			clearInterval(timer)
+		}
+	}, pingMs)
+	ws.on('close', () => clearInterval(timer))
+	ws.on('error', () => clearInterval(timer))
 }
 
 async function insertRouteRecord(
