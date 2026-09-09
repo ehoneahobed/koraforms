@@ -37,7 +37,9 @@ interface Props {
 	filteredTypes: { value: FieldType; label: string }[]
 	selectedIndex: number
 	onQueryChange: (query: string) => void
-	onSelect: () => void
+	/** Called with the field type the user clicked or confirmed. */
+	onSelect: (type: FieldType) => void
+	onHoverIndex?: (index: number) => void
 	onClose: () => void
 }
 
@@ -48,6 +50,7 @@ export function SlashCommandMenu({
 	selectedIndex,
 	onQueryChange,
 	onSelect,
+	onHoverIndex,
 	onClose,
 }: Props) {
 	const inputRef = useRef<HTMLInputElement>(null)
@@ -97,11 +100,12 @@ export function SlashCommandMenu({
 						filteredTypes.map((type, i) => (
 							<button
 								key={type.value}
+								type="button"
 								onClick={() => {
-									onSelect()
+									onSelect(type.value)
 								}}
 								onMouseEnter={() => {
-									// Update selected index on hover via parent state
+									onHoverIndex?.(i)
 								}}
 								className={`w-full flex items-center gap-2.5 px-3 py-2 text-sm transition-colors ${
 									i === selectedIndex

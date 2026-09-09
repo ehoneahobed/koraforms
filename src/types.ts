@@ -1,4 +1,6 @@
 // Collaborator roles for shared form access
+import { escapeHtml, htmlToPlainText, looksLikeHtml } from './utils/richText'
+
 export type CollaboratorRole = 'viewer' | 'editor' | 'admin'
 export type CollaboratorStatus = 'pending' | 'accepted' | 'declined'
 
@@ -150,7 +152,7 @@ function escapeRegExp(value: string): string {
 }
 
 function fieldLabelPattern(label: string): string {
-	return escapeRegExp(label.trim()).replace(/\s+/g, '\\s+')
+	return escapeRegExp(htmlToPlainText(label)).replace(/\s+/g, '\\s+')
 }
 
 function findPipeField(key: string, fields: FormField[]): FormField | undefined {
@@ -158,7 +160,7 @@ function findPipeField(key: string, fields: FormField[]): FormField | undefined 
 	return fields.find(f =>
 		f.id === key ||
 		normalizePipeKey(f.id) === normalizedKey ||
-		normalizePipeKey(f.label) === normalizedKey
+		normalizePipeKey(htmlToPlainText(f.label)) === normalizedKey
 	)
 }
 
@@ -166,25 +168,32 @@ function findPipeField(key: string, fields: FormField[]): FormField | undefined 
 // still accepted for backwards compatibility with older saved forms.
 export function pipeValues(text: string, values: Record<string, string>, fields: FormField[]): string {
 	let output = text
+	const htmlContext = looksLikeHtml(output)
+	const formatAnswer = (answer: string) => (htmlContext ? escapeHtml(answer) : answer)
 
 	// If a user typed a field label and then inserted that same field as a token
 	// (for example, "your name {{Your Name}}"), render only the answer value.
 	for (const field of fields) {
 		const answer = values[field.id]
-		if (!answer || !field.label.trim()) continue
+		const plainLabel = htmlToPlainText(field.label)
+		if (!answer || !plainLabel.trim()) continue
 		const label = fieldLabelPattern(field.label)
-		const tokenKeys = [field.label, field.id].filter(Boolean)
+		const tokenKeys = [plainLabel, field.id].filter(Boolean)
 		for (const tokenKey of tokenKeys) {
 			const token = `\\{\\{\\s*${escapeRegExp(tokenKey)}\\s*\\}\\}`
-			output = output.replace(new RegExp(`${label}\\s*${token}`, 'gi'), answer)
+			output = output.replace(new RegExp(`${label}\\s*${token}`, 'gi'), formatAnswer(answer))
 		}
 	}
 
 	return output.replace(/\{\{([^}]+)\}\}/g, (match, rawKey) => {
 		const key = String(rawKey).trim()
 		const field = findPipeField(key, fields)
-		if (field) return values[field.id] || match
-		return values[key] || match
+		if (field) {
+			const answer = values[field.id]
+			return answer ? formatAnswer(answer) : match
+		}
+		const direct = values[key]
+		return direct ? formatAnswer(direct) : match
 	})
 }
 

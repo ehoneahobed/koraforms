@@ -1,5 +1,4 @@
 import type { BlobRef } from '@korajs/core'
-import { createOpfsBlobStore, putBlobForTransfer } from '@korajs/store'
 import { assertLocalBlobStorageLimit } from './offlineModel'
 
 export const LOCAL_BLOB_STORAGE_KIND = 'koraforms-local-blob'
@@ -24,7 +23,17 @@ interface StoredLocalBlob extends LocalBlobManifest {
 	blob: Blob
 }
 
-let koraBlobStorePromise: ReturnType<typeof createOpfsBlobStore> | null = null
+type KoraBlobStore = Awaited<ReturnType<typeof loadKoraBlobStore>>
+let koraBlobStorePromise: Promise<KoraBlobStore> | null = null
+
+async function loadKoraBlobStoreApi() {
+	return import('@korajs/store')
+}
+
+async function loadKoraBlobStore() {
+	const { createOpfsBlobStore } = await loadKoraBlobStoreApi()
+	return createOpfsBlobStore(KORA_BLOB_STORE_NAME)
+}
 
 export function isLocalBlobManifest(value: unknown): value is LocalBlobManifest {
 	if (!value || typeof value !== 'object') return false
@@ -193,7 +202,10 @@ async function saveKoraLocalBlob(
 		replacingBlobId?: string | null
 	},
 ): Promise<LocalBlobManifest> {
-	const store = await getKoraBlobStore()
+	const [{ putBlobForTransfer }, store] = await Promise.all([
+		loadKoraBlobStoreApi(),
+		getKoraBlobStore(),
+	])
 	const bytes = new Uint8Array(await blob.arrayBuffer())
 	const { ref } = await putBlobForTransfer(store, bytes, {
 		filename: options.name || 'attachment',
@@ -249,9 +261,9 @@ async function getKoraLocalBlobUsage(): Promise<{ bytes: number; count: number }
 	}
 }
 
-function getKoraBlobStore(): ReturnType<typeof createOpfsBlobStore> {
+function getKoraBlobStore(): Promise<KoraBlobStore> {
 	if (!koraBlobStorePromise) {
-		koraBlobStorePromise = createOpfsBlobStore(KORA_BLOB_STORE_NAME)
+		koraBlobStorePromise = loadKoraBlobStore()
 	}
 	return koraBlobStorePromise
 }

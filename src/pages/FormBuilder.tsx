@@ -41,6 +41,9 @@ import { FIELD_TYPES, CONDITION_OPERATORS, LANGUAGES, type FormField, type FormS
 import { getThemeById } from '../themes'
 import { useSlashCommand } from '../hooks/useSlashCommand'
 import { SlashCommandMenu } from '../components/editor/SlashCommandMenu'
+import { RichTextEditor } from '../components/editor/RichTextEditor'
+import { RichText } from '../components/shared/RichText'
+import { htmlToPlainText, isRichTextEmpty } from '../utils/richText'
 import { Copy } from 'lucide-react'
 import {
 	getInputFields,
@@ -127,7 +130,7 @@ export function FormBuilder({ formId, navigate, userId }: Props) {
 
 	useEffect(() => {
 		setPageMeta({
-			title: title ? `Edit: ${title}` : 'Form Builder',
+			title: title ? `Edit: ${htmlToPlainText(title)}` : 'Form Builder',
 			description: 'Build and customize your form with KoraForms.',
 		})
 	}, [title])
@@ -137,7 +140,6 @@ export function FormBuilder({ formId, navigate, userId }: Props) {
 		const result = addBuilderFieldOfType(fields, type, afterIndex)
 		setFields(result.fields)
 		setActiveField(result.field.id)
-		slashCommand.close()
 	}, [fields])
 
 	const slashCommand = useSlashCommand(addFieldOfType)
@@ -187,7 +189,7 @@ export function FormBuilder({ formId, navigate, userId }: Props) {
 	const save = useCallback(() => {
 		if (!formId) return
 		updateForm(formId, {
-			title: title || 'Untitled Form',
+			title: isRichTextEmpty(title) ? 'Untitled Form' : title,
 			description,
 			fields: JSON.stringify(serializeFormFields(fields)),
 			theme,
@@ -204,13 +206,10 @@ export function FormBuilder({ formId, navigate, userId }: Props) {
 	}, [title, description, fields, theme, settings, loaded, save])
 
 	// Field manipulation callbacks (must be before early returns to keep hook order stable)
+	const openSlashCommand = slashCommand.open
 	const addField = useCallback((afterIndex?: number) => {
-		setFields(prev => {
-			const result = addBuilderFieldOfType(prev, 'text', afterIndex)
-			setActiveField(result.field.id)
-			return result.fields
-		})
-	}, [])
+		openSlashCommand(afterIndex ?? (fields.length > 0 ? fields.length - 1 : null))
+	}, [fields.length, openSlashCommand])
 
 	const updateField = useCallback((index: number, updates: Partial<FormField>) => {
 		setFields(prev => updateFieldAt(prev, index, updates))
@@ -449,19 +448,21 @@ export function FormBuilder({ formId, navigate, userId }: Props) {
 							backgroundImage: `linear-gradient(180deg, ${themePreset.colors[50]} 0%, rgba(255,255,255,0) 56px)`,
 						}}
 					>
-						<input
-							type="text"
-							value={title}
-							onChange={(e) => setTitle(e.target.value)}
-							placeholder="Untitled Form"
-							className="w-full bg-transparent text-[24px] font-bold outline-none placeholder-gray-300 dark:placeholder-gray-600 text-slate-950 dark:text-gray-100 mb-2"
-						/>
-						<input
-							type="text"
+						<div className="mb-3">
+							<RichTextEditor
+								value={title}
+								onChange={setTitle}
+								placeholder="Untitled Form"
+								variant="title"
+								className="border-0 bg-transparent shadow-none focus-within:ring-0 dark:bg-transparent"
+							/>
+						</div>
+						<RichTextEditor
 							value={description}
-							onChange={(e) => setDescription(e.target.value)}
-							placeholder="Add a description..."
-							className="w-full bg-transparent text-slate-500 dark:text-gray-400 outline-none placeholder-gray-300 dark:placeholder-gray-700 text-[15px]"
+							onChange={setDescription}
+							placeholder="Add a description… Use the toolbar to bold, underline, or add lists."
+							variant="body"
+							className="border-slate-200/80 dark:border-gray-800"
 						/>
 					</div>
 
@@ -503,7 +504,8 @@ export function FormBuilder({ formId, navigate, userId }: Props) {
 							filteredTypes={slashCommand.filteredTypes}
 							selectedIndex={slashCommand.selectedIndex}
 							onQueryChange={slashCommand.updateQuery}
-							onSelect={slashCommand.selectCurrent}
+							onSelect={slashCommand.selectType}
+							onHoverIndex={slashCommand.setSelectedIndex}
 							onClose={slashCommand.close}
 						/>
 					</div>
@@ -562,7 +564,7 @@ export function FormBuilder({ formId, navigate, userId }: Props) {
 						onRemove={() => removeField(activeFieldIndex)}
 						onDuplicate={() => duplicateField(activeFieldIndex)}
 						onMove={(dir) => moveField(activeFieldIndex, activeFieldIndex + dir)}
-						onAddAfter={() => addField(activeFieldIndex)}
+						onAddAfter={() => slashCommand.open(activeFieldIndex)}
 					/>
 				) : (
 					<div className="flex-1 flex items-center justify-center px-6">
@@ -753,26 +755,44 @@ function FieldPreviewCard({
 					<div className="flex items-center gap-4">
 						<div className="h-px flex-1 bg-slate-200 dark:bg-gray-800" />
 					<div className="min-w-0 flex-[2]">
-						<LabelTokenEditor
-							value={field.label}
-							onChange={(label) => onUpdate({ label })}
-							placeholder="Section title"
-							pipeableFields={pipeableFields}
-							allFields={allFields}
-							onFocus={onFocus}
-							variant="inline"
-						/>
+						{isActive ? (
+							<RichTextEditor
+								value={field.label}
+								onChange={(label) => onUpdate({ label })}
+								placeholder="Section title"
+								variant="inline"
+								onFocus={onFocus}
+								pipeableLabels={pipeableFields.map(f => fieldDisplayName(f, allFields))}
+								className="border-0 bg-transparent shadow-none focus-within:ring-0 dark:bg-transparent"
+							/>
+						) : (
+							<RichText
+								as="div"
+								html={field.label || 'Section title'}
+								className="text-center text-[14px] font-semibold text-slate-900 dark:text-gray-100"
+							/>
+						)}
 					</div>
 						<div className="h-px flex-1 bg-slate-200 dark:bg-gray-800" />
 					</div>
-				<input
-					type="text"
-					value={field.placeholder || ''}
-					onChange={(e) => onUpdate({ placeholder: e.target.value })}
-					onFocus={onFocus}
-					placeholder="Optional section description"
-					className="mt-2 w-full bg-transparent text-center text-[13px] text-slate-500 outline-none placeholder:text-slate-300 dark:text-gray-400 dark:placeholder:text-gray-700"
-				/>
+				{isActive ? (
+					<RichTextEditor
+						value={field.placeholder || ''}
+						onChange={(placeholder) => onUpdate({ placeholder })}
+						placeholder="Optional section description"
+						variant="body"
+						onFocus={onFocus}
+						className="mt-2 border-0 bg-transparent shadow-none focus-within:ring-0 dark:bg-transparent"
+					/>
+				) : !isRichTextEmpty(field.placeholder || '') ? (
+					<RichText
+						as="div"
+						html={field.placeholder || ''}
+						className="mt-2 text-center text-[13px] text-slate-500 dark:text-gray-400"
+					/>
+				) : (
+					<p className="mt-2 text-center text-[13px] text-slate-300 dark:text-gray-700">Optional section description</p>
+				)}
 			</div>
 		)
 	}
@@ -809,15 +829,23 @@ function FieldPreviewCard({
 					<div className="flex items-center gap-2 mb-1">
 						<span className="text-gray-400 dark:text-gray-500">{FIELD_ICONS[field.type]}</span>
 						<span className="text-xs text-gray-400 dark:text-gray-500 font-medium">{index + 1}.</span>
-						<LabelTokenEditor
-							value={field.label}
-							onChange={(label) => onUpdate({ label })}
-							placeholder="Untitled"
-							pipeableFields={pipeableFields}
-							allFields={allFields}
-							onFocus={onFocus}
-							variant="inline"
-						/>
+						{isActive ? (
+							<RichTextEditor
+								value={field.label}
+								onChange={(label) => onUpdate({ label })}
+								placeholder="Untitled"
+								variant="inline"
+								onFocus={onFocus}
+								pipeableLabels={pipeableFields.map(f => fieldDisplayName(f, allFields))}
+								className="min-w-0 flex-1 border-0 bg-transparent shadow-none focus-within:ring-0 dark:bg-transparent"
+							/>
+						) : (
+							<RichText
+								as="div"
+								html={field.label || 'Untitled'}
+								className="min-w-0 flex-1 text-[14px] font-semibold text-slate-900 dark:text-gray-100"
+							/>
+						)}
 						{field.required && (
 							<span className="text-xs text-amber-500 font-medium">*</span>
 						)}
@@ -929,14 +957,22 @@ function FieldPreviewCard({
 
 						{/* Statement */}
 						{field.type === 'statement' && (
-							<input
-								type="text"
-								value={field.placeholder || ''}
-								onChange={(e) => onUpdate({ placeholder: e.target.value })}
-								onFocus={onFocus}
-								placeholder="Display text"
-								className="w-full bg-transparent text-xs italic text-slate-400 outline-none placeholder:text-gray-300 dark:text-gray-500"
-							/>
+							isActive ? (
+								<RichTextEditor
+									value={field.placeholder || ''}
+									onChange={(placeholder) => onUpdate({ placeholder })}
+									placeholder="Display text"
+									variant="body"
+									onFocus={onFocus}
+									className="border-0 bg-transparent shadow-none focus-within:ring-0 dark:bg-transparent"
+								/>
+							) : (
+								<RichText
+									as="div"
+									html={field.placeholder || 'Display text'}
+									className="text-xs italic text-slate-400 dark:text-gray-500"
+								/>
+							)
 						)}
 
 						{/* Calculated */}
@@ -1065,12 +1101,12 @@ function FieldSettingsPanel({
 				<label className="text-xs font-medium text-slate-500 dark:text-gray-400 mb-1.5 block">
 					Label
 				</label>
-				<LabelTokenEditor
+				<RichTextEditor
 					value={field.label}
 					onChange={(label) => onUpdate({ label })}
 					placeholder={`Question ${index + 1}`}
-					pipeableFields={pipeableFields}
-					allFields={allFields}
+					variant="inline"
+					pipeableLabels={pipeableFields.map(f => fieldDisplayName(f, allFields))}
 				/>
 			</div>
 
@@ -1096,12 +1132,25 @@ function FieldSettingsPanel({
 					<label className="text-xs font-medium text-slate-500 dark:text-gray-400 mb-1.5 block">
 						Description
 					</label>
-					<textarea
+					<RichTextEditor
 						value={field.placeholder || ''}
-						onChange={(e) => onUpdate({ placeholder: e.target.value })}
+						onChange={(placeholder) => onUpdate({ placeholder })}
 						placeholder="Optional text shown before the next group of questions"
-						rows={3}
-						className="w-full resize-none rounded-xl border border-slate-200 bg-white px-3.5 py-3 text-[14px] text-slate-900 outline-none transition-colors placeholder-slate-300 focus:border-brand-300 focus:ring-2 focus:ring-brand-500/15 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100 dark:placeholder-gray-600"
+						variant="body"
+					/>
+				</div>
+			)}
+
+			{field.type === 'statement' && (
+				<div>
+					<label className="text-xs font-medium text-slate-500 dark:text-gray-400 mb-1.5 block">
+						Display text
+					</label>
+					<RichTextEditor
+						value={field.placeholder || ''}
+						onChange={(placeholder) => onUpdate({ placeholder })}
+						placeholder="Information shown to the respondent"
+						variant="body"
 					/>
 				</div>
 			)}

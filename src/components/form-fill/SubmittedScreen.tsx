@@ -1,6 +1,8 @@
 import { useEffect, useState, type CSSProperties } from 'react'
 import { Check, Copy } from 'lucide-react'
 import { PoweredByBadge } from '../shared/PoweredByBadge'
+import { RichText } from '../shared/RichText'
+import { isRichTextEmpty } from '../../utils/richText'
 import { getPublicOfflineDiagnostics } from '../../features/form-fill/offlineRuntime'
 import { copyToClipboard } from '../../utils/clipboard'
 
@@ -79,10 +81,12 @@ export function SubmittedScreen({
 						{pendingOfflineSubmissions > 0 ? ` ${pendingOfflineSubmissions} response${pendingOfflineSubmissions === 1 ? '' : 's'} waiting to sync.` : ''}
 						{rejectedOfflineSubmissions > 0 ? ` ${rejectedOfflineSubmissions} response${rejectedOfflineSubmissions === 1 ? '' : 's'} needs review.` : ''}
 					</p>
-				) : customMessage ? (
-					<p className="text-gray-600 dark:text-gray-300 mb-8 leading-relaxed whitespace-pre-line">
-						{customMessage}
-					</p>
+				) : customMessage && !isRichTextEmpty(customMessage) ? (
+					<RichText
+						as="div"
+						html={customMessage}
+						className="text-gray-600 dark:text-gray-300 mb-8 leading-relaxed"
+					/>
 				) : (
 					<p className="text-gray-500 dark:text-gray-400 mb-8 leading-relaxed">
 						Your response has been submitted successfully.

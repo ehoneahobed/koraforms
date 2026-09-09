@@ -1,4 +1,3 @@
-import { verifySecretValue } from '@korajs/core'
 import type { FormSettings } from '../types'
 
 export function hasFormAccessPasswordSecret(value: unknown): value is string {
@@ -16,5 +15,6 @@ export function stripFormAccessSecrets(settings: FormSettings): FormSettings {
 export async function verifyFormAccessPasswordSecret(secret: unknown, password: string | undefined): Promise<boolean> {
 	if (!hasFormAccessPasswordSecret(secret)) return true
 	if (!password) return false
+	const { verifySecretValue } = await import('@korajs/core')
 	return verifySecretValue(password, secret)
 }

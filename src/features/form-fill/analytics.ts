@@ -1,4 +1,4 @@
-import { publicApp } from '../../publicKora'
+import { whenPublicAppReady } from '../../publicKora'
 
 export type PublicFormAnalyticsEventType =
 	| 'viewed_form'
@@ -46,12 +46,12 @@ export function createAnalyticsSessionId(): string {
 }
 
 export async function recordPublicFormAnalyticsEvent(input: PublicFormAnalyticsEventInput): Promise<void> {
+	const publicApp = await whenPublicAppReady()
 	const now = input.occurredAt ?? Date.now()
 	const formId = input.formId.trim()
 	const slug = input.slug.trim()
 	const sessionId = input.sessionId.trim()
 	if (!formId || !slug || !sessionId) return
-	await publicApp.ready
 	const record: PublicFormAnalyticsEventRecord = {
 		formId,
 		slug,
@@ -76,7 +76,7 @@ export async function flushPublicFormAnalyticsEvents(): Promise<{ synced: number
 	if (typeof navigator !== 'undefined' && !navigator.onLine) {
 		return { synced: 0, failed: 0, remaining: await countPendingAnalyticsEvents() }
 	}
-	await publicApp.ready
+	const publicApp = await whenPublicAppReady()
 	const records = await publicApp.form_analytics_events
 		.where({ syncStatus: 'pending' })
 		.orderBy('occurredAt', 'asc')
@@ -141,7 +141,7 @@ export async function flushPublicFormAnalyticsEvents(): Promise<{ synced: number
 }
 
 async function countPendingAnalyticsEvents(): Promise<number> {
-	await publicApp.ready
+	const publicApp = await whenPublicAppReady()
 	const pending = await publicApp.form_analytics_events.where({ syncStatus: 'pending' }).count()
 	const syncing = await publicApp.form_analytics_events.where({ syncStatus: 'syncing' }).count()
 	return pending + syncing

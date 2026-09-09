@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useSyncStatus } from '@korajs/react'
 import { app } from '../kora'
 import { setPageMeta } from '../utils/meta'
+import { htmlToPlainText, isRichTextEmpty } from '../utils/richText'
 import {
 	Plus,
 	MoreHorizontal,
@@ -1038,11 +1039,11 @@ function FormCard({
 					className="block w-full text-left mt-3 group/title"
 				>
 					<h3 className="font-semibold text-[15px] text-slate-950 dark:text-gray-100 truncate transition-colors duration-200 group-hover/title:text-brand-600 dark:group-hover/title:text-brand-400">
-						{String(form.title) || 'Untitled Form'}
+						{htmlToPlainText(String(form.title)) || 'Untitled Form'}
 					</h3>
-					{String(form.description) && (
+					{!isRichTextEmpty(String(form.description || '')) && (
 						<p className="text-[13px] text-slate-500 dark:text-gray-500 truncate leading-relaxed mt-1">
-							{String(form.description)}
+							{htmlToPlainText(String(form.description))}
 						</p>
 					)}
 				</button>
@@ -1349,8 +1350,8 @@ function SharedFormCard({
 	navigate: (path: string) => void
 	responseCount: number
 }) {
-	const title = String(form.title || 'Untitled Form')
-	const description = String(form.description || '')
+	const title = htmlToPlainText(String(form.title || 'Untitled Form')) || 'Untitled Form'
+	const description = htmlToPlainText(String(form.description || ''))
 	const status = String(form.status || 'draft')
 	const themeId = String(form.theme || 'red')
 	const theme = getThemeById(themeId)

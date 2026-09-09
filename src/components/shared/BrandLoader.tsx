@@ -9,8 +9,10 @@ export function BrandLoader({ message }: { message?: string }) {
 				{/* Animated logo */}
 				<div className="relative w-16 h-16 mx-auto mb-6">
 					<img
-						src="/logo-icon.png"
+						src="/logo-icon-sm.png"
 						alt="KoraForms"
+						width={64}
+						height={64}
 						className="w-16 h-16 rounded-2xl animate-loader-pulse"
 					/>
 					{/* Orbiting dot */}
@@ -38,8 +40,10 @@ export function InlineLoader({ message }: { message?: string }) {
 			<div className="text-center animate-fade-in">
 				<div className="relative w-12 h-12 mx-auto mb-4">
 					<img
-						src="/logo-icon.png"
+						src="/logo-icon-sm.png"
 						alt="KoraForms"
+						width={48}
+						height={48}
 						className="w-12 h-12 rounded-xl animate-loader-pulse"
 					/>
 					<div className="absolute inset-0 animate-loader-orbit">

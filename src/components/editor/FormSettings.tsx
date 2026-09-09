@@ -3,6 +3,7 @@ import { Settings, Link as LinkIcon, Check, Copy, Ban, Globe, ChevronDown, Webho
 import { copyToClipboard } from '../../utils/clipboard'
 import type { FormSettings as FormSettingsType, WebhookConfig } from '../../types'
 import { LANGUAGES } from '../../types'
+import { RichTextEditor } from './RichTextEditor'
 
 function timestampToDatetimeLocal(ts: number | undefined): string {
 	if (!ts) return ''
@@ -186,12 +187,11 @@ export function FormSettings({
 						<label className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 block">
 							Thank-you message
 						</label>
-						<textarea
+						<RichTextEditor
 							value={settings.thankYouMessage || ''}
-							onChange={(e) => updateSetting('thankYouMessage', e.target.value)}
+							onChange={(thankYouMessage) => updateSetting('thankYouMessage', thankYouMessage)}
 							placeholder="Custom message after submission (leave blank for default)"
-							rows={2}
-							className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2 text-sm outline-none focus:border-brand-400 dark:focus:border-brand-600 transition-smooth text-gray-700 dark:text-gray-300 placeholder-gray-400 resize-none"
+							variant="body"
 						/>
 					</div>
 
@@ -362,12 +362,11 @@ export function FormSettings({
 							<label className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 block">
 								Closed message
 							</label>
-							<textarea
+							<RichTextEditor
 								value={settings.closedMessage || ''}
-								onChange={(e) => updateSetting('closedMessage', e.target.value)}
+								onChange={(closedMessage) => updateSetting('closedMessage', closedMessage)}
 								placeholder="This form is no longer accepting responses."
-								rows={2}
-								className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2 text-sm outline-none focus:border-brand-400 dark:focus:border-brand-600 transition-smooth text-gray-700 dark:text-gray-300 placeholder-gray-400 resize-none"
+								variant="body"
 							/>
 						</div>
 					)}

@@ -49,13 +49,24 @@ export function useSlashCommand(onSelectType: (type: FieldType, afterIndex: numb
 		}))
 	}, [])
 
+	const selectType = useCallback((type: FieldType) => {
+		onSelectType(type, state.insertAfterIndex)
+		close()
+	}, [state.insertAfterIndex, onSelectType, close])
+
 	const selectCurrent = useCallback(() => {
 		const current = state.filteredTypes[state.selectedIndex]
 		if (current) {
-			onSelectType(current.value, state.insertAfterIndex)
-			close()
+			selectType(current.value)
 		}
-	}, [state, onSelectType, close])
+	}, [state.filteredTypes, state.selectedIndex, selectType])
+
+	const setSelectedIndex = useCallback((index: number) => {
+		setState((prev) => {
+			if (index < 0 || index >= prev.filteredTypes.length) return prev
+			return { ...prev, selectedIndex: index }
+		})
+	}, [])
 
 	const moveSelection = useCallback((direction: 1 | -1) => {
 		setState((prev) => {
@@ -95,6 +106,8 @@ export function useSlashCommand(onSelectType: (type: FieldType, afterIndex: numb
 		close,
 		updateQuery,
 		selectCurrent,
+		selectType,
+		setSelectedIndex,
 		moveSelection,
 	}
 }

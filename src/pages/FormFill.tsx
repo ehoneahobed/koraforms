@@ -10,6 +10,8 @@ import { SubmittedScreen } from '../components/form-fill/SubmittedScreen'
 import { setPageMeta } from '../utils/meta'
 import { copyToClipboard } from '../utils/clipboard'
 import { InlineLoader } from '../components/shared/BrandLoader'
+import { RichText } from '../components/shared/RichText'
+import { htmlToPlainText, isRichTextEmpty } from '../utils/richText'
 import { isDisplayOnlyField, parseFormFields, parseFormSettings, safeJsonParse } from '../domain/forms'
 import { readJsonFromStorage, writeJsonToStorage } from '../utils/storage'
 import {
@@ -209,44 +211,52 @@ export function FormFill({ formId, navigate }: Props) {
 		let mounted = true
 
 		const loadForm = async () => {
-			try {
-				const local = await resolveWithTimeout(readLatestPublicFormVersion(formId), PUBLIC_FORM_LOCAL_READ_TIMEOUT_MS, null)
-				if (mounted && local) {
+			const localPromise = resolveWithTimeout(
+				readLatestPublicFormVersion(formId),
+				PUBLIC_FORM_LOCAL_READ_TIMEOUT_MS,
+				null,
+			)
+				.then(local => {
+					if (!mounted || !local) return
 					setForm(publicFormRecordToForm(local))
 					setFormVersionHash(local.versionHash)
 					setFormSource('local')
 					setFormPersistedOffline(true)
-				}
-			} catch {
-				if (mounted) setOfflinePersistenceError(true)
-				// Local Kora store is unavailable; network fetch below can still load the form.
-			}
+				})
+				.catch(() => {
+					if (mounted) setOfflinePersistenceError(true)
+				})
 
-			try {
-				const res = await fetch(`/api/public/forms/${encodeURIComponent(formId)}`, { signal: controller.signal })
-				const data = res.ok ? await res.json() : null
-				if (mounted && data && !data.error) {
+			const networkPromise = (async () => {
+				try {
+					const res = await fetch(`/api/public/forms/${encodeURIComponent(formId)}`, {
+						signal: controller.signal,
+					})
+					const data = res.ok ? await res.json() : null
+					if (!mounted || !data || data.error) return
 					setForm(data)
 					setFormSource('network')
-					try {
-						const record = await savePublicFormVersion(formId, data)
-						if (record && mounted) {
+					// Persist offline in the background — do not block first paint on sqlite-wasm.
+					void savePublicFormVersion(formId, data)
+						.then(record => {
+							if (!record || !mounted) return
 							setFormVersionHash(record.versionHash)
 							setFormPersistedOffline(true)
 							setOfflinePersistenceError(false)
-						}
-					} catch (error) {
-						if (mounted) setOfflinePersistenceError(true)
-						console.warn(
-							'[koraforms] Public form could not be persisted in Kora local database.',
-							error instanceof Error ? error.message : error,
-						)
-					}
+						})
+						.catch(error => {
+							if (mounted) setOfflinePersistenceError(true)
+							console.warn(
+								'[koraforms] Public form could not be persisted in Kora local database.',
+								error instanceof Error ? error.message : error,
+							)
+						})
+				} catch {
+					// Fetch failed (offline, network error) — local cache may still paint.
 				}
-			} catch {
-				// Fetch failed (offline, network error)
-			}
+			})()
 
+			await Promise.allSettled([localPromise, networkPromise])
 			if (mounted) setRemoteFetched(true)
 		}
 
@@ -261,8 +271,8 @@ export function FormFill({ formId, navigate }: Props) {
 	useEffect(() => {
 		if (form) {
 			setPageMeta({
-				title: String(form.title || 'Form'),
-				description: String(form.description || 'Fill out this form on KoraForms.'),
+				title: htmlToPlainText(String(form.title || 'Form')) || 'Form',
+				description: htmlToPlainText(String(form.description || 'Fill out this form on KoraForms.')) || 'Fill out this form on KoraForms.',
 				url: `https://forms.korajs.dev/f/${formId}`,
 			})
 		}
@@ -915,9 +925,17 @@ export function FormFill({ formId, navigate }: Props) {
 					<h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-3">
 						Form Closed
 					</h2>
-					<p className="text-gray-500 dark:text-gray-400 leading-relaxed">
-						{settings.closedMessage || 'This form is no longer accepting responses.'}
-					</p>
+					{settings.closedMessage ? (
+						<RichText
+							as="div"
+							html={settings.closedMessage}
+							className="text-gray-500 dark:text-gray-400 leading-relaxed"
+						/>
+					) : (
+						<p className="text-gray-500 dark:text-gray-400 leading-relaxed">
+							This form is no longer accepting responses.
+						</p>
+					)}
 				</div>
 			</div>
 		)
@@ -1088,15 +1106,19 @@ export function FormFill({ formId, navigate }: Props) {
 				)}
 
 				{/* Welcome content */}
-				<div className="flex-1 flex items-center justify-center px-4">
-					<div className="text-center max-w-lg animate-slide-up">
-						<h1 className="text-3xl sm:text-4xl font-bold text-gray-900 dark:text-gray-100 mb-4 leading-tight">
-							{String(form.title)}
-						</h1>
-						{String(form.description || '') && (
-							<p className="text-lg text-gray-500 dark:text-gray-400 mb-10 leading-relaxed">
-								{String(form.description)}
-							</p>
+				<div className="flex-1 flex items-center justify-center px-4 py-8">
+					<div className="w-full max-w-xl animate-slide-up">
+						<RichText
+							as="h1"
+							html={String(form.title)}
+							className="text-3xl sm:text-4xl font-bold text-gray-900 dark:text-gray-100 mb-5 leading-tight text-center [&_p]:m-0"
+						/>
+						{!isRichTextEmpty(String(form.description || '')) && (
+							<RichText
+								as="div"
+								html={String(form.description)}
+								className="text-base sm:text-lg text-gray-600 dark:text-gray-400 mb-10 leading-relaxed text-left sm:text-left"
+							/>
 						)}
 						{/* Language picker */}
 						{settings.languages && settings.languages.length > 1 && (
@@ -1120,6 +1142,7 @@ export function FormFill({ formId, navigate }: Props) {
 							</div>
 						)}
 
+						<div className="text-center">
 						<button
 							onClick={goNext}
 							className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-8 py-3.5 text-base font-medium text-white shadow-lg shadow-brand-600/25 transition-smooth hover:bg-brand-500 hover:shadow-xl hover:shadow-brand-600/30 active:scale-[0.98]"
@@ -1153,6 +1176,7 @@ export function FormFill({ formId, navigate }: Props) {
 								diagnosticsCopyState={diagnosticsCopyState}
 							/>
 						)}
+						</div>
 					</div>
 				</div>
 			</div>
@@ -1230,14 +1254,18 @@ export function FormFill({ formId, navigate }: Props) {
 				</div>
 
 				<div className="flex-1 flex items-center justify-center px-4">
-					<div className={`text-center max-w-lg ${direction === 'forward' ? 'animate-slide-up' : 'animate-fade-in'}`}>
-						<h2 className="text-3xl sm:text-4xl font-bold text-gray-900 dark:text-gray-100 mb-4 leading-tight">
-							{pipedLabel || 'Section'}
-						</h2>
-						{field.placeholder && (
-							<p className="text-lg text-gray-500 dark:text-gray-400 mb-10 leading-relaxed">
-								{pipeValues(fieldText.placeholder || field.placeholder || '', values, fields)}
-							</p>
+					<div className={`w-full max-w-lg ${direction === 'forward' ? 'animate-slide-up' : 'animate-fade-in'}`}>
+						<RichText
+							as="h2"
+							html={pipedLabel || 'Section'}
+							className="text-3xl sm:text-4xl font-bold text-gray-900 dark:text-gray-100 mb-4 leading-tight text-center [&_p]:m-0"
+						/>
+						{!isRichTextEmpty(field.placeholder || '') && (
+							<RichText
+								as="div"
+								html={pipeValues(fieldText.placeholder || field.placeholder || '', values, fields)}
+								className="text-lg text-gray-500 dark:text-gray-400 mb-10 leading-relaxed"
+							/>
 						)}
 						<div className="flex items-center justify-center gap-3">
 							{currentIndex > 0 && (
@@ -1297,13 +1325,17 @@ export function FormFill({ formId, navigate }: Props) {
 				<div className="flex-1 flex items-center justify-center px-4 sm:px-8">
 					<div className={`w-full max-w-lg ${direction === 'forward' ? 'animate-slide-up' : 'animate-fade-in'}`}>
 						<div className="rounded-2xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 p-6 sm:p-8">
-							<h2 className="text-xl sm:text-2xl font-semibold text-gray-900 dark:text-gray-100 mb-3 leading-snug">
-								{pipedLabel || 'Information'}
-							</h2>
-							{field.placeholder && (
-								<p className="text-base text-gray-500 dark:text-gray-400 leading-relaxed">
-									{pipeValues(fieldText.placeholder || field.placeholder || '', values, fields)}
-								</p>
+							<RichText
+								as="h2"
+								html={pipedLabel || 'Information'}
+								className="text-xl sm:text-2xl font-semibold text-gray-900 dark:text-gray-100 mb-3 leading-snug [&_p]:m-0"
+							/>
+							{!isRichTextEmpty(field.placeholder || '') && (
+								<RichText
+									as="div"
+									html={pipeValues(fieldText.placeholder || field.placeholder || '', values, fields)}
+									className="text-base text-gray-500 dark:text-gray-400 leading-relaxed"
+								/>
 							)}
 						</div>
 						<div className="mt-8 flex items-center gap-3">
@@ -1387,12 +1419,16 @@ export function FormFill({ formId, navigate }: Props) {
 						<span className="text-sm font-medium text-brand-500 mb-2 block">
 							{questionNumber} →
 						</span>
-						<h2 className="text-xl sm:text-2xl font-semibold text-gray-900 dark:text-gray-100 leading-snug">
-							{pipedLabel || `Question ${questionNumber}`}
+						<div className="flex items-start gap-1">
+							<RichText
+								as="h2"
+								html={pipedLabel || `Question ${questionNumber}`}
+								className="text-xl sm:text-2xl font-semibold text-gray-900 dark:text-gray-100 leading-snug [&_p]:m-0"
+							/>
 							{field.required && (
-								<span className="text-red-400 ml-1">*</span>
+								<span className="text-red-400 ml-1 mt-1">*</span>
 							)}
-						</h2>
+						</div>
 					</div>
 
 					{/* Input */}

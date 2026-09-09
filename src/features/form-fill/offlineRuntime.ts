@@ -22,7 +22,7 @@ import {
 	type ResponseSubmissionLocalStatus,
 	type ResponseSubmissionRecord,
 } from './offlineModel'
-import { publicApp } from '../../publicKora'
+import { whenPublicAppReady, type PublicApp } from '../../publicKora'
 import { deleteLocalBlobsFromResponseJson, getLocalBlobStorageUsage } from './blobStorage'
 import { serializeJsonForTransport } from '../../domain/forms'
 
@@ -55,6 +55,8 @@ const MAX_STORE_ISSUES = 5
 const PUBLIC_RESPONSE_FLUSH_LOCK = 'koraforms-public-response-flush'
 const publicStoreIssues: PublicStoreIssue[] = []
 
+let publicStoreListenersAttached = false
+
 interface StorageFallbackEvent {
 	type: 'store:storage-fallback'
 	dbName: string
@@ -62,10 +64,6 @@ interface StorageFallbackEvent {
 	to: 'indexeddb'
 	reason: 'lock-conflict' | 'timeout' | 'unsupported'
 	message: string
-}
-
-const publicStoreEvents = publicApp.events as typeof publicApp.events & {
-	on(type: 'store:storage-fallback', handler: (event: StorageFallbackEvent) => void): void
 }
 
 interface PublicFlushLocks {
@@ -91,55 +89,70 @@ function rememberPublicStoreIssue(issue: Omit<PublicStoreIssue, 'seenAt'>): void
 	publicStoreIssues.splice(MAX_STORE_ISSUES)
 }
 
-publicApp.events.on('store:opfs-unavailable', event => {
-	rememberPublicStoreIssue({
-		type: 'opfs-unavailable',
-		dbName: event.dbName,
-		reason: event.reason,
-		message: event.message,
-		blocking: true,
-	})
-})
+async function readyPublicApp(): Promise<PublicApp> {
+	const app = await whenPublicAppReady()
+	attachPublicStoreListeners(app)
+	return app
+}
 
-publicStoreEvents.on('store:storage-fallback', event => {
-	rememberPublicStoreIssue({
-		type: 'storage-fallback',
-		dbName: event.dbName,
-		reason: event.reason,
-		from: event.from,
-		to: event.to,
-		message: event.message,
-		blocking: false,
-	})
-})
+function attachPublicStoreListeners(app: PublicApp): void {
+	if (publicStoreListenersAttached) return
+	publicStoreListenersAttached = true
 
-publicApp.events.on('store:db-name-collision', event => {
-	rememberPublicStoreIssue({
-		type: 'db-name-collision',
-		dbName: event.dbName,
-		message: event.message,
-		blocking: true,
-	})
-})
+	const publicStoreEvents = app.events as typeof app.events & {
+		on(type: 'store:storage-fallback', handler: (event: StorageFallbackEvent) => void): void
+	}
 
-publicApp.events.on('store:persistence-error', event => {
-	rememberPublicStoreIssue({
-		type: 'persistence-error',
-		dbName: event.dbName,
-		reason: event.code,
-		message: event.message,
-		blocking: true,
+	app.events.on('store:opfs-unavailable', event => {
+		rememberPublicStoreIssue({
+			type: 'opfs-unavailable',
+			dbName: event.dbName,
+			reason: event.reason,
+			message: event.message,
+			blocking: true,
+		})
 	})
-})
 
-publicApp.events.on('store:quota-exceeded', event => {
-	rememberPublicStoreIssue({
-		type: 'quota-exceeded',
-		dbName: event.dbName,
-		message: event.message,
-		blocking: true,
+	publicStoreEvents.on('store:storage-fallback', event => {
+		rememberPublicStoreIssue({
+			type: 'storage-fallback',
+			dbName: event.dbName,
+			reason: event.reason,
+			from: event.from,
+			to: event.to,
+			message: event.message,
+			blocking: false,
+		})
 	})
-})
+
+	app.events.on('store:db-name-collision', event => {
+		rememberPublicStoreIssue({
+			type: 'db-name-collision',
+			dbName: event.dbName,
+			message: event.message,
+			blocking: true,
+		})
+	})
+
+	app.events.on('store:persistence-error', event => {
+		rememberPublicStoreIssue({
+			type: 'persistence-error',
+			dbName: event.dbName,
+			reason: event.code,
+			message: event.message,
+			blocking: true,
+		})
+	})
+
+	app.events.on('store:quota-exceeded', event => {
+		rememberPublicStoreIssue({
+			type: 'quota-exceeded',
+			dbName: event.dbName,
+			message: event.message,
+			blocking: true,
+		})
+	})
+}
 
 export function getPublicStoreIssues(): PublicStoreIssue[] {
 	return publicStoreIssues.slice()
@@ -150,9 +163,9 @@ export async function savePublicFormVersion(
 	form: Record<string, unknown>,
 	now = Date.now(),
 ): Promise<PublicFormVersionRecord | null> {
+	const publicApp = await readyPublicApp()
 	if (!isCacheablePublicForm(form)) return null
 	const record = buildPublicFormVersionRecord(slug, form, now)
-	await publicApp.ready
 	const existing = await publicApp.public_form_versions
 		.where({ slug: record.slug, versionHash: record.versionHash })
 		.limit(1)
@@ -164,7 +177,7 @@ export async function savePublicFormVersion(
 }
 
 export async function readLatestPublicFormVersion(slug: string): Promise<PublicFormVersionRecord | null> {
-	await publicApp.ready
+	const publicApp = await readyPublicApp()
 	const records = await publicApp.public_form_versions
 		.where({ slug, status: 'published' })
 		.orderBy('cachedAt', 'desc')
@@ -274,7 +287,7 @@ export async function enqueueResponseSubmission(
 		now?: number
 	},
 ): Promise<ResponseSubmissionRecord> {
-	await publicApp.ready
+	const publicApp = await readyPublicApp()
 	const record = buildResponseSubmissionRecord(params)
 	const existing = await publicApp.response_submissions
 		.where({ clientSubmissionId: record.clientSubmissionId })
@@ -303,8 +316,8 @@ export async function savePublicFormProgress(
 		now?: number
 	},
 ): Promise<PublicFormProgressRecord> {
+	const publicApp = await readyPublicApp()
 	forgetPublicFormProgressClearedAt(params.slug)
-	await publicApp.ready
 	const record = buildPublicFormProgressRecord(params)
 	const existing = await publicApp.public_form_progress.where({ slug: params.slug }).limit(1).exec()
 	if (existing[0]?.id) {
@@ -321,7 +334,7 @@ export async function savePublicFormProgress(
 }
 
 export async function readPublicFormProgress(slug: string): Promise<PublicFormProgressRecord | null> {
-	await publicApp.ready
+	const publicApp = await readyPublicApp()
 	const records = await publicApp.public_form_progress
 		.where({ slug })
 		.orderBy('updatedAt', 'desc')
@@ -334,14 +347,14 @@ export async function readPublicFormProgress(slug: string): Promise<PublicFormPr
 }
 
 export async function clearPublicFormProgress(slug: string): Promise<void> {
+	const publicApp = await readyPublicApp()
 	markPublicFormProgressCleared(slug)
-	await publicApp.ready
 	const records = await publicApp.public_form_progress.where({ slug }).limit(20).exec()
 	await Promise.all(records.map(record => record.id ? publicApp.public_form_progress.delete(record.id) : Promise.resolve()))
 }
 
 export async function countPendingResponseSubmissions(formId?: string): Promise<number> {
-	await publicApp.ready
+	const publicApp = await readyPublicApp()
 	const baseWhere = formId ? { formId } : {}
 	const submitted = await publicApp.response_submissions.where({ ...baseWhere, localStatus: 'submitted_locally' }).count()
 	const failed = await publicApp.response_submissions.where({ ...baseWhere, localStatus: 'failed' }).count()
@@ -350,12 +363,12 @@ export async function countPendingResponseSubmissions(formId?: string): Promise<
 }
 
 export async function countRejectedResponseSubmissions(): Promise<number> {
-	await publicApp.ready
+	const publicApp = await readyPublicApp()
 	return publicApp.response_submissions.where({ localStatus: 'rejected' }).count()
 }
 
 export async function getPublicOfflineDiagnostics(now = Date.now()): Promise<PublicOfflineDiagnostics> {
-	await publicApp.ready
+	const publicApp = await readyPublicApp()
 	const [
 		submittedLocally,
 		syncing,
@@ -409,7 +422,6 @@ export async function getPublicOfflineReadiness(
 	let localDatabaseReady = true
 	let cachedVersionHash = ''
 	try {
-		await publicApp.ready
 		const local = await readLatestPublicFormVersion(slug)
 		cachedVersionHash = local?.versionHash || ''
 	} catch {
@@ -459,7 +471,7 @@ async function drainResponseSubmissions(
 	submit: (item: ResponseSubmissionRecord & { data: string }) => Promise<void>,
 	now: number,
 ): Promise<FlushResult> {
-	await publicApp.ready
+	const publicApp = await readyPublicApp()
 	const queue = [
 		...await publicApp.response_submissions.where({ localStatus: 'submitted_locally' }).orderBy('submittedAt', 'asc').exec(),
 		...await publicApp.response_submissions.where({ localStatus: 'failed' }).orderBy('submittedAt', 'asc').exec(),

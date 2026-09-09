@@ -1,25 +1,30 @@
-import { createApp } from 'korajs'
-import schema from './schema'
-import koraWorkerUrl from './kora-worker.ts?worker&url'
+import type { PublicApp } from './publicKoraBootstrap'
+
+export type { PublicApp }
 
 /**
  * Public respondent runtime.
  *
- * This app intentionally uses Kora's local database without authenticated sync
- * for now. Public submissions are persisted here first and finalized through a
- * narrow REST bridge that performs server-side validation. Kora's current beta
- * provides durable multi-tab storage through the sqlite-wasm leader/follower
- * path with IndexedDB fallback when OPFS is unavailable, so public forms can
- * remain fully usable for field workers without a network connection.
+ * Mirrors Koradocs' deferred `getPublicApp()` pattern: the korajs + sqlite-wasm
+ * bootstrap module is only downloaded when a public form needs local
+ * persistence. Form definitions still load over REST so first paint is not
+ * blocked on the store.
  */
-export const publicApp = createApp({
-	schema,
-	store: {
-		adapter: 'sqlite-wasm',
-		name: 'koraforms-public',
-		workerUrl: koraWorkerUrl,
-	},
-	devtools: import.meta.env.DEV,
-})
+let publicAppPromise: Promise<PublicApp> | null = null
 
-export type PublicApp = typeof publicApp
+/**
+ * Lazily create the public-only Kora app (local sqlite-wasm, no auth sync).
+ */
+export function getPublicApp(): Promise<PublicApp> {
+	if (!publicAppPromise) {
+		publicAppPromise = import('./publicKoraBootstrap').then(({ createPublicApp }) => createPublicApp())
+	}
+	return publicAppPromise
+}
+
+/** Resolve the public app and wait until its store is ready for queries. */
+export async function whenPublicAppReady(): Promise<PublicApp> {
+	const app = await getPublicApp()
+	await app.ready
+	return app
+}

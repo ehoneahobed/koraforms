@@ -1,4 +1,5 @@
 import type { FormField } from '../../types'
+import { htmlToPlainText } from '../../utils/richText'
 
 export type TokenSegment =
 	| { type: 'text'; value: string }
@@ -30,7 +31,8 @@ export function serializeTokenSegments(segments: TokenSegment[]): string {
 }
 
 export function fieldDisplayName(field: FormField, allFields: FormField[]): string {
-	return field.label || `Question ${allFields.findIndex(f => f.id === field.id) + 1}`
+	const plain = htmlToPlainText(field.label || '')
+	return plain || `Question ${allFields.findIndex(f => f.id === field.id) + 1}`
 }
 
 export function stripTrailingFieldLabel(text: string, label: string): string {

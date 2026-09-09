@@ -77,11 +77,35 @@ export default defineConfig({
 		},
 	},
 	build: {
+		modulePreload: {
+			resolveDependencies(filename, deps) {
+				// Public form visits should not preload TipTap or the Kora/sqlite runtime.
+				if (filename.includes('PublicFormPage') || filename.includes('index-')) {
+					return deps.filter(dep =>
+						!dep.includes('vendor-editor') &&
+						!dep.includes('publicKoraBootstrap') &&
+						!dep.includes('AuthenticatedAppShell') &&
+						!dep.includes('sqlite3') &&
+						!/korajs|@korajs/.test(dep)
+					)
+				}
+				return deps
+			},
+		},
 		rollupOptions: {
 			output: {
-				manualChunks: {
-					'vendor-react': ['react', 'react-dom', 'react-router-dom'],
-					'vendor-kora': ['korajs', '@korajs/react', '@korajs/auth/react'],
+				manualChunks(id) {
+					if (!id.includes('node_modules')) return
+					// Avoid matching `@korajs/react` when detecting the React packages.
+					if (
+						/[\\/](react|react-dom|react-router|react-router-dom)[\\/]/.test(id) &&
+						!id.includes('@korajs')
+					) {
+						return 'vendor-react'
+					}
+					if (id.includes('@tiptap') || id.includes('prosemirror') || id.includes('orderedmap')) {
+						return 'vendor-editor'
+					}
 				},
 			},
 		},
