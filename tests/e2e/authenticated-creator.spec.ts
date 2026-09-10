@@ -79,6 +79,10 @@ test.describe('authenticated creator workflow', () => {
 		await expect(page.getByRole('heading', { name: /^forms$/i })).toBeVisible()
 		await expect(page.getByRole('heading', { name: /contact form/i }).first()).toBeVisible()
 
+		await page.getByRole('button', { name: /^settings$/i }).click()
+		await expect(page).toHaveURL(/\/dashboard\/settings$/)
+		await expect(page.getByRole('heading', { name: /^settings$/i })).toBeVisible()
+
 		const downloadPromise = page.waitForEvent('download')
 		await page.getByRole('button', { name: /^backup$/i }).click()
 		const download = await downloadPromise
@@ -91,6 +95,9 @@ test.describe('authenticated creator workflow', () => {
 		await fileChooser.setFiles(backupPath!)
 
 		await expect(page.getByText(/restored 1 form and 0 responses as draft copies/i)).toBeVisible({ timeout: 15_000 })
+
+		await page.getByRole('button', { name: /^forms$/i }).click()
+		await expect(page).toHaveURL(/\/dashboard$/)
 		await expect(page.getByRole('heading', { name: /contact form \(restored\)/i })).toBeVisible()
 	})
 })
