@@ -25,6 +25,7 @@ import {
 	User,
 	FileText,
 	LayoutTemplate,
+	Settings,
 	Menu,
 	X,
 	ChevronDown,
@@ -41,6 +42,7 @@ import { SignUp } from './pages/SignUp'
 
 // Lazy-loaded heavy pages — code-split into separate chunks
 const FormList = lazy(() => import('./pages/FormList').then(m => ({ default: m.FormList })))
+const WorkspaceSettings = lazy(() => import('./pages/WorkspaceSettings').then(m => ({ default: m.WorkspaceSettings })))
 const FormBuilder = lazy(() => import('./pages/FormBuilder').then(m => ({ default: m.FormBuilder })))
 const FormResponses = lazy(() => import('./pages/FormResponses').then(m => ({ default: m.FormResponses })))
 const Templates = lazy(() => import('./pages/Templates').then(m => ({ default: m.Templates })))
@@ -152,12 +154,14 @@ function AuthenticatedLayout() {
 	const navItems = [
 		{ label: 'Forms', icon: FileText, path: '/dashboard' },
 		{ label: 'Templates', icon: LayoutTemplate, path: '/dashboard/templates' },
+		{ label: 'Settings', icon: Settings, path: '/dashboard/settings' },
 	]
 
 	const isActive = (path: string, label: string) => {
 		// For Forms, match /dashboard and /forms/*
 		if (label === 'Forms') return location.pathname === '/dashboard' || location.pathname.startsWith('/forms/')
-		if (label === 'Templates') return location.pathname === '/dashboard/templates'
+		if (label === 'Templates') return location.pathname === '/dashboard/templates' || location.pathname.startsWith('/dashboard/templates/')
+		if (label === 'Settings') return location.pathname === '/dashboard/settings'
 		return false
 	}
 
@@ -257,6 +261,17 @@ function AuthenticatedLayout() {
 									</p>
 								</div>
 								<button
+									onClick={() => {
+										setShowUserMenu(false)
+										navigate('/dashboard/settings')
+										setSidebarOpen(false)
+									}}
+									className="w-full flex items-center gap-2.5 px-3.5 py-2 text-[13px] text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-all duration-150"
+								>
+									<Settings className="h-3.5 w-3.5" />
+									Settings
+								</button>
+								<button
 									onClick={async () => {
 										setShowUserMenu(false)
 										await signOut()
@@ -353,6 +368,7 @@ function AuthenticatedRoutes() {
 		<Suspense fallback={<InlineLoader message="Loading..." />}>
 			<Routes>
 				<Route path="/dashboard" element={<FormList navigate={navigate} userId={user?.id || ''} />} />
+				<Route path="/dashboard/settings" element={<WorkspaceSettings navigate={navigate} userId={user?.id || ''} />} />
 				<Route path="/dashboard/templates" element={<TemplateLibrary navigate={navigate} />} />
 				<Route path="/dashboard/templates/:templateKey" element={<DashboardTemplateDetailPage />} />
 				<Route path="/forms/new/edit" element={<FormBuilderPage navigate={navigate} userId={user?.id || ''} />} />
