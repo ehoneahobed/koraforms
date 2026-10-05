@@ -15,8 +15,6 @@ import {
 	buildWorkspaceHealthSnapshot,
 	parseWorkspaceRestorePlan,
 	workspaceBackupFilename,
-	type FormRecord,
-	type ResponseRecord,
 } from '../features/forms/dashboard'
 import { getPublicOfflineDiagnostics, type PublicOfflineDiagnostics } from '../features/form-fill/offlineRuntime'
 import { OwnerInboxPanel, WorkspaceHealthPanel } from '../components/forms/WorkspaceDiagnosticsPanels'

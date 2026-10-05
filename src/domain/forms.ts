@@ -42,7 +42,9 @@ export function safeJsonParse<T>(value: unknown, fallback: T): T {
 
 export function parseFormSettings(value: unknown): FormSettings {
 	const parsed = safeJsonParse<unknown>(value || {}, {})
-	return isPlainObject(parsed) ? parsed as FormSettings : {}
+	// A copy: settings now arrive as objects from the store, and callers such
+	// as serializeArchiveSettings modify the result.
+	return isPlainObject(parsed) ? { ...parsed } as FormSettings : {}
 }
 
 export function serializeFormSettings(settings: FormSettings): FormSettings {
