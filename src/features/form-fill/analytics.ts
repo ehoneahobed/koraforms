@@ -1,4 +1,5 @@
 import { whenPublicAppReady } from '../../publicKora'
+import { toJsonValue } from '../../domain/forms'
 
 export type PublicFormAnalyticsEventType =
 	| 'viewed_form'
@@ -64,7 +65,7 @@ export async function recordPublicFormAnalyticsEvent(input: PublicFormAnalyticsE
 		questionIndex: input.questionIndex ?? -1,
 		answeredCount: input.answeredCount ?? 0,
 		visibleQuestionCount: input.visibleQuestionCount ?? 0,
-		metadata: input.metadata || {},
+		metadata: toJsonValue(input.metadata || {}),
 		syncStatus: 'pending',
 		occurredAt: now,
 		updatedAt: now,

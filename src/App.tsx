@@ -2,6 +2,8 @@ import { useState, useEffect, useRef, useMemo, lazy, Suspense } from 'react'
 import { Routes, Route, Navigate, Outlet, useNavigate, useParams, useLocation, useSearchParams } from 'react-router-dom'
 import { useSyncStatus, useMutation, useQuery } from '@korajs/react'
 import { app } from './kora'
+import type { KoraInsert, KoraUpdate } from './schemaTypes'
+import { describeSyncStatus } from './features/sync/status'
 import { AuthProvider, useAuthStatus } from '@korajs/auth/react'
 import { useAuth } from '@korajs/auth/react'
 import { authClient } from './auth'
@@ -57,14 +59,17 @@ import { ErrorBoundary } from './components/shared/ErrorBoundary'
 import { FORM_TEMPLATES, createFieldsFromTemplate } from './templates'
 import { readStringFromStorage, writeStringToStorage } from './utils/storage'
 import type { FormSettings as FormSettingsType, WebhookConfig } from './types'
-import { parseFormFields, parseFormSettings, serializeFormSettings } from './domain/forms'
+import { parseFormFields, parseFormSettings, serializeFormFields, serializeFormSettings } from './domain/forms'
 import { hasFormAccessPasswordSecret } from './domain/formPassword'
 import {
 	activeFormShellTab,
+	applySettingsPatch,
 	buildPublishPayload,
 	buildStatusPayload,
+	diffSettings,
 	formShellTabPath,
 	getPublicFormUrl,
+	isEmptySettingsPatch,
 	parseFormShellPanel,
 	sanitizeSlug,
 	type FormShellTab,
@@ -363,8 +368,12 @@ function AuthenticatedLayout() {
 function AuthenticatedRoutes() {
 	const navigate = useAppNavigate()
 	const { user } = useAuth()
+	const location = useLocation()
 
+	// A failed local query (useQuery throws to the nearest boundary) or a render
+	// error replaces only the page, keeps the sidebar, and clears on navigation.
 	return (
+		<ErrorBoundary resetKey={location.pathname}>
 		<Suspense fallback={<InlineLoader message="Loading..." />}>
 			<Routes>
 				<Route path="/dashboard" element={<FormList navigate={navigate} userId={user?.id || ''} />} />
@@ -379,6 +388,7 @@ function AuthenticatedRoutes() {
 				</Route>
 			</Routes>
 		</Suspense>
+		</ErrorBoundary>
 	)
 }
 
@@ -409,10 +419,10 @@ function FormPageShell({ navigate, userId }: { navigate: (path: string) => void;
 	)
 
 	const { mutate: updateForm } = useMutation(
-		(id: string, data: Record<string, unknown>) => app.forms.update(id, data),
+		(id: string, data: KoraUpdate<'forms'>) => app.forms.update(id, data),
 	)
 	const { mutateAsync: createPublicFormVersion } = useMutation(
-		(data: Record<string, unknown>) => app.public_form_versions.insert(data),
+		(data: KoraInsert<'public_form_versions'>) => app.public_form_versions.insert(data),
 	)
 
 	const isPublished = form ? String(form.status) === 'published' : false
@@ -420,10 +430,15 @@ function FormPageShell({ navigate, userId }: { navigate: (path: string) => void;
 	const slug = form ? String(form.slug || '') : ''
 	const formTheme = form ? String(form.theme || 'red') : 'red'
 	const formHasPassword = hasFormAccessPasswordSecret(form?.accessPassword)
-	const formSettings = useMemo<FormSettingsType>(() => {
+	const storedSettings = useMemo<FormSettingsType>(() => {
 		if (!form) return {}
 		return parseFormSettings(form.settings)
 	}, [form])
+	// Settings as the creator last set them here. Local writes reach the query a
+	// moment later, and a control that rendered in between would otherwise build
+	// its next value (for example a whole webhooks list) from the older one.
+	const [pendingSettings, setPendingSettings] = useState<{ formId: string; settings: FormSettingsType } | null>(null)
+	const formSettings = pendingSettings && pendingSettings.formId === formId ? pendingSettings.settings : storedSettings
 	const formFields = useMemo(() => {
 		if (!form) return []
 		return parseFormFields(form.fields)
@@ -437,16 +452,39 @@ function FormPageShell({ navigate, userId }: { navigate: (path: string) => void;
 			slug: nextSlug,
 		})
 		try {
-			await createPublicFormVersion(version as unknown as Record<string, unknown>)
+			await createPublicFormVersion(version)
 		} catch {
 			// Publishing identical content can hit the slug/versionHash uniqueness guard.
 			// The existing immutable snapshot is already the correct history entry.
 		}
 	}
 
+	// Settings controls build the next object from the settings they rendered,
+	// which can trail the store by a render when edits come quickly. Send only
+	// what the control changed, applied in order onto the stored value, so a
+	// second quick edit (or another device's edit) is never reverted.
+	const settingsWrites = useRef<Promise<void>>(Promise.resolve())
+	const settingsWritesPending = useRef(0)
 	const updateSettings = (next: FormSettingsType) => {
 		if (!formId) return
-		updateForm(formId, { settings: JSON.stringify(serializeFormSettings(next)) })
+		const patch = diffSettings(formSettings, next)
+		if (isEmptySettingsPatch(patch)) return
+		setPendingSettings({ formId, settings: applySettingsPatch(formSettings, patch) })
+		settingsWritesPending.current += 1
+		settingsWrites.current = settingsWrites.current
+			.then(async () => {
+				const latest = parseFormSettings((await app.forms.findById(formId))?.settings)
+				await app.forms.update(formId, { settings: serializeFormSettings(applySettingsPatch(latest, patch)) })
+			})
+			.catch((error: unknown) => {
+				console.error('[koraforms] Settings update failed', error)
+			})
+			.finally(() => {
+				settingsWritesPending.current -= 1
+				// Once every queued edit is stored, show the stored value again (it
+				// also carries edits from other tabs and devices).
+				if (settingsWritesPending.current === 0) setPendingSettings(null)
+			})
 		void recordAuditEvent(app.audit_events, {
 			formId,
 			actorId: userId,
@@ -605,20 +643,16 @@ function FormPageShell({ navigate, userId }: { navigate: (path: string) => void;
 	}
 
 	// Sync status text for the breadcrumb bar
-	const syncText = (() => {
-		const s = syncStatus.status
-		if (s === 'syncing') return 'Syncing...'
-		if (s === 'offline') return 'All changes saved locally'
-		if (s === 'error' || s === 'schema-mismatch') return 'Sync error'
-		return 'Synced just now'
-	})()
-	const syncDotColor = (() => {
-		const s = syncStatus.status
-		if (s === 'syncing') return 'bg-amber-400'
-		if (s === 'offline') return 'bg-gray-400'
-		if (s === 'error' || s === 'schema-mismatch') return 'bg-red-400'
-		return 'bg-emerald-400'
-	})()
+	const syncDisplay = describeSyncStatus(syncStatus.status, syncStatus.pendingOperations)
+	const syncText = syncDisplay.tone === 'offline'
+		? 'All changes saved locally'
+		: syncDisplay.tone === 'synced' ? syncDisplay.subtitle : syncDisplay.title
+	const syncDotColor = {
+		synced: 'bg-emerald-400',
+		busy: 'bg-amber-400',
+		offline: 'bg-gray-400',
+		attention: 'bg-red-400',
+	}[syncDisplay.tone]
 
 	// Collaborator data
 	const formCollaborators = useFormCollaborators(formId || '')
@@ -858,10 +892,10 @@ function FormBuilderPage({ navigate, userId }: { navigate: (path: string) => voi
 		const templateKey = searchParams.get('template')
 		const template = templateKey ? FORM_TEMPLATES[templateKey] : null
 
-		const data = {
+		const data: KoraInsert<'forms'> = {
 			title: template?.title || 'Untitled Form',
 			description: template?.description || '',
-			fields: templateKey && template ? JSON.stringify(createFieldsFromTemplate(templateKey)) : '[]',
+			fields: templateKey && template ? serializeFormFields(createFieldsFromTemplate(templateKey)) : [],
 			status: 'draft',
 			ownerId: userId,
 			theme: 'red',
@@ -1061,33 +1095,22 @@ export function App() {
 // ---------------------------------------------------------------------------
 
 function SidebarSyncIndicator({ status }: { status: ReturnType<typeof useSyncStatus> }) {
-	const s = status.status
-	const pending = status.pendingOperations
+	const { tone, title, subtitle } = describeSyncStatus(status.status, status.pendingOperations)
 
 	let icon: React.ReactNode
-	let title: string
-	let subtitle: string
 	let dotColor: string
 
-	if (s === 'offline') {
+	if (tone === 'offline') {
 		icon = <CloudOff className="h-3.5 w-3.5 text-gray-400 dark:text-gray-500" />
-		title = 'Saved locally'
-		subtitle = pending > 0 ? `${pending} change${pending > 1 ? 's' : ''} pending` : 'No connection'
 		dotColor = 'bg-gray-400'
-	} else if (s === 'syncing') {
+	} else if (tone === 'busy') {
 		icon = <Cloud className="h-3.5 w-3.5 text-amber-500 animate-pulse" />
-		title = 'Syncing...'
-		subtitle = 'Saving changes'
 		dotColor = 'bg-amber-400'
-	} else if (s === 'error' || s === 'schema-mismatch') {
+	} else if (tone === 'attention') {
 		icon = <AlertCircle className="h-3.5 w-3.5 text-red-500" />
-		title = s === 'schema-mismatch' ? 'Update needed' : 'Sync error'
-		subtitle = 'Check connection'
 		dotColor = 'bg-red-400'
 	} else {
 		icon = <Wifi className="h-3.5 w-3.5 text-emerald-500" />
-		title = 'Saved locally'
-		subtitle = 'Synced just now'
 		dotColor = 'bg-emerald-400'
 	}
 

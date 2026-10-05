@@ -3,6 +3,8 @@ import { createKoraAuthSync } from '@korajs/auth'
 import schema from './schema'
 import { authClient } from './auth'
 import koraWorkerUrl from './kora-worker.ts?worker&url'
+import { SYNC_MAX_OPERATION_BYTES } from './domain/limits'
+import { createNoticeStore, NOTICE_EVENT_TYPES } from './features/sync/notices'
 
 const syncUrl =
 	import.meta.env.VITE_SYNC_URL ||
@@ -24,9 +26,22 @@ export const app = createApp({
 	store: {
 		adapter: 'sqlite-wasm',
 		workerUrl: koraWorkerUrl,
+		// Same limit as the sync server, so an oversized edit fails here, before
+		// it is queued, instead of being rejected and undone after upload.
+		maxOperationBytes: SYNC_MAX_OPERATION_BYTES,
 	},
 	devtools: import.meta.env.DEV,
 })
+
+/**
+ * Notices for store and sync states the creator must see (blocked storage,
+ * no durable storage, refused writes). Bound right after createApp so events
+ * raised while the database opens are not missed.
+ */
+export const koraNotices = createNoticeStore()
+for (const type of NOTICE_EVENT_TYPES) {
+	app.events.on(type, event => koraNotices.handle(event))
+}
 
 let syncBootstrapStarted = false
 let connectInFlight: Promise<boolean> | null = null

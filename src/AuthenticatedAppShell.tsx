@@ -3,7 +3,8 @@ import { KoraProvider } from '@korajs/react'
 import { App } from './App'
 import { authClient } from './auth'
 import { BrandLoader } from './components/shared/BrandLoader'
-import { app, bootstrapCreatorSync, ensureSyncConnected } from './kora'
+import { KoraNotices } from './components/shared/KoraNotices'
+import { app, bootstrapCreatorSync, ensureSyncConnected, koraNotices } from './kora'
 
 let authFailureHandlerBound = false
 
@@ -56,11 +57,14 @@ export function AuthenticatedAppShell() {
 	}, [])
 
 	return (
-		<KoraProvider
-			app={app}
-			fallback={<BrandLoader />}
-		>
-			<App />
-		</KoraProvider>
+		<>
+			<KoraNotices store={koraNotices} />
+			<KoraProvider
+				app={app}
+				fallback={<BrandLoader />}
+			>
+				<App />
+			</KoraProvider>
+		</>
 	)
 }

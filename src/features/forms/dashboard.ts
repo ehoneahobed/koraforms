@@ -1,47 +1,51 @@
-import { parseFormFields, parseFormSettings, serializeFormSettings } from '../../domain/forms'
+import { parseFormFields, parseFormSettings, parseJsonRecord, serializeFormFields, serializeFormSettings } from '../../domain/forms'
+import type { KoraInsert } from '../../schemaTypes'
 import { createFieldsFromTemplate, FORM_TEMPLATES } from '../../templates'
 import type { FormField, FormSettings } from '../../types'
 
 export type DashboardFilter = 'all' | 'published' | 'draft' | 'archived'
 
-export interface FormRecord extends Record<string, unknown> {
-	id: string
-	title?: string
-	description?: string
-	fields?: string | FormField[]
-	settings?: string | FormSettings
-	status?: string
-	ownerId?: string
-	theme?: string
-	slug?: string
-	createdAt?: number
-	responseCount?: number
+// Structural inputs for the dashboard helpers. Store records (`KoraRecord`)
+// satisfy them directly: fields are readonly and optional or defaulted
+// fields read as `null`; json fields can still hold legacy JSON strings.
+export interface FormRecord {
+	readonly id: string
+	readonly title?: string | null
+	readonly description?: string | null
+	readonly fields?: string | readonly FormField[] | null
+	readonly settings?: string | FormSettings | null
+	readonly status?: string | null
+	readonly ownerId?: string | null
+	readonly theme?: string | null
+	readonly slug?: string | null
+	readonly createdAt?: number | null
+	readonly responseCount?: number | null
 }
 
-export interface ResponseRecord extends Record<string, unknown> {
-	id?: string
-	formId?: string
-	data?: unknown
-	submittedAt?: number
+export interface ResponseRecord {
+	readonly id?: string
+	readonly formId?: string | null
+	readonly data?: unknown
+	readonly submittedAt?: number | null
 }
 
-export interface SideEffectDeliveryRecord extends Record<string, unknown> {
-	id?: string
-	formId?: string
-	type?: string
-	status?: string
-	attempts?: number
-	lastError?: string
-	updatedAt?: number
-	nextAttemptAt?: number
+export interface SideEffectDeliveryRecord {
+	readonly id?: string
+	readonly formId?: string | null
+	readonly type?: string | null
+	readonly status?: string | null
+	readonly attempts?: number | null
+	readonly lastError?: string | null
+	readonly updatedAt?: number | null
+	readonly nextAttemptAt?: number | null
 }
 
-export interface AuditEventRecord extends Record<string, unknown> {
-	id?: string
-	formId?: string
-	eventType?: string
-	summary?: string
-	createdAt?: number
+export interface AuditEventRecord {
+	readonly id?: string
+	readonly formId?: string | null
+	readonly eventType?: string | null
+	readonly summary?: string | null
+	readonly createdAt?: number | null
 }
 
 export interface DashboardFormGroups<T extends FormRecord> {
@@ -415,28 +419,28 @@ export function buildLastSeenMap(formIds: readonly string[], previous: Record<st
 	return next
 }
 
-export function buildTemplateFormPayload(templateKey: string, ownerId: string) {
+export function buildTemplateFormPayload(templateKey: string, ownerId: string): KoraInsert<'forms'> | null {
 	const template = FORM_TEMPLATES[templateKey]
 	if (!template) return null
 	return {
 		title: template.title || 'Untitled Form',
 		description: template.description,
-		fields: JSON.stringify(createFieldsFromTemplate(templateKey)),
+		fields: serializeFormFields(createFieldsFromTemplate(templateKey)),
 		status: 'draft',
 		ownerId,
 		theme: 'red',
 	}
 }
 
-export function buildDuplicateFormPayload(form: FormRecord, ownerId: string) {
+export function buildDuplicateFormPayload(form: FormRecord, ownerId: string): KoraInsert<'forms'> {
 	return {
 		title: `Copy of ${String(form.title || 'Untitled Form')}`,
 		description: String(form.description || ''),
-		fields: typeof form.fields === 'string' ? form.fields : JSON.stringify(parseFormFields(form.fields)),
+		fields: serializeFormFields(parseFormFields(form.fields)),
 		status: 'draft',
 		ownerId,
 		theme: String(form.theme || 'blue'),
-		settings: typeof form.settings === 'string' ? form.settings : JSON.stringify(parseFormSettings(form.settings)),
+		settings: serializeFormSettings(parseFormSettings(form.settings)),
 	}
 }
 
@@ -448,7 +452,7 @@ export function buildFormExportPayload(form: FormRecord): FormExportPayload {
 		description: String(form.description || ''),
 		fields: parseFormFields(form.fields),
 		theme: String(form.theme || 'blue'),
-		settings: parseFormSettings(form.settings),
+		settings: serializeFormSettings(parseFormSettings(form.settings)),
 	}
 }
 
@@ -549,15 +553,15 @@ export function parseWorkspaceRestorePlan(value: unknown): WorkspaceRestorePlan 
 	}
 }
 
-export function buildRestoredFormPayload(form: WorkspaceRestorePlan['forms'][number], ownerId: string) {
+export function buildRestoredFormPayload(form: WorkspaceRestorePlan['forms'][number], ownerId: string): KoraInsert<'forms'> {
 	return {
 		title: `${form.title} (Restored)`,
 		description: form.description,
-		fields: JSON.stringify(form.fields),
+		fields: serializeFormFields(form.fields),
 		status: 'draft',
 		ownerId,
 		theme: form.theme,
-		settings: JSON.stringify(serializeFormSettings(form.settings)),
+		settings: serializeFormSettings(form.settings),
 		responseCount: form.responseCount,
 		slug: '',
 	}
@@ -566,10 +570,12 @@ export function buildRestoredFormPayload(form: WorkspaceRestorePlan['forms'][num
 export function buildRestoredResponsePayload(
 	response: WorkspaceRestorePlan['responses'][number],
 	restoredFormId: string,
-): Record<string, unknown> {
+): KoraInsert<'responses'> {
 	return {
 		formId: restoredFormId,
-		data: response.data ?? null,
+		// Backups hold the stored value: an object, or a JSON string for
+		// responses written before the beta.13 upgrade. Insert refuses null.
+		data: parseJsonRecord(response.data),
 		submittedBy: '',
 		clientSubmissionId: `restore:${response.id}`,
 		formVersionHash: 'restored-backup',

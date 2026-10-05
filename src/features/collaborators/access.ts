@@ -1,16 +1,12 @@
 import type { CollaboratorRole } from '../../types'
+import type { KoraRecord } from '../../schemaTypes'
 
-export interface CollaboratorRecord extends Record<string, unknown> {
-	id?: string
-	formId: string
-	userId: string
-	email: string
-	role: CollaboratorRole
-	status: 'pending' | 'accepted' | 'declined'
-	invitedBy: string
-	inviteToken: string
-	expiresAt: number
-	createdAt: number
+/** A `form_collaborators` row as read from the local store. */
+export type CollaboratorRecord = KoraRecord<'form_collaborators'>
+
+/** A collaborator's role; a cleared or pre-default row reads as the schema default. */
+export function collaboratorRole(record: Pick<CollaboratorRecord, 'role'>): CollaboratorRole {
+	return record.role ?? 'editor'
 }
 
 /** Permission capabilities by role */
@@ -90,7 +86,8 @@ export function getEffectiveRole(
 		c => c.userId === userId && c.status === 'accepted',
 	)
 	if (!collab) return null
-	return { role: collab.role, capabilities: getRoleCapabilities(collab.role) }
+	const role = collaboratorRole(collab)
+	return { role, capabilities: getRoleCapabilities(role) }
 }
 
 /** Check if a user has any access to a form (owner or accepted collaborator) */

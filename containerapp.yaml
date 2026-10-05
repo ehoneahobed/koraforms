@@ -48,6 +48,10 @@ properties:
             value: production
           - name: PORT
             value: "3001"
+          # One proxy (the Container Apps ingress) sits in front of the app;
+          # trust its X-Forwarded-For hop for client IPs (sign-in rate limits).
+          - name: KORA_TRUST_PROXY
+            value: "1"
           - name: PUBLIC_URL
             value: "" # Set to https://your-production-domain
     scale:

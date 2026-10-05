@@ -117,7 +117,14 @@ async function cacheCurrentResources(urls) {
 		seen.add(url)
 
 		try {
-			const response = await fetch(url, { credentials: 'same-origin' })
+			// The Kora production server answers an app route (`/f/<slug>`, `/`) with
+			// the SPA shell only when the request asks for HTML; a plain fetch from the
+			// worker sends `Accept: */*` and gets a 404. Route URLs have no file
+			// extension, so ask for HTML for those and leave asset requests unchanged.
+			const response = await fetch(url, {
+				credentials: 'same-origin',
+				...(isRouteUrl(url) ? { headers: { Accept: 'text/html' } } : {}),
+			})
 			if (!response.ok) continue
 
 			await cache.put(url, response.clone())
@@ -137,6 +144,12 @@ async function cacheCurrentResources(urls) {
 		requested: seen.size,
 		cached,
 	}
+}
+
+function isRouteUrl(url) {
+	const pathname = new URL(url).pathname
+	const name = pathname.slice(pathname.lastIndexOf('/') + 1)
+	return !name.includes('.')
 }
 
 function isDiscoverableAsset(url, response) {

@@ -42,7 +42,7 @@ Required runtime values:
 | `KORA_METRICS_TOKEN` | Yes | Bearer token for `/api/ops/diagnostics` |
 | `DATABASE_URL` | Yes | PostgreSQL connection string |
 | `PUBLIC_URL` | Recommended | Canonical production origin for links/meta |
-| `KORA_SYNC_MAX_OPERATION_BYTES` | Optional | Per-operation sync payload cap, defaults to 524288 bytes |
+| `KORA_TRUST_PROXY` | Optional | Proxy hops (or comma-separated proxy IPs/CIDRs) trusted for `X-Forwarded-For`. Production defaults to `1`, the Container Apps ingress; set `0` only when nothing sits in front of the container |
 | `KORA_SYNC_MAX_OPS_PER_MINUTE` | Optional | Per-client sync rate cap, defaults to 600 operations/minute |
 | `KORA_BLOB_GC_DISABLED` | Optional | Set to `true` to disable scheduled central blob garbage collection |
 | `KORA_BLOB_GC_INTERVAL_HOURS` | Optional | Scheduled blob GC interval, defaults to 24 hours |

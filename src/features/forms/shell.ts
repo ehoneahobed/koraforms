@@ -83,3 +83,42 @@ export function updateSettingsValue<Key extends keyof FormSettings>(
 function getBrowserOrigin(): string {
 	return typeof window === 'undefined' ? '' : window.location.origin
 }
+
+/** What one settings edit changed: keys written and keys removed. */
+export interface SettingsPatch {
+	set: Partial<FormSettings>
+	remove: (keyof FormSettings)[]
+}
+
+/**
+ * The top-level settings keys `next` changes relative to `base` (the settings the
+ * editing control rendered from). Values compare as JSON, so a cleared value
+ * (`undefined`) is a removal.
+ */
+export function diffSettings(base: FormSettings, next: FormSettings): SettingsPatch {
+	const patch: SettingsPatch = { set: {}, remove: [] }
+	const keys = new Set([...Object.keys(base), ...Object.keys(next)]) as Set<keyof FormSettings>
+	for (const key of keys) {
+		const before = base[key]
+		const after = next[key]
+		if (after === undefined) {
+			if (before !== undefined) patch.remove.push(key)
+			continue
+		}
+		if (JSON.stringify(before) !== JSON.stringify(after)) {
+			;(patch.set as Record<string, unknown>)[key] = after
+		}
+	}
+	return patch
+}
+
+/** Applies a settings patch onto the latest stored settings. */
+export function applySettingsPatch(latest: FormSettings, patch: SettingsPatch): FormSettings {
+	const next: Record<string, unknown> = { ...latest, ...patch.set }
+	for (const key of patch.remove) delete next[key]
+	return next as FormSettings
+}
+
+export function isEmptySettingsPatch(patch: SettingsPatch): boolean {
+	return Object.keys(patch.set).length === 0 && patch.remove.length === 0
+}

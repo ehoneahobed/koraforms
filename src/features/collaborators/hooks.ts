@@ -5,9 +5,8 @@ import { getEffectiveRole, type CollaboratorRecord } from './access'
 import type { CollaboratorRole } from '../../types'
 
 /** Query all collaborator records for a specific form */
-export function useFormCollaborators(formId: string): CollaboratorRecord[] {
-	const all = useQuery(app.form_collaborators.where({ formId }))
-	return all as unknown as CollaboratorRecord[]
+export function useFormCollaborators(formId: string): readonly CollaboratorRecord[] {
+	return useQuery(app.form_collaborators.where({ formId }))
 }
 
 /** Query all forms where the user is an accepted collaborator */

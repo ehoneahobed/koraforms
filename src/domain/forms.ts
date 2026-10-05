@@ -42,11 +42,41 @@ export function safeJsonParse<T>(value: unknown, fallback: T): T {
 
 export function parseFormSettings(value: unknown): FormSettings {
 	const parsed = safeJsonParse<unknown>(value || {}, {})
-	return isPlainObject(parsed) ? parsed as FormSettings : {}
+	// A copy: settings now arrive as objects from the store, and callers such
+	// as serializeArchiveSettings modify the result.
+	return isPlainObject(parsed) ? { ...parsed } as FormSettings : {}
+}
+
+/**
+ * The value a `t.json` field can store, with JSON.stringify semantics: object
+ * members whose value is `undefined` (or a function) are dropped and such array
+ * items become `null`. Kora refuses `undefined` anywhere inside a json value
+ * (SCHEMA_VALIDATION), while the UI clears an optional setting or field
+ * property by assigning `undefined`. Dropping the member is what clears it:
+ * the store sends the stored object as `previousData`, and a key missing from
+ * the new object is removed.
+ */
+export function toJsonValue<T>(value: T): T {
+	return stripUndefined(value) as T
+}
+
+function stripUndefined(value: unknown): unknown {
+	if (Array.isArray(value)) {
+		return value.map(item => (item === undefined || typeof item === 'function' ? null : stripUndefined(item)))
+	}
+	if (isPlainObject(value)) {
+		const output: Record<string, unknown> = {}
+		for (const [key, nested] of Object.entries(value)) {
+			if (nested === undefined || typeof nested === 'function') continue
+			output[key] = stripUndefined(nested)
+		}
+		return output
+	}
+	return value
 }
 
 export function serializeFormSettings(settings: FormSettings): FormSettings {
-	return { ...(settings || {}) }
+	return toJsonValue({ ...(settings || {}) })
 }
 
 export function parseFormFields(value: unknown): FormField[] {
@@ -70,6 +100,15 @@ export interface ResponseMeta {
 	completedAt?: number
 }
 
+/**
+ * Reads a json object field that may hold an object or, in rows written before
+ * the beta.13 upgrade, a JSON string. Anything else becomes `{}`.
+ */
+export function parseJsonRecord(value: unknown): Record<string, unknown> {
+	const parsed = safeJsonParse<unknown>(value, {})
+	return isPlainObject(parsed) ? toJsonValue({ ...parsed }) : {}
+}
+
 export function parseResponseData(value: unknown): Record<string, string> {
 	const parsed = safeJsonParse<unknown>(value || {}, {})
 	if (!isPlainObject(parsed)) return {}
@@ -89,7 +128,7 @@ export function parseResponseMeta(value: unknown): ResponseMeta | undefined {
 }
 
 export function serializeFormFields(fields: FormField[]): FormField[] {
-	return fields.map(field => ({ ...field }))
+	return fields.map(field => toJsonValue({ ...field }))
 }
 
 export function serializeJsonForTransport(value: unknown): string {

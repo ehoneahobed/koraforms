@@ -19,7 +19,9 @@ export default defineSchema({
 				status: t.enum(['draft', 'published', 'closed']).default('draft').transitions({
 					draft: ['published', 'closed'],
 					published: ['draft', 'closed'],
-					closed: [],
+					// The settings panel offers Draft and Live on a closed form, and the
+					// audit log has form_reopened: closing is not terminal.
+					closed: ['published', 'draft'],
 				}),
 				// Color theme preset id (e.g. 'blue', 'rose', 'emerald')
 				theme: t.string().default('red'),

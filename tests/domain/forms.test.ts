@@ -87,3 +87,10 @@ test('serializers round-trip normalized values', () => {
 test('createFieldId creates ids in the expected namespace', () => {
 	assert.match(createFieldId(), /^field_/)
 })
+
+test('parseFormSettings returns a copy of an object value', () => {
+	const stored = { archived: true, publicResults: true }
+	const parsed = parseFormSettings(stored)
+	delete parsed.archived
+	assert.equal(stored.archived, true)
+})

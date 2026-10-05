@@ -17,7 +17,7 @@ import {
 import { defineSchema, t, op } from '@korajs/core'
 import type { ProductionServer, ServerStore } from '@korajs/server'
 import type { UserStore } from '@korajs/auth/server'
-import type { ProductionHttpRouteContext, ProductionHttpRouteRequest, ProductionHttpRouteResponse } from '@korajs/server'
+import type { ProductionHttpRoute, ProductionHttpRouteContext, ProductionHttpRouteRequest, ProductionHttpRouteResponse } from '@korajs/server'
 import { isResponseField, parseFormFields, parseFormSettings, safeJsonParse, serializeFormSettings } from './src/domain/forms'
 import { hasFormAccessPasswordSecret, stripFormAccessSecrets, verifyFormAccessPasswordSecret } from './src/domain/formPassword'
 import { publicResultsDisplaySettings, sanitizePublicResultsResponseData } from './src/domain/publicResults'
@@ -26,6 +26,7 @@ import { evaluatePublicResponseAcceptance } from './src/domain/responseAcceptanc
 import { validatePublishedResponsePayload } from './src/domain/responseValidation'
 import { buildEmailNotificationPayload, buildSideEffectDeliveryJobs, buildWebhookPayload, isDeliverableWebhookUrl, isPublicWebhookIpAddress, normalizeWebhookConfig } from './src/domain/responseSideEffects'
 import { buildOpsDiagnosticsSnapshot } from './src/domain/opsDiagnostics'
+import { MAX_PUBLIC_RESPONSE_BODY_BYTES, MAX_ROUTE_REQUEST_BODY_BYTES, SYNC_MAX_OPERATION_BYTES } from './src/domain/limits'
 import type { FormField, FormSettings } from './src/types'
 type AnalyticsEventMetadata = Record<string, unknown>
 type SavedAnalyticsFilters = Array<{ fieldId: string; value: string }>
@@ -46,7 +47,9 @@ const koraFormsSchema = defineSchema({
 				status: t.enum(['draft', 'published', 'closed']).default('draft').transitions({
 					draft: ['published', 'closed'],
 					published: ['draft', 'closed'],
-					closed: [],
+					// The settings panel offers Draft and Live on a closed form, and the
+					// audit log has form_reopened: closing is not terminal.
+					closed: ['published', 'draft'],
 				}),
 				theme: t.string().default('red'),
 				responseCount: t.number().default(0).merge('counter'),
@@ -360,7 +363,6 @@ type NormalizedPublicAnalyticsEvent = {
 const SCHEMA_VERSION = 19
 const RESUME_LINK_TTL_MS = 30 * 24 * 60 * 60 * 1000
 const MAX_RESUME_PAYLOAD_BYTES = 128 * 1024
-const MAX_PUBLIC_RESPONSE_BODY_BYTES = 2 * 1024 * 1024
 const MAX_PUBLIC_ANALYTICS_EVENTS_PER_BATCH = 50
 const DEFAULT_PUBLIC_RESULTS_LIMIT = 100
 const MAX_PUBLIC_RESULTS_LIMIT = 500
@@ -385,7 +387,6 @@ interface FormCollaboratorRecord {
 	createdAt: number
 }
 const DEFAULT_BLOB_DIR = './koraforms-blobs'
-const DEFAULT_SYNC_MAX_OPERATION_BYTES = 512 * 1024
 const DEFAULT_SYNC_MAX_OPS_PER_MINUTE = 600
 const DEFAULT_BLOB_GC_INTERVAL_HOURS = 24
 const DEFAULT_BLOB_GC_START_DELAY_MINUTES = 15
@@ -451,6 +452,25 @@ function cleanupExpiredRateLimitBuckets(
 	for (const [key, value] of buckets) {
 		if (value.resetAt <= now) buckets.delete(key)
 	}
+}
+
+/**
+ * Reverse proxies trusted to report the client address in X-Forwarded-For
+ * (`request.ip`, used by Kora's sign-in limits and the public route limiter).
+ * Azure Container Apps and Fly.io each put exactly one proxy in front of the
+ * container, so production trusts one hop. `KORA_TRUST_PROXY` overrides it:
+ * a hop count, a comma-separated list of proxy IPs / CIDR ranges, or `0` to
+ * trust none (a server reached directly).
+ */
+function readTrustProxyEnv(): number | string[] | undefined {
+	const raw = process.env.KORA_TRUST_PROXY?.trim()
+	if (!raw) return process.env.NODE_ENV === 'production' ? 1 : undefined
+	if (/^\d+$/.test(raw)) {
+		const hops = Number(raw)
+		return hops > 0 ? hops : undefined
+	}
+	const ranges = raw.split(',').map(entry => entry.trim()).filter(Boolean)
+	return ranges.length > 0 ? ranges : undefined
 }
 
 function readPositiveIntegerEnv(name: string, fallback: number): number {
@@ -586,11 +606,83 @@ async function main(): Promise<void> {
 	// Production server — handles static files, WebSocket sync, CORS, health
 	// check, metrics, admin dashboard, and backup endpoints automatically.
 	// -----------------------------------------------------------------------
+	// Public API: aggregate results of a form whose results are public. Kora matches
+	// routes by path prefix, so `/api/public/forms` (registered for the form
+	// payload) delegates `/api/public/forms/<slug>/results` here; a route whose
+	// path held a `*` was never reached.
+	const publicResultsRoute: ProductionHttpRoute = {
+		path: '/api/public/forms', // reached through the /api/public/forms route below
+		async handle(req: ProductionHttpRouteRequest): Promise<ProductionHttpRouteResponse> {
+			if (req.method === 'OPTIONS') return withCors({ status: 204 })
+			if (req.method !== 'GET') {
+				return withCors({ status: 405, body: { error: 'Method not allowed' } })
+			}
+			const limited = rateLimit(req, 'public_results')
+			if (limited) return limited
+			const route = parseRoutePath(req)
+			const slug = route.path.match(/\/api\/public\/forms\/([^/]+)\/results/)?.[1]
+			if (!slug) return withCors({ status: 404, body: { error: 'Not found' } })
+			const resultLimit = clampNumber(
+				Number(route.query.get('limit') || DEFAULT_PUBLIC_RESULTS_LIMIT),
+				1,
+				MAX_PUBLIC_RESULTS_LIMIT,
+			)
+			try {
+				const [form] = await req.kora.query('forms', {
+					where: { slug: decodeURIComponent(slug), status: 'published' },
+					limit: 1,
+				})
+				if (!form) {
+					return withCors({ status: 404, body: { error: 'Form not found' } })
+				}
+				const formSettings = parseFormSettings(form.settings)
+				if (!formSettings.publicResults) {
+					return withCors({ status: 403, body: { error: 'Results are not public for this form' } })
+				}
+				const fields = parseFormFields(form.fields)
+				const displaySettings = publicResultsDisplaySettings(formSettings)
+				const responses = await req.kora.query('responses', {
+					where: { formId: String(form.id) },
+					limit: resultLimit + 1,
+				})
+				const visibleResponses = responses.slice(0, resultLimit)
+				return withCors({
+					status: 200,
+					body: {
+						form: {
+							id: form.id,
+							title: form.title,
+							description: form.description,
+							fields: JSON.stringify(fields),
+							theme: form.theme,
+							results: displaySettings,
+						},
+						responses: visibleResponses.map(r => ({
+							data: JSON.stringify(sanitizePublicResultsResponseData(fields, r.data, displaySettings)),
+							submittedAt: r.submittedAt,
+						})),
+						pagination: {
+							limit: resultLimit,
+							returned: visibleResponses.length,
+							hasMore: responses.length > resultLimit,
+						},
+					},
+				})
+			} catch {
+				return withCors({ status: 500, body: { error: 'Internal server error' } })
+			}
+		},
+	}
+
 	const server = createProductionServer({
 		store,
 		port,
 		staticDir: distDir,
 		syncPath: '/kora-sync',
+		trustProxy: readTrustProxyEnv(),
+		// The default (1 MiB) would refuse public responses with attachments
+		// between 1 and 2 MiB with 413 before the route runs.
+		maxRequestBodyBytes: MAX_ROUTE_REQUEST_BODY_BYTES,
 		syncOptions: {
 			// Authenticated users get full access. Public respondent submissions
 			// are finalized through validated public routes that now write through
@@ -601,9 +693,13 @@ async function main(): Promise<void> {
 				primary: auth.auth,
 				anonymousScopes: {},
 			}),
+			// Kora pings every socket every 25 s (heartbeatIntervalMs) and sends an
+			// app-level heartbeat on the same cadence, well inside the Azure
+			// Container Apps idle timeout (about 240 s), so no ws patch is needed.
 			schemaVersion: SCHEMA_VERSION,
 			supportedSchemaVersions: { min: SCHEMA_VERSION, max: SCHEMA_VERSION },
-			maxOperationBytes: readPositiveIntegerEnv('KORA_SYNC_MAX_OPERATION_BYTES', DEFAULT_SYNC_MAX_OPERATION_BYTES),
+			// Shared with the creator app's store.maxOperationBytes (src/kora.ts).
+			maxOperationBytes: SYNC_MAX_OPERATION_BYTES,
 			maxOpsPerMinute: readPositiveIntegerEnv('KORA_SYNC_MAX_OPS_PER_MINUTE', DEFAULT_SYNC_MAX_OPS_PER_MINUTE),
 			...toServerBlobCallbacks(blobStore),
 		},
@@ -790,6 +886,10 @@ async function main(): Promise<void> {
 
 						// Only owner and admin can invite
 						const access = await checkFormAccess(req.kora, formId, userId, 'admin')
+						if (!access && !(await req.kora.findById('forms', formId))) {
+							// Created on the device and not synced yet: not a permission problem.
+							return withCors({ status: 409, body: { error: 'This form has not reached the server yet. Try again once it has synced.' } })
+						}
 						if (!access) {
 							return withCors({ status: 403, body: { error: 'Only form owners and admins can invite collaborators.' } })
 						}
@@ -1196,7 +1296,7 @@ async function main(): Promise<void> {
 					if (req.method === 'GET') {
 						const limited = rateLimit(req, 'public_partial_read')
 						if (limited) return limited
-						const { path, query } = parseRoutePath(req.path)
+						const { path, query } = parseRoutePath(req)
 						const resumeId = path.replace('/api/public/partial/', '').replace(/\/$/, '')
 						const expectedSlug = query.get('slug') || query.get('formId') || ''
 						if (!resumeId || resumeId === '/api/public/partial') {
@@ -1240,6 +1340,7 @@ async function main(): Promise<void> {
 			{
 				path: '/api/public/forms',
 				async handle(req: ProductionHttpRouteRequest): Promise<ProductionHttpRouteResponse> {
+					if (/^\/api\/public\/forms\/[^/]+\/results\/?$/.test(req.path)) return publicResultsRoute.handle(req)
 					const slug = req.path.replace('/api/public/forms/', '').replace(/\/$/, '')
 					if (!slug) {
 						return withCors({ status: 404, body: { error: 'Not found' } })
@@ -1303,70 +1404,6 @@ async function main(): Promise<void> {
 						return withCors({
 							status: 200,
 							body: publicFormResponse(form, formSettings),
-						})
-					} catch {
-						return withCors({ status: 500, body: { error: 'Internal server error' } })
-					}
-				},
-			},
-			// Public API: get public results for a form
-			{
-				path: '/api/public/forms/*/results',
-				async handle(req: ProductionHttpRouteRequest): Promise<ProductionHttpRouteResponse> {
-					if (req.method === 'OPTIONS') return withCors({ status: 204 })
-					if (req.method !== 'GET') {
-						return withCors({ status: 405, body: { error: 'Method not allowed' } })
-					}
-					const limited = rateLimit(req, 'public_results')
-					if (limited) return limited
-					const route = parseRoutePath(req.path)
-					const slug = route.path.match(/\/api\/public\/forms\/([^/]+)\/results/)?.[1]
-					if (!slug) return withCors({ status: 404, body: { error: 'Not found' } })
-					const resultLimit = clampNumber(
-						Number(route.query.get('limit') || DEFAULT_PUBLIC_RESULTS_LIMIT),
-						1,
-						MAX_PUBLIC_RESULTS_LIMIT,
-					)
-					try {
-						const [form] = await req.kora.query('forms', {
-							where: { slug: decodeURIComponent(slug), status: 'published' },
-							limit: 1,
-						})
-						if (!form) {
-							return withCors({ status: 404, body: { error: 'Form not found' } })
-						}
-						const formSettings = parseFormSettings(form.settings)
-						if (!formSettings.publicResults) {
-							return withCors({ status: 403, body: { error: 'Results are not public for this form' } })
-						}
-						const fields = parseFormFields(form.fields)
-						const displaySettings = publicResultsDisplaySettings(formSettings)
-						const responses = await req.kora.query('responses', {
-							where: { formId: String(form.id) },
-							limit: resultLimit + 1,
-						})
-						const visibleResponses = responses.slice(0, resultLimit)
-						return withCors({
-							status: 200,
-							body: {
-								form: {
-									id: form.id,
-									title: form.title,
-									description: form.description,
-									fields: JSON.stringify(fields),
-									theme: form.theme,
-									results: displaySettings,
-								},
-								responses: visibleResponses.map(r => ({
-									data: JSON.stringify(sanitizePublicResultsResponseData(fields, r.data, displaySettings)),
-									submittedAt: r.submittedAt,
-								})),
-								pagination: {
-									limit: resultLimit,
-									returned: visibleResponses.length,
-									hasMore: responses.length > resultLimit,
-								},
-							},
 						})
 					} catch {
 						return withCors({ status: 500, body: { error: 'Internal server error' } })
@@ -1700,62 +1737,9 @@ async function main(): Promise<void> {
 	sideEffectProcessor = createSideEffectProcessor(server.kora)
 	sideEffectProcessor.start()
 
-	// Azure Container Apps closes idle WebSockets after ~240s. Protocol-level
-	// ping/pong resets that timer so creator sync can stay connected.
-	await installWebSocketKeepalive()
-
 	const url = await server.start()
 	createCentralBlobGarbageCollector(server, blobStore).start()
 	console.log(`KoraForms running at ${url}`)
-}
-
-/**
- * Patch `ws` so every upgraded socket gets a 30s ping. Must run before
- * `createProductionServer().start()` constructs its WebSocketServer.
- */
-async function installWebSocketKeepalive(): Promise<void> {
-	const pingMs = readPositiveIntegerEnv('KORA_WS_PING_MS', 30_000)
-	const wsMod = await import('ws')
-	const WebSocketServer = wsMod.WebSocketServer
-	const originalHandleUpgrade = WebSocketServer.prototype.handleUpgrade
-
-	WebSocketServer.prototype.handleUpgrade = function patchedHandleUpgrade(
-		this: InstanceType<typeof WebSocketServer>,
-		request: Parameters<typeof originalHandleUpgrade>[0],
-		socket: Parameters<typeof originalHandleUpgrade>[1],
-		head: Parameters<typeof originalHandleUpgrade>[2],
-		callback: Parameters<typeof originalHandleUpgrade>[3],
-	) {
-		return originalHandleUpgrade.call(this, request, socket, head, (ws, upgradeRequest) => {
-			attachSocketKeepalive(ws, pingMs)
-			callback(ws, upgradeRequest)
-		})
-	}
-}
-
-function attachSocketKeepalive(
-	ws: { ping: (data?: Buffer) => void; terminate: () => void; on: (event: string, listener: (...args: unknown[]) => void) => void },
-	pingMs: number,
-): void {
-	let alive = true
-	ws.on('pong', () => {
-		alive = true
-	})
-	const timer = setInterval(() => {
-		if (!alive) {
-			clearInterval(timer)
-			ws.terminate()
-			return
-		}
-		alive = false
-		try {
-			ws.ping()
-		} catch {
-			clearInterval(timer)
-		}
-	}, pingMs)
-	ws.on('close', () => clearInterval(timer))
-	ws.on('error', () => clearInterval(timer))
 }
 
 async function insertRouteRecord(
@@ -1790,19 +1774,29 @@ function logPublicResponseRejection(input: Parameters<typeof buildPublicResponse
 	}
 }
 
-function parseRoutePath(path: string): { path: string; query: URLSearchParams } {
-	const [pathname = '', search = ''] = path.split('?')
-	return { path: pathname, query: new URLSearchParams(search) }
+/**
+ * The route path and its query parameters. The Kora production server hands
+ * routes the pathname in `req.path` and the parsed query string in `req.query`;
+ * reading the query from `req.path` (as this did) always found it empty, so
+ * resume links (`?slug=`) were refused with 400 and the results `limit` was
+ * ignored.
+ */
+function parseRoutePath(req: Pick<ProductionHttpRouteRequest, 'path' | 'query'>): { path: string; query: URLSearchParams } {
+	const [pathname = '', search = ''] = req.path.split('?')
+	const query = new URLSearchParams(search)
+	for (const [key, value] of Object.entries(req.query ?? {})) {
+		if (query.has(key)) continue
+		for (const item of Array.isArray(value) ? value : [value]) {
+			if (typeof item === 'string') query.append(key, item)
+		}
+	}
+	return { path: pathname, query }
 }
 
+// `req.ip` is resolved by the Kora production server from the socket and the
+// trusted proxy hops (`trustProxy`), so a client cannot pick its own bucket.
 function getClientAddress(req: ProductionHttpRouteRequest): string {
-	const headers = req.headers || {}
-	const forwardedFor = getHeaderValue(headers, 'x-forwarded-for')
-	if (forwardedFor) return forwardedFor.split(',')[0]?.trim() || 'unknown'
-	return getHeaderValue(headers, 'cf-connecting-ip')
-		|| getHeaderValue(headers, 'x-real-ip')
-		|| getHeaderValue(headers, 'fastly-client-ip')
-		|| 'unknown'
+	return req.ip || 'unknown'
 }
 
 function getHeaderValue(headers: Record<string, unknown>, name: string): string {

@@ -21,6 +21,7 @@ import {
 	ROLE_LABELS,
 	ROLE_DESCRIPTIONS,
 	MAX_COLLABORATORS_PER_FORM,
+	collaboratorRole,
 	type CollaboratorRecord,
 } from '../../features/collaborators/access'
 import type { CollaboratorRole } from '../../types'
@@ -28,7 +29,7 @@ import type { CollaboratorRole } from '../../types'
 interface CollaboratorsPanelProps {
 	formId: string
 	formTitle: string
-	collaborators: CollaboratorRecord[]
+	collaborators: readonly CollaboratorRecord[]
 	userRole: 'owner' | CollaboratorRole
 	userId: string
 	userEmail: string
@@ -298,11 +299,11 @@ export function CollaboratorsPanel({
 										<div className="relative">
 											<button
 												onClick={() => canManage ? setRoleMenuId(roleMenuId === String(collab.id) ? null : String(collab.id)) : undefined}
-												className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[12px] font-medium ${getRoleBadgeClasses(collab.role)} ${canManage ? 'cursor-pointer hover:opacity-80' : ''}`}
+												className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[12px] font-medium ${getRoleBadgeClasses(collaboratorRole(collab))} ${canManage ? 'cursor-pointer hover:opacity-80' : ''}`}
 												disabled={!canManage}
 											>
-												{getRoleIcon(collab.role)}
-												{ROLE_LABELS[collab.role]}
+												{getRoleIcon(collaboratorRole(collab))}
+												{ROLE_LABELS[collaboratorRole(collab)]}
 												{canManage && <ChevronDown className="h-3 w-3" />}
 											</button>
 											{roleMenuId === String(collab.id) && (
@@ -385,9 +386,9 @@ export function CollaboratorsPanel({
 								</div>
 							</div>
 							<div className="flex items-center gap-2">
-								<span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[12px] font-medium ${getRoleBadgeClasses(collab.role)}`}>
-									{getRoleIcon(collab.role)}
-									{ROLE_LABELS[collab.role]}
+								<span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[12px] font-medium ${getRoleBadgeClasses(collaboratorRole(collab))}`}>
+									{getRoleIcon(collaboratorRole(collab))}
+									{ROLE_LABELS[collaboratorRole(collab)]}
 								</span>
 								{canManage && (
 									<button

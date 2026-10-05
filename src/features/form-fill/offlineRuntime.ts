@@ -19,12 +19,16 @@ import {
 	type PublicFormVersionRecord,
 	type PublicStoreIssue,
 	type PublicSubmissionStatus,
+	type ResponseSubmissionFlushItem,
 	type ResponseSubmissionLocalStatus,
 	type ResponseSubmissionRecord,
 } from './offlineModel'
 import { whenPublicAppReady, type PublicApp } from '../../publicKora'
+import { getPublicStoreIssues } from './publicStoreIssues'
 import { deleteLocalBlobsFromResponseJson, getLocalBlobStorageUsage } from './blobStorage'
 import { serializeJsonForTransport } from '../../domain/forms'
+
+export { getPublicStoreIssues }
 
 export {
 	buildPublicFormVersionRecord,
@@ -47,24 +51,12 @@ export {
 	type PublicFormVersionRecord,
 	type PublicStoreIssue,
 	type PublicSubmissionStatus,
+	type ResponseSubmissionFlushItem,
 	type ResponseSubmissionLocalStatus,
 	type ResponseSubmissionRecord,
 }
 
-const MAX_STORE_ISSUES = 5
 const PUBLIC_RESPONSE_FLUSH_LOCK = 'koraforms-public-response-flush'
-const publicStoreIssues: PublicStoreIssue[] = []
-
-let publicStoreListenersAttached = false
-
-interface StorageFallbackEvent {
-	type: 'store:storage-fallback'
-	dbName: string
-	from: 'opfs' | 'sqlite-wasm'
-	to: 'indexeddb'
-	reason: 'lock-conflict' | 'timeout' | 'unsupported'
-	message: string
-}
 
 interface PublicFlushLocks {
 	request<T>(
@@ -84,78 +76,8 @@ async function withPublicResponseFlushLock<T>(callback: () => Promise<T>): Promi
 	})
 }
 
-function rememberPublicStoreIssue(issue: Omit<PublicStoreIssue, 'seenAt'>): void {
-	publicStoreIssues.unshift({ ...issue, seenAt: Date.now() })
-	publicStoreIssues.splice(MAX_STORE_ISSUES)
-}
-
 async function readyPublicApp(): Promise<PublicApp> {
-	const app = await whenPublicAppReady()
-	attachPublicStoreListeners(app)
-	return app
-}
-
-function attachPublicStoreListeners(app: PublicApp): void {
-	if (publicStoreListenersAttached) return
-	publicStoreListenersAttached = true
-
-	const publicStoreEvents = app.events as typeof app.events & {
-		on(type: 'store:storage-fallback', handler: (event: StorageFallbackEvent) => void): void
-	}
-
-	app.events.on('store:opfs-unavailable', event => {
-		rememberPublicStoreIssue({
-			type: 'opfs-unavailable',
-			dbName: event.dbName,
-			reason: event.reason,
-			message: event.message,
-			blocking: true,
-		})
-	})
-
-	publicStoreEvents.on('store:storage-fallback', event => {
-		rememberPublicStoreIssue({
-			type: 'storage-fallback',
-			dbName: event.dbName,
-			reason: event.reason,
-			from: event.from,
-			to: event.to,
-			message: event.message,
-			blocking: false,
-		})
-	})
-
-	app.events.on('store:db-name-collision', event => {
-		rememberPublicStoreIssue({
-			type: 'db-name-collision',
-			dbName: event.dbName,
-			message: event.message,
-			blocking: true,
-		})
-	})
-
-	app.events.on('store:persistence-error', event => {
-		rememberPublicStoreIssue({
-			type: 'persistence-error',
-			dbName: event.dbName,
-			reason: event.code,
-			message: event.message,
-			blocking: true,
-		})
-	})
-
-	app.events.on('store:quota-exceeded', event => {
-		rememberPublicStoreIssue({
-			type: 'quota-exceeded',
-			dbName: event.dbName,
-			message: event.message,
-			blocking: true,
-		})
-	})
-}
-
-export function getPublicStoreIssues(): PublicStoreIssue[] {
-	return publicStoreIssues.slice()
+	return whenPublicAppReady()
 }
 
 export async function savePublicFormVersion(
@@ -454,7 +376,7 @@ export async function getPublicOfflineReadiness(
 }
 
 export async function flushResponseSubmissions(
-	submit: (item: ResponseSubmissionRecord & { data: string }) => Promise<void>,
+	submit: (item: ResponseSubmissionFlushItem) => Promise<void>,
 	now = Date.now(),
 ): Promise<FlushResult> {
 	const locked = await withPublicResponseFlushLock(() => drainResponseSubmissions(submit, now))
@@ -468,7 +390,7 @@ export async function flushResponseSubmissions(
 }
 
 async function drainResponseSubmissions(
-	submit: (item: ResponseSubmissionRecord & { data: string }) => Promise<void>,
+	submit: (item: ResponseSubmissionFlushItem) => Promise<void>,
 	now: number,
 ): Promise<FlushResult> {
 	const publicApp = await readyPublicApp()
@@ -491,7 +413,13 @@ async function drainResponseSubmissions(
 		})
 		try {
 			const data = serializeJsonForTransport(item.data)
-			await submit({ ...item, data, attempts, localStatus: 'syncing', updatedAt: now })
+			await submit({
+				formId: item.formId,
+				data,
+				clientSubmissionId: item.clientSubmissionId,
+				submittedAt: item.submittedAt,
+				formVersionHash: item.formVersionHash || '',
+			})
 			await deleteLocalBlobsFromResponseJson(data).catch(() => {})
 			await publicApp.response_submissions.update(item.id, {
 				localStatus: 'accepted',
@@ -527,10 +455,10 @@ function toSubmissionIssue(record: ResponseSubmissionRecord): PublicOfflineSubmi
 		id: record.id || '',
 		clientSubmissionId: record.clientSubmissionId,
 		formId: record.formId,
-		slug: record.slug,
+		slug: record.slug || '',
 		status: record.localStatus === 'rejected' ? 'rejected' : 'failed',
 		attempts: Number(record.attempts || 0),
-		lastError: record.lastError,
+		lastError: record.lastError || '',
 		updatedAt: Number(record.updatedAt || 0),
 	}
 }
@@ -566,7 +494,7 @@ function buildPublicOfflineFormDiagnostics(
 
 	for (const submission of submissions) {
 		const entry = getEntry(String(submission.formId || ''), String(submission.slug || ''))
-		entry[submission.localStatus] += 1
+		entry[submission.localStatus ?? 'submitted_locally'] += 1
 		entry.lastActivityAt = Math.max(
 			entry.lastActivityAt,
 			Number(submission.updatedAt || 0),

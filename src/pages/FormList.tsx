@@ -1,5 +1,6 @@
-import { useQuery, useMutation } from '@korajs/react'
+import { useQuery, useQueryState, useMutation } from '@korajs/react'
 import { app } from '../kora'
+import type { KoraInsert } from '../schemaTypes'
 import { setPageMeta } from '../utils/meta'
 import { htmlToPlainText, isRichTextEmpty } from '../utils/richText'
 import {
@@ -97,11 +98,13 @@ export function FormList({ navigate, userId }: Props) {
 		setPageMeta({ title: 'Dashboard', description: 'Manage your forms and view responses.' })
 	}, [])
 
-	const allForms = useQuery(
+	// `ready` keeps the empty state from flashing before the first local result.
+	const { data: allForms, ready: formsReady, error: formsError } = useQueryState(
 		userId
 			? app.forms.where({ ownerId: userId }).orderBy('createdAt', 'desc')
 			: app.forms.where({}).orderBy('createdAt', 'desc'),
 	)
+	if (formsError) throw formsError
 	const sharedFormIds = useSharedFormIds(userId)
 	const allFormsForShared = useQuery(app.forms.where({}).orderBy('createdAt', 'desc'))
 	const sharedForms = useMemo(
@@ -111,11 +114,11 @@ export function FormList({ navigate, userId }: Props) {
 	const allResponses = useQuery(app.responses.where({}).orderBy('submittedAt', 'desc'))
 	const { mutateAsync: deleteForm } = useMutation((id: string) => app.forms.delete(id))
 	const { mutateAsync: duplicateForm } = useMutation(
-		(data: Record<string, unknown>) => app.forms.insert(data),
+		(data: KoraInsert<'forms'>) => app.forms.insert(data),
 	)
 
 	const { mutate: updateForm } = useMutation(
-		(data: { id: string; settings: string }) =>
+		(data: { id: string; settings: FormSettings }) =>
 			app.forms.update(data.id, { settings: data.settings }),
 	)
 
@@ -126,8 +129,8 @@ export function FormList({ navigate, userId }: Props) {
 	const [searchQuery, setSearchQuery] = useState('')
 	const [publicOfflineDiagnostics, setPublicOfflineDiagnostics] = useState<PublicOfflineDiagnostics | null>(null)
 
-	const handleArchive = (form: Record<string, unknown>) => {
-		updateForm({ id: String(form.id), settings: JSON.stringify(serializeArchiveSettings(form.settings, true)) })
+	const handleArchive = (form: FormRecord) => {
+		updateForm({ id: String(form.id), settings: serializeArchiveSettings(form.settings, true) })
 		void recordAuditEvent(app.audit_events, {
 			formId: String(form.id),
 			actorId: userId,
@@ -136,8 +139,8 @@ export function FormList({ navigate, userId }: Props) {
 		})
 	}
 
-	const handleUnarchive = (form: Record<string, unknown>) => {
-		updateForm({ id: String(form.id), settings: JSON.stringify(serializeArchiveSettings(form.settings, false)) })
+	const handleUnarchive = (form: FormRecord) => {
+		updateForm({ id: String(form.id), settings: serializeArchiveSettings(form.settings, false) })
 		void recordAuditEvent(app.audit_events, {
 			formId: String(form.id),
 			actorId: userId,
@@ -147,8 +150,8 @@ export function FormList({ navigate, userId }: Props) {
 	}
 
 	const handleCreateFromTemplate = async (key: string) => {
-		const payload = key === 'blank'
-			? { title: 'Untitled Form', description: '', fields: '[]', status: 'draft', ownerId: userId, theme: 'red' }
+		const payload: KoraInsert<'forms'> | null = key === 'blank'
+			? { title: 'Untitled Form', description: '', fields: [], status: 'draft', ownerId: userId, theme: 'red' }
 			: buildTemplateFormPayload(key, userId)
 		if (!payload) return
 		setShowTemplates(false)
@@ -167,8 +170,8 @@ export function FormList({ navigate, userId }: Props) {
 		}
 	}
 
-	const handleDuplicate = async (form: Record<string, unknown>) => {
-		const record = await duplicateForm(buildDuplicateFormPayload(form as FormRecord, userId))
+	const handleDuplicate = async (form: FormRecord) => {
+		const record = await duplicateForm(buildDuplicateFormPayload(form, userId))
 		void recordAuditEvent(app.audit_events, {
 			formId: String(record.id),
 			actorId: userId,
@@ -178,7 +181,7 @@ export function FormList({ navigate, userId }: Props) {
 		})
 	}
 
-	const handleDeleteForm = async (form: Record<string, unknown>) => {
+	const handleDeleteForm = async (form: FormRecord) => {
 		await deleteForm(String(form.id))
 		void recordAuditEvent(app.audit_events, {
 			formId: String(form.id),
@@ -188,8 +191,8 @@ export function FormList({ navigate, userId }: Props) {
 		})
 	}
 
-	const handleCopyLink = async (form: Record<string, unknown>) => {
-		const identifier = publicFormIdentifier(form as FormRecord)
+	const handleCopyLink = async (form: FormRecord) => {
+		const identifier = publicFormIdentifier(form)
 		const link = `${window.location.origin}/f/${identifier}`
 		if (await copyToClipboard(link)) {
 			setCopiedId(String(form.id))
@@ -197,8 +200,8 @@ export function FormList({ navigate, userId }: Props) {
 		}
 	}
 
-	const handleExportForm = (form: Record<string, unknown>) => {
-		const data = buildFormExportPayload(form as FormRecord)
+	const handleExportForm = (form: FormRecord) => {
+		const data = buildFormExportPayload(form)
 		downloadJsonFile(data, formExportFilename(form.title))
 	}
 
@@ -456,7 +459,7 @@ export function FormList({ navigate, userId }: Props) {
 			)}
 
 			{/* Empty state */}
-			{allForms.length === 0 && <EmptyState onCreateClick={() => setShowTemplates(true)} onBrowseTemplates={() => navigate('/dashboard/templates')} />}
+			{formsReady && allForms.length === 0 && <EmptyState onCreateClick={() => setShowTemplates(true)} onBrowseTemplates={() => navigate('/dashboard/templates')} />}
 
 			{/* Share modal */}
 			{shareForm && (

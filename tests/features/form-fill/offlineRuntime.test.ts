@@ -55,8 +55,8 @@ test('public form version records reconstruct public form payloads', () => {
 
 	assert.equal(payload.id, 'form-1')
 	assert.equal(payload.slug, 'field-survey')
-	assert.deepEqual(payload.fields, JSON.stringify(form.fields))
-	assert.deepEqual(payload.settings, JSON.stringify({ publicResults: true }))
+	assert.deepEqual(payload.fields, form.fields)
+	assert.deepEqual(payload.settings, { publicResults: true })
 })
 
 test('response submissions are stored as Kora outbox records', () => {
@@ -73,7 +73,7 @@ test('response submissions are stored as Kora outbox records', () => {
 		formId: 'form-1',
 		slug: 'field-survey',
 		formVersionHash: 'v1',
-		data: '{"name":"Ada"}',
+		data: { name: 'Ada' },
 		clientSubmissionId: 'local-a',
 		localStatus: 'submitted_locally',
 		attempts: 0,
@@ -97,7 +97,7 @@ test('public form progress records preserve respondent resume state', () => {
 	assert.deepEqual(record, {
 		slug: 'field-survey',
 		formId: 'form-1',
-		answers: JSON.stringify({ name: 'Ada' }),
+		answers: { name: 'Ada' },
 		currentIndex: 2,
 		resumeId: 'resume-1',
 		resumeUrl: 'https://forms.korajs.dev/f/field-survey?resume=resume-1',
