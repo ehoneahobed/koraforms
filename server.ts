@@ -47,7 +47,9 @@ const koraFormsSchema = defineSchema({
 				status: t.enum(['draft', 'published', 'closed']).default('draft').transitions({
 					draft: ['published', 'closed'],
 					published: ['draft', 'closed'],
-					closed: [],
+					// The settings panel offers Draft and Live on a closed form, and the
+					// audit log has form_reopened: closing is not terminal.
+					closed: ['published', 'draft'],
 				}),
 				theme: t.string().default('red'),
 				responseCount: t.number().default(0).merge('counter'),
