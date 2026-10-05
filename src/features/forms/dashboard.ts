@@ -1,4 +1,4 @@
-import { parseFormFields, parseFormSettings, parseJsonRecord, serializeFormSettings } from '../../domain/forms'
+import { parseFormFields, parseFormSettings, parseJsonRecord, serializeFormFields, serializeFormSettings } from '../../domain/forms'
 import type { KoraInsert } from '../../schemaTypes'
 import { createFieldsFromTemplate, FORM_TEMPLATES } from '../../templates'
 import type { FormField, FormSettings } from '../../types'
@@ -425,7 +425,7 @@ export function buildTemplateFormPayload(templateKey: string, ownerId: string): 
 	return {
 		title: template.title || 'Untitled Form',
 		description: template.description,
-		fields: createFieldsFromTemplate(templateKey),
+		fields: serializeFormFields(createFieldsFromTemplate(templateKey)),
 		status: 'draft',
 		ownerId,
 		theme: 'red',
@@ -436,11 +436,11 @@ export function buildDuplicateFormPayload(form: FormRecord, ownerId: string): Ko
 	return {
 		title: `Copy of ${String(form.title || 'Untitled Form')}`,
 		description: String(form.description || ''),
-		fields: parseFormFields(form.fields),
+		fields: serializeFormFields(parseFormFields(form.fields)),
 		status: 'draft',
 		ownerId,
 		theme: String(form.theme || 'blue'),
-		settings: parseFormSettings(form.settings),
+		settings: serializeFormSettings(parseFormSettings(form.settings)),
 	}
 }
 
@@ -452,7 +452,7 @@ export function buildFormExportPayload(form: FormRecord): FormExportPayload {
 		description: String(form.description || ''),
 		fields: parseFormFields(form.fields),
 		theme: String(form.theme || 'blue'),
-		settings: parseFormSettings(form.settings),
+		settings: serializeFormSettings(parseFormSettings(form.settings)),
 	}
 }
 
@@ -557,7 +557,7 @@ export function buildRestoredFormPayload(form: WorkspaceRestorePlan['forms'][num
 	return {
 		title: `${form.title} (Restored)`,
 		description: form.description,
-		fields: form.fields,
+		fields: serializeFormFields(form.fields),
 		status: 'draft',
 		ownerId,
 		theme: form.theme,

@@ -88,7 +88,7 @@ function sanitizeValue(value: unknown, depth: number): unknown {
 	if (value == null) return value
 	if (typeof value === 'string') return value.length > MAX_STRING_LENGTH ? `${value.slice(0, MAX_STRING_LENGTH)}...` : value
 	if (typeof value === 'number' || typeof value === 'boolean') return value
-	if (Array.isArray(value)) return value.slice(0, 20).map(item => sanitizeValue(item, depth + 1))
+	if (Array.isArray(value)) return value.slice(0, 20).map(item => (item === undefined ? null : sanitizeValue(item, depth + 1)))
 	if (typeof value !== 'object') return String(value)
 
 	const output: Record<string, unknown> = {}
@@ -98,6 +98,8 @@ function sanitizeValue(value: unknown, depth: number): unknown {
 			output._truncated = true
 			break
 		}
+		// Kora refuses undefined inside json values; JSON drops such members too.
+		if (nested === undefined || typeof nested === 'function') continue
 		if (SENSITIVE_KEY_PATTERN.test(key)) {
 			output[key] = REDACTED
 		} else {

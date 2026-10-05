@@ -1,4 +1,4 @@
-import { parseFormFields, parseFormSettings, parseJsonRecord, serializeFormFields, serializeFormSettings } from '../../domain/forms'
+import { parseFormFields, parseFormSettings, parseJsonRecord, serializeFormFields, serializeFormSettings, toJsonValue } from '../../domain/forms'
 import { stripFormAccessSecrets } from '../../domain/formPassword'
 import type { KoraInsert, KoraRecord } from '../../schemaTypes'
 
@@ -312,7 +312,7 @@ export function buildPublicFormProgressRecord(
 	return {
 		slug: params.slug,
 		formId: params.formId,
-		answers: { ...params.values },
+		answers: toJsonValue({ ...params.values }),
 		currentIndex: params.currentIndex,
 		resumeId: params.resumeId || '',
 		resumeUrl: params.resumeUrl || '',
