@@ -72,6 +72,7 @@ jobs:
             KORA_METRICS_TOKEN=secretref:kora-metrics-token
             DATABASE_URL=secretref:database-url
             NODE_ENV=production
+            KORA_TRUST_PROXY=1
             PUBLIC_URL=${{ vars.PUBLIC_URL || 'https://forms.korajs.dev' }}
 
       # container-apps-deploy-action resets scale to minReplicas=0. Sync is a

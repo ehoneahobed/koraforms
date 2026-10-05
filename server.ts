@@ -452,6 +452,25 @@ function cleanupExpiredRateLimitBuckets(
 	}
 }
 
+/**
+ * Reverse proxies trusted to report the client address in X-Forwarded-For
+ * (`request.ip`, used by Kora's sign-in limits and the public route limiter).
+ * Azure Container Apps and Fly.io each put exactly one proxy in front of the
+ * container, so production trusts one hop. `KORA_TRUST_PROXY` overrides it:
+ * a hop count, a comma-separated list of proxy IPs / CIDR ranges, or `0` to
+ * trust none (a server reached directly).
+ */
+function readTrustProxyEnv(): number | string[] | undefined {
+	const raw = process.env.KORA_TRUST_PROXY?.trim()
+	if (!raw) return process.env.NODE_ENV === 'production' ? 1 : undefined
+	if (/^\d+$/.test(raw)) {
+		const hops = Number(raw)
+		return hops > 0 ? hops : undefined
+	}
+	const ranges = raw.split(',').map(entry => entry.trim()).filter(Boolean)
+	return ranges.length > 0 ? ranges : undefined
+}
+
 function readPositiveIntegerEnv(name: string, fallback: number): number {
 	const raw = process.env[name]?.trim()
 	if (!raw) return fallback
@@ -590,6 +609,7 @@ async function main(): Promise<void> {
 		port,
 		staticDir: distDir,
 		syncPath: '/kora-sync',
+		trustProxy: readTrustProxyEnv(),
 		// The default (1 MiB) would refuse public responses with attachments
 		// between 1 and 2 MiB with 413 before the route runs.
 		maxRequestBodyBytes: MAX_ROUTE_REQUEST_BODY_BYTES,
@@ -603,6 +623,9 @@ async function main(): Promise<void> {
 				primary: auth.auth,
 				anonymousScopes: {},
 			}),
+			// Kora pings every socket every 25 s (heartbeatIntervalMs) and sends an
+			// app-level heartbeat on the same cadence, well inside the Azure
+			// Container Apps idle timeout (about 240 s), so no ws patch is needed.
 			schemaVersion: SCHEMA_VERSION,
 			supportedSchemaVersions: { min: SCHEMA_VERSION, max: SCHEMA_VERSION },
 			// Shared with the creator app's store.maxOperationBytes (src/kora.ts).
@@ -1703,62 +1726,9 @@ async function main(): Promise<void> {
 	sideEffectProcessor = createSideEffectProcessor(server.kora)
 	sideEffectProcessor.start()
 
-	// Azure Container Apps closes idle WebSockets after ~240s. Protocol-level
-	// ping/pong resets that timer so creator sync can stay connected.
-	await installWebSocketKeepalive()
-
 	const url = await server.start()
 	createCentralBlobGarbageCollector(server, blobStore).start()
 	console.log(`KoraForms running at ${url}`)
-}
-
-/**
- * Patch `ws` so every upgraded socket gets a 30s ping. Must run before
- * `createProductionServer().start()` constructs its WebSocketServer.
- */
-async function installWebSocketKeepalive(): Promise<void> {
-	const pingMs = readPositiveIntegerEnv('KORA_WS_PING_MS', 30_000)
-	const wsMod = await import('ws')
-	const WebSocketServer = wsMod.WebSocketServer
-	const originalHandleUpgrade = WebSocketServer.prototype.handleUpgrade
-
-	WebSocketServer.prototype.handleUpgrade = function patchedHandleUpgrade(
-		this: InstanceType<typeof WebSocketServer>,
-		request: Parameters<typeof originalHandleUpgrade>[0],
-		socket: Parameters<typeof originalHandleUpgrade>[1],
-		head: Parameters<typeof originalHandleUpgrade>[2],
-		callback: Parameters<typeof originalHandleUpgrade>[3],
-	) {
-		return originalHandleUpgrade.call(this, request, socket, head, (ws, upgradeRequest) => {
-			attachSocketKeepalive(ws, pingMs)
-			callback(ws, upgradeRequest)
-		})
-	}
-}
-
-function attachSocketKeepalive(
-	ws: { ping: (data?: Buffer) => void; terminate: () => void; on: (event: string, listener: (...args: unknown[]) => void) => void },
-	pingMs: number,
-): void {
-	let alive = true
-	ws.on('pong', () => {
-		alive = true
-	})
-	const timer = setInterval(() => {
-		if (!alive) {
-			clearInterval(timer)
-			ws.terminate()
-			return
-		}
-		alive = false
-		try {
-			ws.ping()
-		} catch {
-			clearInterval(timer)
-		}
-	}, pingMs)
-	ws.on('close', () => clearInterval(timer))
-	ws.on('error', () => clearInterval(timer))
 }
 
 async function insertRouteRecord(
@@ -1798,14 +1768,10 @@ function parseRoutePath(path: string): { path: string; query: URLSearchParams } 
 	return { path: pathname, query: new URLSearchParams(search) }
 }
 
+// `req.ip` is resolved by the Kora production server from the socket and the
+// trusted proxy hops (`trustProxy`), so a client cannot pick its own bucket.
 function getClientAddress(req: ProductionHttpRouteRequest): string {
-	const headers = req.headers || {}
-	const forwardedFor = getHeaderValue(headers, 'x-forwarded-for')
-	if (forwardedFor) return forwardedFor.split(',')[0]?.trim() || 'unknown'
-	return getHeaderValue(headers, 'cf-connecting-ip')
-		|| getHeaderValue(headers, 'x-real-ip')
-		|| getHeaderValue(headers, 'fastly-client-ip')
-		|| 'unknown'
+	return req.ip || 'unknown'
 }
 
 function getHeaderValue(headers: Record<string, unknown>, name: string): string {
