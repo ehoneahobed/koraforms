@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
-import { useMutation, useQuery } from '@korajs/react'
+import { useMutation, useQuery, useQueryState } from '@korajs/react'
 import { app } from '../kora'
 import type { KoraInsert } from '../schemaTypes'
 import { setPageMeta } from '../utils/meta'
@@ -17,6 +17,7 @@ import { ExportModal } from '../components/responses/ExportModal'
 import { EmptyState, FollowUpView, ResponseOverview } from '../components/responses/ResponseInboxPanels'
 import { ResponseSlideOut } from '../components/responses/ResponseSlideOut'
 import { ShareModal } from '../components/shared/ShareModal'
+import { InlineLoader } from '../components/shared/BrandLoader'
 import { parseFormFields } from '../domain/forms'
 import {
 	formatResponseValue,
@@ -141,7 +142,12 @@ function setResponseAdvancedFiltersInUrl(filters: ResponseAdvancedFilters) {
 // ============================================================================
 
 export function FormResponses({ formId, navigate, userId = '' }: Props) {
-	const allForms = useQuery(app.forms.where({}).orderBy('createdAt', 'desc'))
+	// useQuery renders [] before the first local result; "Form not found" must
+	// wait until the forms query has actually answered.
+	const { data: allForms, ready: formsReady, error: formsError } = useQueryState(
+		app.forms.where({}).orderBy('createdAt', 'desc'),
+	)
+	if (formsError) throw formsError
 	const allResponses = useQuery(
 		app.responses.where({}).orderBy('submittedAt', 'desc'),
 	)
@@ -397,6 +403,7 @@ export function FormResponses({ formId, navigate, userId = '' }: Props) {
 
 	// --- Not found ---
 	if (!form) {
+		if (!formsReady) return <InlineLoader message="Loading responses..." />
 		return (
 			<div className="text-center py-20 text-gray-500 animate-fade-in">
 				<p className="text-lg mb-2">Form not found</p>

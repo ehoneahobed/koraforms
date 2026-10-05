@@ -3,6 +3,7 @@ import { Routes, Route, Navigate, Outlet, useNavigate, useParams, useLocation, u
 import { useSyncStatus, useMutation, useQuery } from '@korajs/react'
 import { app } from './kora'
 import type { KoraInsert, KoraUpdate } from './schemaTypes'
+import { describeSyncStatus } from './features/sync/status'
 import { AuthProvider, useAuthStatus } from '@korajs/auth/react'
 import { useAuth } from '@korajs/auth/react'
 import { authClient } from './auth'
@@ -364,8 +365,12 @@ function AuthenticatedLayout() {
 function AuthenticatedRoutes() {
 	const navigate = useAppNavigate()
 	const { user } = useAuth()
+	const location = useLocation()
 
+	// A failed local query (useQuery throws to the nearest boundary) or a render
+	// error replaces only the page, keeps the sidebar, and clears on navigation.
 	return (
+		<ErrorBoundary resetKey={location.pathname}>
 		<Suspense fallback={<InlineLoader message="Loading..." />}>
 			<Routes>
 				<Route path="/dashboard" element={<FormList navigate={navigate} userId={user?.id || ''} />} />
@@ -380,6 +385,7 @@ function AuthenticatedRoutes() {
 				</Route>
 			</Routes>
 		</Suspense>
+		</ErrorBoundary>
 	)
 }
 
@@ -606,20 +612,16 @@ function FormPageShell({ navigate, userId }: { navigate: (path: string) => void;
 	}
 
 	// Sync status text for the breadcrumb bar
-	const syncText = (() => {
-		const s = syncStatus.status
-		if (s === 'syncing') return 'Syncing...'
-		if (s === 'offline') return 'All changes saved locally'
-		if (s === 'error' || s === 'schema-mismatch') return 'Sync error'
-		return 'Synced just now'
-	})()
-	const syncDotColor = (() => {
-		const s = syncStatus.status
-		if (s === 'syncing') return 'bg-amber-400'
-		if (s === 'offline') return 'bg-gray-400'
-		if (s === 'error' || s === 'schema-mismatch') return 'bg-red-400'
-		return 'bg-emerald-400'
-	})()
+	const syncDisplay = describeSyncStatus(syncStatus.status, syncStatus.pendingOperations)
+	const syncText = syncDisplay.tone === 'offline'
+		? 'All changes saved locally'
+		: syncDisplay.tone === 'synced' ? syncDisplay.subtitle : syncDisplay.title
+	const syncDotColor = {
+		synced: 'bg-emerald-400',
+		busy: 'bg-amber-400',
+		offline: 'bg-gray-400',
+		attention: 'bg-red-400',
+	}[syncDisplay.tone]
 
 	// Collaborator data
 	const formCollaborators = useFormCollaborators(formId || '')
@@ -1062,33 +1064,22 @@ export function App() {
 // ---------------------------------------------------------------------------
 
 function SidebarSyncIndicator({ status }: { status: ReturnType<typeof useSyncStatus> }) {
-	const s = status.status
-	const pending = status.pendingOperations
+	const { tone, title, subtitle } = describeSyncStatus(status.status, status.pendingOperations)
 
 	let icon: React.ReactNode
-	let title: string
-	let subtitle: string
 	let dotColor: string
 
-	if (s === 'offline') {
+	if (tone === 'offline') {
 		icon = <CloudOff className="h-3.5 w-3.5 text-gray-400 dark:text-gray-500" />
-		title = 'Saved locally'
-		subtitle = pending > 0 ? `${pending} change${pending > 1 ? 's' : ''} pending` : 'No connection'
 		dotColor = 'bg-gray-400'
-	} else if (s === 'syncing') {
+	} else if (tone === 'busy') {
 		icon = <Cloud className="h-3.5 w-3.5 text-amber-500 animate-pulse" />
-		title = 'Syncing...'
-		subtitle = 'Saving changes'
 		dotColor = 'bg-amber-400'
-	} else if (s === 'error' || s === 'schema-mismatch') {
+	} else if (tone === 'attention') {
 		icon = <AlertCircle className="h-3.5 w-3.5 text-red-500" />
-		title = s === 'schema-mismatch' ? 'Update needed' : 'Sync error'
-		subtitle = 'Check connection'
 		dotColor = 'bg-red-400'
 	} else {
 		icon = <Wifi className="h-3.5 w-3.5 text-emerald-500" />
-		title = 'Saved locally'
-		subtitle = 'Synced just now'
 		dotColor = 'bg-emerald-400'
 	}
 

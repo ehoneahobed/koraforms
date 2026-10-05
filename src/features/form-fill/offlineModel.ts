@@ -77,7 +77,14 @@ export interface PublicOfflineFormDiagnostics {
 }
 
 export interface PublicStoreIssue {
-	type: 'storage-fallback' | 'opfs-unavailable' | 'db-name-collision' | 'persistence-error' | 'quota-exceeded'
+	type:
+		| 'storage-fallback'
+		| 'opfs-unavailable'
+		| 'db-name-collision'
+		| 'persistence-error'
+		| 'quota-exceeded'
+		| 'durability-lost'
+		| 'storage-blocked'
 	message: string
 	reason?: string
 	dbName?: string

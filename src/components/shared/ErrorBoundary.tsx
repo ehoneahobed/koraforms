@@ -1,8 +1,10 @@
-import { Component, type ReactNode } from 'react'
+import { Component, type ErrorInfo, type ReactNode } from 'react'
 import { AlertCircle, RefreshCw } from 'lucide-react'
 
 interface Props {
 	children: ReactNode
+	/** When this value changes (for example the route path), a caught error is cleared. */
+	resetKey?: string
 }
 
 interface State {
@@ -18,6 +20,16 @@ export class ErrorBoundary extends Component<Props, State> {
 
 	static getDerivedStateFromError(error: Error): State {
 		return { hasError: true, error }
+	}
+
+	componentDidCatch(error: Error, info: ErrorInfo) {
+		console.error('[koraforms] UI error caught by boundary', error, info.componentStack)
+	}
+
+	componentDidUpdate(previous: Props) {
+		if (this.state.hasError && previous.resetKey !== this.props.resetKey) {
+			this.setState({ hasError: false, error: null })
+		}
 	}
 
 	render() {

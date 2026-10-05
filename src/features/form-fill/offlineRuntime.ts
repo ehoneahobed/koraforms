@@ -24,8 +24,11 @@ import {
 	type ResponseSubmissionRecord,
 } from './offlineModel'
 import { whenPublicAppReady, type PublicApp } from '../../publicKora'
+import { getPublicStoreIssues } from './publicStoreIssues'
 import { deleteLocalBlobsFromResponseJson, getLocalBlobStorageUsage } from './blobStorage'
 import { serializeJsonForTransport } from '../../domain/forms'
+
+export { getPublicStoreIssues }
 
 export {
 	buildPublicFormVersionRecord,
@@ -53,20 +56,7 @@ export {
 	type ResponseSubmissionRecord,
 }
 
-const MAX_STORE_ISSUES = 5
 const PUBLIC_RESPONSE_FLUSH_LOCK = 'koraforms-public-response-flush'
-const publicStoreIssues: PublicStoreIssue[] = []
-
-let publicStoreListenersAttached = false
-
-interface StorageFallbackEvent {
-	type: 'store:storage-fallback'
-	dbName: string
-	from: 'opfs' | 'sqlite-wasm'
-	to: 'indexeddb'
-	reason: 'lock-conflict' | 'timeout' | 'unsupported'
-	message: string
-}
 
 interface PublicFlushLocks {
 	request<T>(
@@ -86,78 +76,8 @@ async function withPublicResponseFlushLock<T>(callback: () => Promise<T>): Promi
 	})
 }
 
-function rememberPublicStoreIssue(issue: Omit<PublicStoreIssue, 'seenAt'>): void {
-	publicStoreIssues.unshift({ ...issue, seenAt: Date.now() })
-	publicStoreIssues.splice(MAX_STORE_ISSUES)
-}
-
 async function readyPublicApp(): Promise<PublicApp> {
-	const app = await whenPublicAppReady()
-	attachPublicStoreListeners(app)
-	return app
-}
-
-function attachPublicStoreListeners(app: PublicApp): void {
-	if (publicStoreListenersAttached) return
-	publicStoreListenersAttached = true
-
-	const publicStoreEvents = app.events as typeof app.events & {
-		on(type: 'store:storage-fallback', handler: (event: StorageFallbackEvent) => void): void
-	}
-
-	app.events.on('store:opfs-unavailable', event => {
-		rememberPublicStoreIssue({
-			type: 'opfs-unavailable',
-			dbName: event.dbName,
-			reason: event.reason,
-			message: event.message,
-			blocking: true,
-		})
-	})
-
-	publicStoreEvents.on('store:storage-fallback', event => {
-		rememberPublicStoreIssue({
-			type: 'storage-fallback',
-			dbName: event.dbName,
-			reason: event.reason,
-			from: event.from,
-			to: event.to,
-			message: event.message,
-			blocking: false,
-		})
-	})
-
-	app.events.on('store:db-name-collision', event => {
-		rememberPublicStoreIssue({
-			type: 'db-name-collision',
-			dbName: event.dbName,
-			message: event.message,
-			blocking: true,
-		})
-	})
-
-	app.events.on('store:persistence-error', event => {
-		rememberPublicStoreIssue({
-			type: 'persistence-error',
-			dbName: event.dbName,
-			reason: event.code,
-			message: event.message,
-			blocking: true,
-		})
-	})
-
-	app.events.on('store:quota-exceeded', event => {
-		rememberPublicStoreIssue({
-			type: 'quota-exceeded',
-			dbName: event.dbName,
-			message: event.message,
-			blocking: true,
-		})
-	})
-}
-
-export function getPublicStoreIssues(): PublicStoreIssue[] {
-	return publicStoreIssues.slice()
+	return whenPublicAppReady()
 }
 
 export async function savePublicFormVersion(

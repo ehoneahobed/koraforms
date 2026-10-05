@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { BrandLoader, InlineLoader } from './components/shared/BrandLoader'
 import { registerOfflineServiceWorker } from './utils/serviceWorker'
+import { ErrorBoundary } from './components/shared/ErrorBoundary'
 import './index.css'
 
 const PublicFormPage = lazy(() =>
@@ -33,17 +34,21 @@ createRoot(document.getElementById('root')!).render(
 				<Route
 					path="/f/:formId"
 					element={
-						<Suspense fallback={<InlineLoader message="Loading form..." />}>
-							<PublicFormPage />
-						</Suspense>
+						<ErrorBoundary>
+							<Suspense fallback={<InlineLoader message="Loading form..." />}>
+								<PublicFormPage />
+							</Suspense>
+						</ErrorBoundary>
 					}
 				/>
 				<Route
 					path="/f/:slug/results"
 					element={
-						<Suspense fallback={<InlineLoader message="Loading results..." />}>
-							<PublicResultsPage />
-						</Suspense>
+						<ErrorBoundary>
+							<Suspense fallback={<InlineLoader message="Loading results..." />}>
+								<PublicResultsPage />
+							</Suspense>
+						</ErrorBoundary>
 					}
 				/>
 

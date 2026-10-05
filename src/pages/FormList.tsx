@@ -1,4 +1,4 @@
-import { useQuery, useMutation } from '@korajs/react'
+import { useQuery, useQueryState, useMutation } from '@korajs/react'
 import { app } from '../kora'
 import type { KoraInsert } from '../schemaTypes'
 import { setPageMeta } from '../utils/meta'
@@ -98,11 +98,13 @@ export function FormList({ navigate, userId }: Props) {
 		setPageMeta({ title: 'Dashboard', description: 'Manage your forms and view responses.' })
 	}, [])
 
-	const allForms = useQuery(
+	// `ready` keeps the empty state from flashing before the first local result.
+	const { data: allForms, ready: formsReady, error: formsError } = useQueryState(
 		userId
 			? app.forms.where({ ownerId: userId }).orderBy('createdAt', 'desc')
 			: app.forms.where({}).orderBy('createdAt', 'desc'),
 	)
+	if (formsError) throw formsError
 	const sharedFormIds = useSharedFormIds(userId)
 	const allFormsForShared = useQuery(app.forms.where({}).orderBy('createdAt', 'desc'))
 	const sharedForms = useMemo(
@@ -457,7 +459,7 @@ export function FormList({ navigate, userId }: Props) {
 			)}
 
 			{/* Empty state */}
-			{allForms.length === 0 && <EmptyState onCreateClick={() => setShowTemplates(true)} onBrowseTemplates={() => navigate('/dashboard/templates')} />}
+			{formsReady && allForms.length === 0 && <EmptyState onCreateClick={() => setShowTemplates(true)} onBrowseTemplates={() => navigate('/dashboard/templates')} />}
 
 			{/* Share modal */}
 			{shareForm && (
