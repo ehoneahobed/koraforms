@@ -53,3 +53,24 @@ test('every sync status has creator-facing wording', () => {
 	assert.equal(describeSyncStatus('auth-required', 1).subtitle, '1 change pending')
 	assert.equal(describeSyncStatus('synced', 0).tone, 'synced')
 })
+
+test('rejection notices never evict a persistent storage or schema notice', () => {
+	const store = createNoticeStore()
+	store.handle({ type: 'store:storage-blocked', dbName: 'kora-db', resource: 'pool', state: 'waiting', message: 'held' })
+	store.handle({ type: 'store:schema-ahead', dbName: 'kora-db', storedVersion: 21, codeVersion: 20, message: 'newer' })
+	for (let index = 0; index < 6; index++) {
+		store.handle({
+			type: 'sync:operation-rejected',
+			operationId: `op-${index}`,
+			collection: 'forms',
+			recordId: 'form-1',
+			code: 'CONSTRAINT_VIOLATION',
+			message: 'refused',
+			retriable: false,
+		})
+	}
+	const ids = store.getSnapshot().map(notice => notice.id)
+	assert.ok(ids.includes('storage-blocked'))
+	assert.ok(ids.includes('schema-ahead'))
+	assert.deepEqual(ids.filter(id => id.startsWith('rejected:')), ['rejected:op-5', 'rejected:op-4', 'rejected:op-3'])
+})

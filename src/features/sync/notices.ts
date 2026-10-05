@@ -83,13 +83,21 @@ export function noticeActionForEvent(event: KoraEvent): KoraNoticeAction | null 
 	}
 }
 
-const MAX_NOTICES = 4
+/** Most dismissible notices shown at once; persistent ones are never evicted. */
+const MAX_DISMISSIBLE_NOTICES = 3
 
-/** Applies a notice action: a notice replaces one with the same id; the newest comes first. */
+/**
+ * Applies a notice action. A notice replaces one with the same id. Persistent
+ * (non-dismissible) notices describe a state the user must fix, so they always
+ * stay, first; only dismissible notices are capped, newest first.
+ */
 export function applyNoticeAction(notices: readonly KoraNotice[], action: KoraNoticeAction): KoraNotice[] {
-	const rest = notices.filter(notice => notice.id !== (action.type === 'show' ? action.notice.id : action.id))
-	if (action.type === 'clear') return rest
-	return [action.notice, ...rest].slice(0, MAX_NOTICES)
+	const id = action.type === 'show' ? action.notice.id : action.id
+	const rest = notices.filter(notice => notice.id !== id)
+	const next = action.type === 'show' ? [action.notice, ...rest] : rest
+	const persistent = next.filter(notice => !notice.dismissible)
+	const dismissible = next.filter(notice => notice.dismissible).slice(0, MAX_DISMISSIBLE_NOTICES)
+	return [...persistent, ...dismissible]
 }
 
 /** The events {@link noticeActionForEvent} maps. */
