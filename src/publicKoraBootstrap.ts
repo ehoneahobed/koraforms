@@ -1,6 +1,7 @@
 import { createApp } from 'korajs'
 import schema from './schema'
 import koraWorkerUrl from './kora-worker.ts?worker&url'
+import { PUBLIC_LOCAL_MAX_OPERATION_BYTES } from './domain/limits'
 
 /**
  * Eager createApp factory used only after dynamic import from `publicKora.ts`.
@@ -14,6 +15,8 @@ export function createPublicApp() {
 			adapter: 'sqlite-wasm',
 			name: 'koraforms-public',
 			workerUrl: koraWorkerUrl,
+			// This database never syncs; its largest write is one queued response.
+			maxOperationBytes: PUBLIC_LOCAL_MAX_OPERATION_BYTES,
 		},
 		devtools: import.meta.env.DEV,
 	})

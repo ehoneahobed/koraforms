@@ -26,6 +26,7 @@ import { evaluatePublicResponseAcceptance } from './src/domain/responseAcceptanc
 import { validatePublishedResponsePayload } from './src/domain/responseValidation'
 import { buildEmailNotificationPayload, buildSideEffectDeliveryJobs, buildWebhookPayload, isDeliverableWebhookUrl, isPublicWebhookIpAddress, normalizeWebhookConfig } from './src/domain/responseSideEffects'
 import { buildOpsDiagnosticsSnapshot } from './src/domain/opsDiagnostics'
+import { MAX_PUBLIC_RESPONSE_BODY_BYTES, MAX_ROUTE_REQUEST_BODY_BYTES, SYNC_MAX_OPERATION_BYTES } from './src/domain/limits'
 import type { FormField, FormSettings } from './src/types'
 type AnalyticsEventMetadata = Record<string, unknown>
 type SavedAnalyticsFilters = Array<{ fieldId: string; value: string }>
@@ -360,7 +361,6 @@ type NormalizedPublicAnalyticsEvent = {
 const SCHEMA_VERSION = 19
 const RESUME_LINK_TTL_MS = 30 * 24 * 60 * 60 * 1000
 const MAX_RESUME_PAYLOAD_BYTES = 128 * 1024
-const MAX_PUBLIC_RESPONSE_BODY_BYTES = 2 * 1024 * 1024
 const MAX_PUBLIC_ANALYTICS_EVENTS_PER_BATCH = 50
 const DEFAULT_PUBLIC_RESULTS_LIMIT = 100
 const MAX_PUBLIC_RESULTS_LIMIT = 500
@@ -385,7 +385,6 @@ interface FormCollaboratorRecord {
 	createdAt: number
 }
 const DEFAULT_BLOB_DIR = './koraforms-blobs'
-const DEFAULT_SYNC_MAX_OPERATION_BYTES = 512 * 1024
 const DEFAULT_SYNC_MAX_OPS_PER_MINUTE = 600
 const DEFAULT_BLOB_GC_INTERVAL_HOURS = 24
 const DEFAULT_BLOB_GC_START_DELAY_MINUTES = 15
@@ -591,6 +590,9 @@ async function main(): Promise<void> {
 		port,
 		staticDir: distDir,
 		syncPath: '/kora-sync',
+		// The default (1 MiB) would refuse public responses with attachments
+		// between 1 and 2 MiB with 413 before the route runs.
+		maxRequestBodyBytes: MAX_ROUTE_REQUEST_BODY_BYTES,
 		syncOptions: {
 			// Authenticated users get full access. Public respondent submissions
 			// are finalized through validated public routes that now write through
@@ -603,7 +605,8 @@ async function main(): Promise<void> {
 			}),
 			schemaVersion: SCHEMA_VERSION,
 			supportedSchemaVersions: { min: SCHEMA_VERSION, max: SCHEMA_VERSION },
-			maxOperationBytes: readPositiveIntegerEnv('KORA_SYNC_MAX_OPERATION_BYTES', DEFAULT_SYNC_MAX_OPERATION_BYTES),
+			// Shared with the creator app's store.maxOperationBytes (src/kora.ts).
+			maxOperationBytes: SYNC_MAX_OPERATION_BYTES,
 			maxOpsPerMinute: readPositiveIntegerEnv('KORA_SYNC_MAX_OPS_PER_MINUTE', DEFAULT_SYNC_MAX_OPS_PER_MINUTE),
 			...toServerBlobCallbacks(blobStore),
 		},
