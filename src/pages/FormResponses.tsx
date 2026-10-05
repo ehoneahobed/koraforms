@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from 'react'
 import { useMutation, useQuery } from '@korajs/react'
 import { app } from '../kora'
+import type { KoraInsert } from '../schemaTypes'
 import { setPageMeta } from '../utils/meta'
 import { downloadJsonFile, downloadTextFile } from '../utils/download'
 import {
@@ -154,13 +155,13 @@ export function FormResponses({ formId, navigate, userId = '' }: Props) {
 		app.response_export_presets.where({}).orderBy('updatedAt', 'desc'),
 	)
 	const { mutateAsync: createSavedAnalyticsView } = useMutation(
-		(data: Record<string, unknown>) => app.response_filter_views.insert(data),
+		(data: KoraInsert<'response_filter_views'>) => app.response_filter_views.insert(data),
 	)
 	const { mutateAsync: deleteSavedAnalyticsView } = useMutation(
 		(id: string) => app.response_filter_views.delete(id),
 	)
 	const { mutateAsync: createResponseExportPreset } = useMutation(
-		(data: Record<string, unknown>) => app.response_export_presets.insert(data),
+		(data: KoraInsert<'response_export_presets'>) => app.response_export_presets.insert(data),
 	)
 	const { mutateAsync: deleteResponseExportPreset } = useMutation(
 		(id: string) => app.response_export_presets.delete(id),

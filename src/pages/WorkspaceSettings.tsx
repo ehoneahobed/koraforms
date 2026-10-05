@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useSyncStatus } from '@korajs/react'
 import { Bug } from 'lucide-react'
 import { app } from '../kora'
+import type { KoraInsert } from '../schemaTypes'
 import { setPageMeta } from '../utils/meta'
 import { downloadJsonFile } from '../utils/download'
 import { readJsonFromStorage } from '../utils/storage'
@@ -47,10 +48,10 @@ export function WorkspaceSettings({ navigate, userId }: Props) {
 	const allAuditEvents = useQuery(app.audit_events.where({}).orderBy('createdAt', 'desc'))
 	const syncStatus = useSyncStatus()
 	const { mutateAsync: createForm } = useMutation(
-		(data: Record<string, unknown>) => app.forms.insert(data),
+		(data: KoraInsert<'forms'>) => app.forms.insert(data),
 	)
 	const { mutateAsync: createResponse } = useMutation(
-		(data: Record<string, unknown>) => app.responses.insert(data),
+		(data: KoraInsert<'responses'>) => app.responses.insert(data),
 	)
 
 	const [publicOfflineDiagnostics, setPublicOfflineDiagnostics] = useState<PublicOfflineDiagnostics | null>(null)
@@ -102,8 +103,8 @@ export function WorkspaceSettings({ navigate, userId }: Props) {
 	const handleBackupWorkspace = () => {
 		const now = new Date()
 		const data = buildWorkspaceBackupPayload(
-			allForms as unknown as FormRecord[],
-			allResponses as unknown as ResponseRecord[],
+			allForms,
+			allResponses,
 			now,
 		)
 		downloadJsonFile(data, workspaceBackupFilename(now))

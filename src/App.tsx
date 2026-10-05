@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo, lazy, Suspense } from 'react'
 import { Routes, Route, Navigate, Outlet, useNavigate, useParams, useLocation, useSearchParams } from 'react-router-dom'
 import { useSyncStatus, useMutation, useQuery } from '@korajs/react'
 import { app } from './kora'
+import type { KoraInsert, KoraUpdate } from './schemaTypes'
 import { AuthProvider, useAuthStatus } from '@korajs/auth/react'
 import { useAuth } from '@korajs/auth/react'
 import { authClient } from './auth'
@@ -409,10 +410,10 @@ function FormPageShell({ navigate, userId }: { navigate: (path: string) => void;
 	)
 
 	const { mutate: updateForm } = useMutation(
-		(id: string, data: Record<string, unknown>) => app.forms.update(id, data),
+		(id: string, data: KoraUpdate<'forms'>) => app.forms.update(id, data),
 	)
 	const { mutateAsync: createPublicFormVersion } = useMutation(
-		(data: Record<string, unknown>) => app.public_form_versions.insert(data),
+		(data: KoraInsert<'public_form_versions'>) => app.public_form_versions.insert(data),
 	)
 
 	const isPublished = form ? String(form.status) === 'published' : false
@@ -437,7 +438,7 @@ function FormPageShell({ navigate, userId }: { navigate: (path: string) => void;
 			slug: nextSlug,
 		})
 		try {
-			await createPublicFormVersion(version as unknown as Record<string, unknown>)
+			await createPublicFormVersion(version)
 		} catch {
 			// Publishing identical content can hit the slug/versionHash uniqueness guard.
 			// The existing immutable snapshot is already the correct history entry.
@@ -446,7 +447,7 @@ function FormPageShell({ navigate, userId }: { navigate: (path: string) => void;
 
 	const updateSettings = (next: FormSettingsType) => {
 		if (!formId) return
-		updateForm(formId, { settings: JSON.stringify(serializeFormSettings(next)) })
+		updateForm(formId, { settings: serializeFormSettings(next) })
 		void recordAuditEvent(app.audit_events, {
 			formId,
 			actorId: userId,
@@ -858,10 +859,10 @@ function FormBuilderPage({ navigate, userId }: { navigate: (path: string) => voi
 		const templateKey = searchParams.get('template')
 		const template = templateKey ? FORM_TEMPLATES[templateKey] : null
 
-		const data = {
+		const data: KoraInsert<'forms'> = {
 			title: template?.title || 'Untitled Form',
 			description: template?.description || '',
-			fields: templateKey && template ? JSON.stringify(createFieldsFromTemplate(templateKey)) : '[]',
+			fields: templateKey && template ? createFieldsFromTemplate(templateKey) : [],
 			status: 'draft',
 			ownerId: userId,
 			theme: 'red',

@@ -70,6 +70,15 @@ export interface ResponseMeta {
 	completedAt?: number
 }
 
+/**
+ * Reads a json object field that may hold an object or, in rows written before
+ * the beta.13 upgrade, a JSON string. Anything else becomes `{}`.
+ */
+export function parseJsonRecord(value: unknown): Record<string, unknown> {
+	const parsed = safeJsonParse<unknown>(value, {})
+	return isPlainObject(parsed) ? { ...parsed } : {}
+}
+
 export function parseResponseData(value: unknown): Record<string, string> {
 	const parsed = safeJsonParse<unknown>(value || {}, {})
 	if (!isPlainObject(parsed)) return {}

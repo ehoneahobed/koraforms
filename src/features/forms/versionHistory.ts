@@ -1,6 +1,6 @@
 import { parseFormFields, parseFormSettings, serializeFormFields, serializeFormSettings } from '../../domain/forms'
 import { stripFormAccessSecrets } from '../../domain/formPassword'
-import { stableHash, type PublicFormVersionRecord } from '../form-fill/offlineModel'
+import { stableHash, type PublicFormVersionInsert, type PublicFormVersionRecord } from '../form-fill/offlineModel'
 import type { FormField, FormSettings } from '../../types'
 
 export interface FormVersionSource {
@@ -20,16 +20,16 @@ export interface PublishedFormVersionInput {
 	now?: number
 }
 
-export interface FormVersionRestorePayload extends Record<string, unknown> {
+export interface FormVersionRestorePayload {
 	title: string
 	description: string
-	fields: string
-	settings: string
+	fields: FormField[]
+	settings: FormSettings
 	theme: string
 	status: 'draft'
 }
 
-export function buildPublishedFormVersionRecord(input: PublishedFormVersionInput): PublicFormVersionRecord {
+export function buildPublishedFormVersionRecord(input: PublishedFormVersionInput): PublicFormVersionInsert {
 	const now = input.now ?? Date.now()
 	const fields = serializeFormFields(parseFormFields(input.form.fields))
 	const settings = stripFormAccessSecrets(parseFormSettings(input.form.settings))
@@ -67,14 +67,16 @@ export function buildVersionRestorePayload(version: Pick<PublicFormVersionRecord
 	return {
 		title: String(version.title || 'Untitled form'),
 		description: String(version.description || ''),
-		fields: JSON.stringify(fields),
-		settings: JSON.stringify(serializeFormSettings(settings)),
+		fields,
+		settings: serializeFormSettings(settings),
 		theme: String(version.theme || 'red'),
 		status: 'draft',
 	}
 }
 
-export function sortPublishedVersions(records: readonly PublicFormVersionRecord[]): PublicFormVersionRecord[] {
+export function sortPublishedVersions<T extends Pick<PublicFormVersionRecord, 'status' | 'publishedAt' | 'versionHash'>>(
+	records: readonly T[],
+): T[] {
 	return [...records]
 		.filter(record => record.status === 'published')
 		.sort((a, b) => {

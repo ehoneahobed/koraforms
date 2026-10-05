@@ -39,8 +39,8 @@ test('version restore payload restores content as a draft without password field
 	assert.equal(payload.title, 'Prior form')
 	assert.equal(payload.theme, 'violet')
 	assert.equal('accessPassword' in payload, false)
-	assert.deepEqual(JSON.parse(payload.fields), [{ id: 'email', type: 'email', label: 'Email', required: false }])
-	assert.deepEqual(JSON.parse(payload.settings), { publicResults: true })
+	assert.deepEqual(payload.fields, [{ id: 'email', type: 'email', label: 'Email', required: false }])
+	assert.deepEqual(payload.settings, { publicResults: true })
 })
 
 test('published versions sort newest first and ignore revoked records', () => {

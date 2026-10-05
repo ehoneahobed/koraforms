@@ -19,6 +19,7 @@ import {
 	type PublicFormVersionRecord,
 	type PublicStoreIssue,
 	type PublicSubmissionStatus,
+	type ResponseSubmissionFlushItem,
 	type ResponseSubmissionLocalStatus,
 	type ResponseSubmissionRecord,
 } from './offlineModel'
@@ -47,6 +48,7 @@ export {
 	type PublicFormVersionRecord,
 	type PublicStoreIssue,
 	type PublicSubmissionStatus,
+	type ResponseSubmissionFlushItem,
 	type ResponseSubmissionLocalStatus,
 	type ResponseSubmissionRecord,
 }
@@ -454,7 +456,7 @@ export async function getPublicOfflineReadiness(
 }
 
 export async function flushResponseSubmissions(
-	submit: (item: ResponseSubmissionRecord & { data: string }) => Promise<void>,
+	submit: (item: ResponseSubmissionFlushItem) => Promise<void>,
 	now = Date.now(),
 ): Promise<FlushResult> {
 	const locked = await withPublicResponseFlushLock(() => drainResponseSubmissions(submit, now))
@@ -468,7 +470,7 @@ export async function flushResponseSubmissions(
 }
 
 async function drainResponseSubmissions(
-	submit: (item: ResponseSubmissionRecord & { data: string }) => Promise<void>,
+	submit: (item: ResponseSubmissionFlushItem) => Promise<void>,
 	now: number,
 ): Promise<FlushResult> {
 	const publicApp = await readyPublicApp()
@@ -491,7 +493,13 @@ async function drainResponseSubmissions(
 		})
 		try {
 			const data = serializeJsonForTransport(item.data)
-			await submit({ ...item, data, attempts, localStatus: 'syncing', updatedAt: now })
+			await submit({
+				formId: item.formId,
+				data,
+				clientSubmissionId: item.clientSubmissionId,
+				submittedAt: item.submittedAt,
+				formVersionHash: item.formVersionHash || '',
+			})
 			await deleteLocalBlobsFromResponseJson(data).catch(() => {})
 			await publicApp.response_submissions.update(item.id, {
 				localStatus: 'accepted',
@@ -527,10 +535,10 @@ function toSubmissionIssue(record: ResponseSubmissionRecord): PublicOfflineSubmi
 		id: record.id || '',
 		clientSubmissionId: record.clientSubmissionId,
 		formId: record.formId,
-		slug: record.slug,
+		slug: record.slug || '',
 		status: record.localStatus === 'rejected' ? 'rejected' : 'failed',
 		attempts: Number(record.attempts || 0),
-		lastError: record.lastError,
+		lastError: record.lastError || '',
 		updatedAt: Number(record.updatedAt || 0),
 	}
 }
@@ -566,7 +574,7 @@ function buildPublicOfflineFormDiagnostics(
 
 	for (const submission of submissions) {
 		const entry = getEntry(String(submission.formId || ''), String(submission.slug || ''))
-		entry[submission.localStatus] += 1
+		entry[submission.localStatus ?? 'submitted_locally'] += 1
 		entry.lastActivityAt = Math.max(
 			entry.lastActivityAt,
 			Number(submission.updatedAt || 0),

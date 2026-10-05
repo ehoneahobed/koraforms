@@ -598,7 +598,7 @@ export function FormFill({ formId, navigate }: Props) {
 				if (!mounted || !record) return
 				const progress = normalizeSavedProgress({
 					values: safeJsonParse<Record<string, string>>(record.answers, {}),
-					currentIndex: record.currentIndex,
+					currentIndex: record.currentIndex ?? undefined,
 					savedAt: record.updatedAt || record.savedAt,
 				})
 				if (!progress) return

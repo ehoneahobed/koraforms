@@ -1,4 +1,5 @@
 import type { FormField } from '../../types'
+import type { KoraInsert } from '../../schemaTypes'
 import { createResponsesCsv, createResponsesJson, createResponsesReportHtml } from './export'
 
 export interface ResponseExportOptions {
@@ -111,7 +112,7 @@ export function buildResponseExportPresetPayload({
 	selectedFieldIds: string[]
 	includeMetadata: boolean
 	now?: number
-}): Omit<ResponseExportPresetRecord, 'id'> | null {
+}): KoraInsert<'response_export_presets'> | null {
 	const safeName = normalizePresetName(name)
 	if (!formId || !ownerId || !safeName) return null
 	return {

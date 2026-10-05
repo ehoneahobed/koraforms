@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useQuery, useMutation } from '@korajs/react'
 import { app } from '../kora'
+import type { KoraUpdate } from '../schemaTypes'
 import { setPageMeta } from '../utils/meta'
 import { downloadJsonFile } from '../utils/download'
 import {
@@ -112,7 +113,7 @@ export function FormBuilder({ formId, navigate, userId }: Props) {
 	const form = allForms.find((f) => f.id === formId)
 
 	const { mutate: updateForm } = useMutation(
-		(id: string, data: Record<string, unknown>) => app.forms.update(id, data),
+		(id: string, data: KoraUpdate<'forms'>) => app.forms.update(id, data),
 	)
 
 	const [title, setTitle] = useState('')
@@ -191,9 +192,9 @@ export function FormBuilder({ formId, navigate, userId }: Props) {
 		updateForm(formId, {
 			title: isRichTextEmpty(title) ? 'Untitled Form' : title,
 			description,
-			fields: JSON.stringify(serializeFormFields(fields)),
+			fields: serializeFormFields(fields),
 			theme,
-			settings: JSON.stringify(serializeFormSettings(settings)),
+			settings: serializeFormSettings(settings),
 			ownerId: userId,
 		})
 	}, [formId, title, description, fields, theme, settings, userId, updateForm])

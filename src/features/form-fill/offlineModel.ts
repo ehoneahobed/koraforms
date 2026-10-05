@@ -1,6 +1,6 @@
-import { parseFormFields, parseFormSettings, serializeFormFields, serializeFormSettings } from '../../domain/forms'
+import { parseFormFields, parseFormSettings, parseJsonRecord, serializeFormFields, serializeFormSettings } from '../../domain/forms'
 import { stripFormAccessSecrets } from '../../domain/formPassword'
-import type { FormField, FormSettings } from '../../types'
+import type { KoraInsert, KoraRecord } from '../../schemaTypes'
 
 export type JsonRecord = Record<string, unknown>
 
@@ -22,46 +22,29 @@ export class PublicOfflineLimitError extends Error {
 	}
 }
 
-export interface PublicFormVersionRecord {
-	id?: string
-	slug: string
-	formId: string
-	versionHash: string
-	title: string
-	description: string
-	fields: string | FormField[]
-	settings: string | FormSettings
-	theme: string
-	status: 'published' | 'revoked'
-	cachedAt: number
-	publishedAt: number
-}
+/** A cached public form version as read from the local store. */
+export type PublicFormVersionRecord = KoraRecord<'public_form_versions'>
+/** A public form version ready for `public_form_versions.insert()`. */
+export type PublicFormVersionInsert = KoraInsert<'public_form_versions'>
 
-export interface ResponseSubmissionRecord {
-	id?: string
+/** A queued respondent submission as read from the local store. */
+export type ResponseSubmissionRecord = KoraRecord<'response_submissions'>
+/** A respondent submission ready for `response_submissions.insert()`. */
+export type ResponseSubmissionInsert = KoraInsert<'response_submissions'>
+
+/** What the flush loop hands to the network submitter for one queued submission. */
+export interface ResponseSubmissionFlushItem {
 	formId: string
-	slug: string
-	formVersionHash: string
-	data: string | JsonRecord
+	data: string
 	clientSubmissionId: string
-	localStatus: ResponseSubmissionLocalStatus
-	attempts: number
-	lastError: string
 	submittedAt: number
-	updatedAt: number
+	formVersionHash: string
 }
 
-export interface PublicFormProgressRecord {
-	id?: string
-	slug: string
-	formId: string
-	answers: string | JsonRecord
-	currentIndex: number
-	resumeId: string
-	resumeUrl: string
-	savedAt: number
-	updatedAt: number
-}
+/** Saved respondent progress as read from the local store. */
+export type PublicFormProgressRecord = KoraRecord<'public_form_progress'>
+/** Respondent progress ready for `public_form_progress.insert()`. */
+export type PublicFormProgressInsert = KoraInsert<'public_form_progress'>
 
 export interface FlushResult {
 	synced: number
@@ -235,16 +218,17 @@ export function buildPublicFormVersionRecord(
 	slug: string,
 	form: Record<string, unknown>,
 	now = Date.now(),
-): PublicFormVersionRecord {
-	const settings = stripFormAccessSecrets(parseFormSettings(form.settings))
-	const fields = JSON.stringify(serializeFormFields(parseFormFields(form.fields)))
-	const serializedSettings = JSON.stringify(serializeFormSettings(settings))
+): PublicFormVersionInsert {
+	const settings = serializeFormSettings(stripFormAccessSecrets(parseFormSettings(form.settings)))
+	const fields = serializeFormFields(parseFormFields(form.fields))
+	// The hash input keeps the JSON-string form used since the first offline
+	// release, so versions cached by older builds keep the same versionHash.
 	const versionHash = stableHash({
 		id: form.id,
 		title: form.title,
 		description: form.description,
-		fields,
-		settings: serializedSettings,
+		fields: JSON.stringify(fields),
+		settings: JSON.stringify(settings),
 		theme: form.theme,
 		status: form.status,
 	})
@@ -256,7 +240,7 @@ export function buildPublicFormVersionRecord(
 		title: String(form.title || 'Untitled form'),
 		description: String(form.description || ''),
 		fields,
-		settings: serializedSettings,
+		settings,
 		theme: String(form.theme || 'red'),
 		status: 'published',
 		cachedAt: now,
@@ -264,7 +248,9 @@ export function buildPublicFormVersionRecord(
 	}
 }
 
-export function publicFormRecordToForm(record: PublicFormVersionRecord): Record<string, unknown> {
+export function publicFormRecordToForm(
+	record: Pick<PublicFormVersionRecord, 'formId' | 'slug' | 'title' | 'description' | 'fields' | 'settings' | 'theme' | 'status' | 'publishedAt'>,
+): Record<string, unknown> {
 	return {
 		id: record.formId,
 		slug: record.slug,
@@ -287,13 +273,14 @@ export function buildResponseSubmissionRecord(
 		clientSubmissionId?: string
 		now?: number
 	},
-): ResponseSubmissionRecord {
+): ResponseSubmissionInsert & { clientSubmissionId: string; submittedAt: number } {
 	const now = params.now ?? Date.now()
 	return {
 		formId: params.formId,
 		slug: params.slug || '',
 		formVersionHash: params.formVersionHash || '',
-		data: params.data,
+		// The form-fill flow hands over a JSON string; `data` is a t.json field.
+		data: parseJsonRecord(params.data),
 		clientSubmissionId: params.clientSubmissionId || createSubmissionId(),
 		localStatus: 'submitted_locally',
 		attempts: 0,
@@ -313,12 +300,12 @@ export function buildPublicFormProgressRecord(
 		resumeUrl?: string
 		now?: number
 	},
-): PublicFormProgressRecord {
+): PublicFormProgressInsert {
 	const now = params.now ?? Date.now()
 	return {
 		slug: params.slug,
 		formId: params.formId,
-		answers: JSON.stringify(params.values),
+		answers: { ...params.values },
 		currentIndex: params.currentIndex,
 		resumeId: params.resumeId || '',
 		resumeUrl: params.resumeUrl || '',
