@@ -59,14 +59,17 @@ import { ErrorBoundary } from './components/shared/ErrorBoundary'
 import { FORM_TEMPLATES, createFieldsFromTemplate } from './templates'
 import { readStringFromStorage, writeStringToStorage } from './utils/storage'
 import type { FormSettings as FormSettingsType, WebhookConfig } from './types'
-import { parseFormFields, parseFormSettings, serializeFormSettings } from './domain/forms'
+import { parseFormFields, parseFormSettings, serializeFormFields, serializeFormSettings } from './domain/forms'
 import { hasFormAccessPasswordSecret } from './domain/formPassword'
 import {
 	activeFormShellTab,
+	applySettingsPatch,
 	buildPublishPayload,
 	buildStatusPayload,
+	diffSettings,
 	formShellTabPath,
 	getPublicFormUrl,
+	isEmptySettingsPatch,
 	parseFormShellPanel,
 	sanitizeSlug,
 	type FormShellTab,
@@ -427,10 +430,15 @@ function FormPageShell({ navigate, userId }: { navigate: (path: string) => void;
 	const slug = form ? String(form.slug || '') : ''
 	const formTheme = form ? String(form.theme || 'red') : 'red'
 	const formHasPassword = hasFormAccessPasswordSecret(form?.accessPassword)
-	const formSettings = useMemo<FormSettingsType>(() => {
+	const storedSettings = useMemo<FormSettingsType>(() => {
 		if (!form) return {}
 		return parseFormSettings(form.settings)
 	}, [form])
+	// Settings as the creator last set them here. Local writes reach the query a
+	// moment later, and a control that rendered in between would otherwise build
+	// its next value (for example a whole webhooks list) from the older one.
+	const [pendingSettings, setPendingSettings] = useState<{ formId: string; settings: FormSettingsType } | null>(null)
+	const formSettings = pendingSettings && pendingSettings.formId === formId ? pendingSettings.settings : storedSettings
 	const formFields = useMemo(() => {
 		if (!form) return []
 		return parseFormFields(form.fields)
@@ -451,9 +459,32 @@ function FormPageShell({ navigate, userId }: { navigate: (path: string) => void;
 		}
 	}
 
+	// Settings controls build the next object from the settings they rendered,
+	// which can trail the store by a render when edits come quickly. Send only
+	// what the control changed, applied in order onto the stored value, so a
+	// second quick edit (or another device's edit) is never reverted.
+	const settingsWrites = useRef<Promise<void>>(Promise.resolve())
+	const settingsWritesPending = useRef(0)
 	const updateSettings = (next: FormSettingsType) => {
 		if (!formId) return
-		updateForm(formId, { settings: serializeFormSettings(next) })
+		const patch = diffSettings(formSettings, next)
+		if (isEmptySettingsPatch(patch)) return
+		setPendingSettings({ formId, settings: applySettingsPatch(formSettings, patch) })
+		settingsWritesPending.current += 1
+		settingsWrites.current = settingsWrites.current
+			.then(async () => {
+				const latest = parseFormSettings((await app.forms.findById(formId))?.settings)
+				await app.forms.update(formId, { settings: serializeFormSettings(applySettingsPatch(latest, patch)) })
+			})
+			.catch((error: unknown) => {
+				console.error('[koraforms] Settings update failed', error)
+			})
+			.finally(() => {
+				settingsWritesPending.current -= 1
+				// Once every queued edit is stored, show the stored value again (it
+				// also carries edits from other tabs and devices).
+				if (settingsWritesPending.current === 0) setPendingSettings(null)
+			})
 		void recordAuditEvent(app.audit_events, {
 			formId,
 			actorId: userId,
@@ -864,7 +895,7 @@ function FormBuilderPage({ navigate, userId }: { navigate: (path: string) => voi
 		const data: KoraInsert<'forms'> = {
 			title: template?.title || 'Untitled Form',
 			description: template?.description || '',
-			fields: templateKey && template ? createFieldsFromTemplate(templateKey) : [],
+			fields: templateKey && template ? serializeFormFields(createFieldsFromTemplate(templateKey)) : [],
 			status: 'draft',
 			ownerId: userId,
 			theme: 'red',

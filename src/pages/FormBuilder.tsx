@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useQuery, useMutation } from '@korajs/react'
 import { app } from '../kora'
 import type { KoraUpdate } from '../schemaTypes'
+import { applySettingsPatch, diffSettings, isEmptySettingsPatch } from '../features/forms/shell'
 import { setPageMeta } from '../utils/meta'
 import { downloadJsonFile } from '../utils/download'
 import {
@@ -181,23 +182,48 @@ export function FormBuilder({ formId, navigate, userId }: Props) {
 			setDescription(String(form.description || ''))
 			setTheme(String(form.theme || 'red'))
 			setFields(parseFormFields(form.fields))
-			setSettings(parseFormSettings(form.settings))
+			const loadedSettings = parseFormSettings(form.settings)
+			setSettings(loadedSettings)
+			saved.current = {
+				title: String(form.title || ''),
+				description: String(form.description || ''),
+				fields: JSON.stringify(serializeFormFields(parseFormFields(form.fields))),
+				theme: String(form.theme || 'red'),
+				settings: loadedSettings,
+			}
 			setLoaded(true)
 		}
 	}, [form, loaded])
 
+	// What this builder last loaded or saved. Autosave writes only what changed
+	// since then, so opening the builder writes nothing and an edit here never
+	// reverts a change another tab or device made to an untouched field.
+	const saved = useRef<{ title: string; description: string; fields: string; theme: string; settings: FormSettingsType } | null>(null)
+
 	// Auto-save with debounce
 	const save = useCallback(() => {
-		if (!formId) return
-		updateForm(formId, {
-			title: isRichTextEmpty(title) ? 'Untitled Form' : title,
-			description,
-			fields: serializeFormFields(fields),
-			theme,
-			settings: serializeFormSettings(settings),
-			ownerId: userId,
-		})
-	}, [formId, title, description, fields, theme, settings, userId, updateForm])
+		const baseline = saved.current
+		if (!formId || !baseline) return
+		const nextTitle = isRichTextEmpty(title) ? 'Untitled Form' : title
+		const nextFields = serializeFormFields(fields)
+		const nextFieldsJson = JSON.stringify(nextFields)
+		const changes: KoraUpdate<'forms'> = {}
+		if (nextTitle !== baseline.title) changes.title = nextTitle
+		if (description !== baseline.description) changes.description = description
+		if (nextFieldsJson !== baseline.fields) changes.fields = nextFields
+		if (theme !== baseline.theme) changes.theme = theme
+		if (Object.keys(changes).length > 0) updateForm(formId, changes)
+		// Settings (languages, imports) merge onto the stored value, key by key.
+		const patch = diffSettings(baseline.settings, settings)
+		if (!isEmptySettingsPatch(patch)) {
+			void app.forms.findById(formId)
+				.then(latest => app.forms.update(formId, {
+					settings: serializeFormSettings(applySettingsPatch(parseFormSettings(latest?.settings), patch)),
+				}))
+				.catch((error: unknown) => console.error('[koraforms] Settings autosave failed', error))
+		}
+		saved.current = { title: nextTitle, description, fields: nextFieldsJson, theme, settings }
+	}, [formId, title, description, fields, theme, settings, updateForm])
 
 	// Auto-save on changes (debounced)
 	useEffect(() => {

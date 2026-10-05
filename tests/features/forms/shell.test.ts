@@ -2,6 +2,9 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
 	activeFormShellTab,
+	applySettingsPatch,
+	diffSettings,
+	isEmptySettingsPatch,
 	buildPublishPayload,
 	buildStatusPayload,
 	datetimeLocalToTimestamp,
@@ -60,4 +63,21 @@ test('settings update helper preserves existing options', () => {
 		publicResults: true,
 		maxResponses: 100,
 	})
+})
+
+test('a settings edit made from a stale render keeps edits it did not touch', () => {
+	const rendered = { maxResponses: 5 }
+	// The control rendered before thankYouMessage was saved, then cleared the limit.
+	const patch = diffSettings(rendered, { ...rendered, maxResponses: undefined })
+	assert.deepEqual(patch, { set: {}, remove: ['maxResponses'] })
+	const latest = { maxResponses: 5, thankYouMessage: 'Thanks' }
+	assert.deepEqual(applySettingsPatch(latest, patch), { thankYouMessage: 'Thanks' })
+})
+
+test('settings patches compare values as JSON and ignore unchanged keys', () => {
+	const base = { webhooks: [{ url: 'https://a.test' }], publicResults: true }
+	assert.equal(isEmptySettingsPatch(diffSettings(base, { webhooks: [{ url: 'https://a.test' }], publicResults: true })), true)
+	const patch = diffSettings(base, { ...base, webhooks: [{ url: 'https://b.test' }] })
+	assert.deepEqual(patch, { set: { webhooks: [{ url: 'https://b.test' }] }, remove: [] })
+	assert.deepEqual(applySettingsPatch({ publicResults: false }, patch), { publicResults: false, webhooks: [{ url: 'https://b.test' }] })
 })
