@@ -1,18 +1,26 @@
 # Kora Beta Integration Audit
 
-Date: July 29, 2026
+Date: July 29, 2026 (baseline updated to 1.0.0-beta.13 on October 5, 2026)
 
 This audit records the KoraForms integration baseline for the latest published Kora.js beta dist-tag. KoraForms is not in production yet, so the app intentionally drops compatibility paths for older beta framework behavior instead of preserving deprecated workarounds.
 
 ## Installed Baseline
 
-- `korajs`: `1.0.0-beta.8`
-- `@korajs/store`: `1.0.0-beta.8`
-- `@korajs/react`: `1.0.0-beta.8`
-- `@korajs/core`: `1.0.0-beta.7`
-- `@korajs/server`: `1.0.0-beta.7`
-- `@korajs/auth`: `1.0.0-beta.7`
-- `@korajs/cli`: `1.0.0-beta.7`
+Every Kora package is pinned to exactly `1.0.0-beta.13`:
+
+- `korajs`, `@korajs/core`, `@korajs/store`, `@korajs/react`, `@korajs/server`, `@korajs/auth`, `@korajs/cli`
+
+The package manager is pinned to pnpm 10.11 through `packageManager` in `package.json` (the Dockerfile and CI use the same version). pnpm 11 and later ignore `pnpm.onlyBuiltDependencies`; with the pin, a newer local pnpm switches to 10.11 so `better-sqlite3`, `esbuild` and `protobufjs` still build on a fresh clone.
+
+## 1.0.0-beta.13 Upgrade Notes
+
+- Record and input types are derived from `src/schema.ts` (`src/schemaTypes.ts`). Mutation wrappers use the collection's insert/update input types, and `t.json` fields receive real arrays and objects. Rows written by earlier builds can still hold JSON strings in json fields, so reads go through the parse helpers in `src/domain/forms.ts`. `settings` written as an object merges per top-level key.
+- The production static server serves the SPA fallback only to HTML requests. `public/sw.js` asks for HTML when it warms route URLs. KoraForms keeps its own service worker rather than `koraServiceWorker()` from `@korajs/cli/vite`, which would precache the whole creator build for every respondent.
+- `createProductionServer` refuses custom-route bodies over `maxRequestBodyBytes` (default 1 MiB). The server sets it from `src/domain/limits.ts` so public responses up to 2 MiB, attachments included, are accepted. The creator app's `store.maxOperationBytes` equals the server's `maxOperationBytes` (512 KiB).
+- Production trusts one proxy hop for `X-Forwarded-For` (`trustProxy`, overridable with `KORA_TRUST_PROXY`); route rate limits key on `req.ip`. The app no longer parses forwarding headers itself and no longer patches `ws` for keepalive: Kora's built-in 25 s heartbeats cover the Azure ingress idle timeout.
+- `useQuery` renders `[]` before its first local result. Pages where "loading" and "nothing found" differ use `useQueryState`. Failed local queries are thrown to route-level error boundaries.
+- Creator notices cover `store:storage-blocked`, `store:durability-lost`, `store:schema-ahead` and terminal `sync:operation-rejected`; the respondent runtime treats durability loss and blocked storage as blocking readiness issues.
+- Per-user sync scopes are not declared yet; that work follows in a separate change.
 
 ## Framework Capabilities Adopted
 
@@ -34,13 +42,11 @@ This audit records the KoraForms integration baseline for the latest published K
 Before a release candidate, run:
 
 ```bash
-pnpm run typecheck
-pnpm run test
-pnpm run build
-pnpm exec playwright test tests/e2e/public-offline.spec.ts
+pnpm run check
+pnpm exec playwright test
 ```
 
-The public offline suite should pass without `VITE_KORA_SHARED_WORKER`, patch-package, sticky query shims, or any app-level public-form data handoff.
+The Playwright suite (including the public offline specs) should pass without `VITE_KORA_SHARED_WORKER`, patch-package, sticky query shims, or any app-level public-form data handoff.
 
 ## Remaining Product Migration
 
