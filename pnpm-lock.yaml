@@ -9,20 +9,20 @@ importers:
   .:
     dependencies:
       '@korajs/auth':
-        specifier: 1.0.0-beta.7
-        version: 1.0.0-beta.7(better-sqlite3@12.9.0)(postgres@3.4.9)(react@19.2.6)
+        specifier: 1.0.0-beta.13
+        version: 1.0.0-beta.13(better-sqlite3@12.9.0)(postgres@3.4.9)(react@19.2.6)
       '@korajs/core':
-        specifier: 1.0.0-beta.7
-        version: 1.0.0-beta.7
+        specifier: 1.0.0-beta.13
+        version: 1.0.0-beta.13
       '@korajs/react':
-        specifier: 1.0.0-beta.8
-        version: 1.0.0-beta.8(@sqlite.org/sqlite-wasm@3.51.0-build1)(react@19.2.6)
+        specifier: 1.0.0-beta.13
+        version: 1.0.0-beta.13(@sqlite.org/sqlite-wasm@3.51.0-build1)(react@19.2.6)
       '@korajs/server':
-        specifier: 1.0.0-beta.7
-        version: 1.0.0-beta.7(@types/better-sqlite3@7.6.13)(postgres@3.4.9)
+        specifier: 1.0.0-beta.13
+        version: 1.0.0-beta.13(@types/better-sqlite3@7.6.13)(postgres@3.4.9)
       '@korajs/store':
-        specifier: 1.0.0-beta.8
-        version: 1.0.0-beta.8(@sqlite.org/sqlite-wasm@3.51.0-build1)
+        specifier: 1.0.0-beta.13
+        version: 1.0.0-beta.13(@sqlite.org/sqlite-wasm@3.51.0-build1)
       '@sqlite.org/sqlite-wasm':
         specifier: '>=3.51.0-build1'
         version: 3.51.0-build1
@@ -51,8 +51,8 @@ importers:
         specifier: ^4.2.0
         version: 4.2.0
       korajs:
-        specifier: 1.0.0-beta.8
-        version: 1.0.0-beta.8(@korajs/react@1.0.0-beta.8(@sqlite.org/sqlite-wasm@3.51.0-build1)(react@19.2.6))(@sqlite.org/sqlite-wasm@3.51.0-build1)(react@19.2.6)
+        specifier: 1.0.0-beta.13
+        version: 1.0.0-beta.13(@korajs/react@1.0.0-beta.13(@sqlite.org/sqlite-wasm@3.51.0-build1)(react@19.2.6))(@sqlite.org/sqlite-wasm@3.51.0-build1)(react@19.2.6)
       lucide-react:
         specifier: ^0.468.0
         version: 0.468.0(react@19.2.6)
@@ -82,8 +82,8 @@ importers:
         version: 13.6.30
     devDependencies:
       '@korajs/cli':
-        specifier: 1.0.0-beta.7
-        version: 1.0.0-beta.7
+        specifier: 1.0.0-beta.13
+        version: 1.0.0-beta.13
       '@playwright/test':
         specifier: ^1.61.1
         version: 1.61.1
@@ -764,8 +764,8 @@ packages:
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
 
-  '@korajs/auth@1.0.0-beta.7':
-    resolution: {integrity: sha512-L+aFCDVxVU6Vc/76qSUB5hyLQCZwDPi8cJPbHjIZZGqeKWaqsEgB/MweCyrJLAJ1bNy8lAuRY9ZdEsWIpU3X1A==}
+  '@korajs/auth@1.0.0-beta.13':
+    resolution: {integrity: sha512-SQcFpTLhK0glrqENR1pvpQFtfF9749wWHO+t+N8WuFDvhfydXF6RIf8NuYuv4w7dDL4TMVC5zmmQebJMOGt8LQ==}
     peerDependencies:
       better-sqlite3: ^12.0.0
       postgres: ^3.4.0
@@ -784,42 +784,42 @@ packages:
       vue:
         optional: true
 
-  '@korajs/cli@1.0.0-beta.7':
-    resolution: {integrity: sha512-wSWNklxaPeW5kuZ4LD8z4Pnk5HQfQLW0QhgDgxe6kJA6pCZr4mCLg0Iq9x13R4UPyepvGSe1wR1uEHcgRtbkMg==}
+  '@korajs/cli@1.0.0-beta.13':
+    resolution: {integrity: sha512-UKc1aClPGzir8CXRbIebtGA86Jr6i6ObjckFpx9qaItau6Pnl8h+k4H8GkAG/zmLJEZzDUCNsDZiVfKuPur/tw==}
     hasBin: true
 
-  '@korajs/core@1.0.0-beta.7':
-    resolution: {integrity: sha512-H55OFE3mjXtOdGXjLyShjaOv3Lxo9YnEAnBaaWMy91lmj2SiGH7BKxGjE6LacI0ZmzUeS/gb8zYyvbzUC7nPRA==}
+  '@korajs/core@1.0.0-beta.13':
+    resolution: {integrity: sha512-Fb/Wuwl1OUwkC742EQbNGEM6Di/tR/7BiEZNJcdwwBBNzYqItEVnh2Py/yA5cDcovzyAmBQAMRf8xsOnISdVfg==}
 
-  '@korajs/devtools@1.0.0-beta.7':
-    resolution: {integrity: sha512-WEduBikt+OzcHdyXn1Xa7DdBY+chfSpc3K58GqEOts3MnDItmp0fy30QYzEpU3ESvcBXSowFSuwGydwweR/BVA==}
+  '@korajs/devtools@1.0.0-beta.13':
+    resolution: {integrity: sha512-Nehq2iNX/SQzqfcAswEqTNjh/j6QKK4p6Aj3hTUs8//itAlgUvN/qw+qHTYDyJiLJbG83DkEhvkHoA/XJAp10w==}
 
-  '@korajs/merge@1.0.0-beta.7':
-    resolution: {integrity: sha512-qXSAQo00uGc9z7VVHePmgZSC5+JVBOp/Maj52o03Z+0duhH8sNLgMpo4ArZBX7EZTacR9tL+VgqB96X6FCE6BQ==}
+  '@korajs/merge@1.0.0-beta.13':
+    resolution: {integrity: sha512-hrfMiUPhHCVmfGx95BjhG2nF5EpWjMgjLCtENXYSOvRaywhFUtJvOj/NEfhxSw/v79P7xJcD7eBe/gjJDz46Iw==}
 
-  '@korajs/react@1.0.0-beta.8':
-    resolution: {integrity: sha512-4ZTnuIQ3qa2ZoKQ3VW7/ZHawccF8HPwXq+3xkzD24LqWpFda+YFBa60Ac050PKF3mfF9ndwJ8umJ8RTEc9ka7w==}
+  '@korajs/react@1.0.0-beta.13':
+    resolution: {integrity: sha512-v6cKbptFjWl85yu2pdoXCQs47oFQVP6bI7/rLu4l8ErwguxvOKETQ1WJjzpDxoGT3HEMyu0cI9fjSBTSm0UljQ==}
     peerDependencies:
       react: ^18.0.0 || ^19.0.0
 
-  '@korajs/server@1.0.0-beta.7':
-    resolution: {integrity: sha512-blhIstxTaGzYxQISqZSuhhj8cUMd+qOmz7t4bWxJ01cAurm1rT8oY/Q2Si1v35hhKw8x7at3MX1VcEDK4zd0+Q==}
+  '@korajs/server@1.0.0-beta.13':
+    resolution: {integrity: sha512-SZbOxrFxt7Heut9e5ht0xsR23NRdsLYzGghgkq1+5Ukpd6j9M8Wt0PttCh5y2N8iVE8WG0G/A3tE0Llzgc+6MA==}
     peerDependencies:
       postgres: ^3.4.0
     peerDependenciesMeta:
       postgres:
         optional: true
 
-  '@korajs/store@1.0.0-beta.8':
-    resolution: {integrity: sha512-g/IaeHIC6E3g4xycWlIXJAftSQ3kQkZ4vKKn9fXmNlYejbqbM8XKzUMU6zz50u9kda+zRRRkuReaZi3NIJioXw==}
+  '@korajs/store@1.0.0-beta.13':
+    resolution: {integrity: sha512-HMAKsP6XUsLKsWTonCOlSN8EOVvji7g67T8ng/n2Dytb8Irhe5Ah0NqJsaavBw1doD2o1IhaJSqHTGA+SldWVg==}
     peerDependencies:
       '@sqlite.org/sqlite-wasm': '>=3.51.0-build1'
     peerDependenciesMeta:
       '@sqlite.org/sqlite-wasm':
         optional: true
 
-  '@korajs/sync@1.0.0-beta.7':
-    resolution: {integrity: sha512-dbZbaEnk7JsDFscRpkU+KU93t+7MP8EaeNuI0Blo+DLpmaV7Q+Tg7qqFnAY16vLhwTZWBZRY4Yl6Hk/DxYnHxA==}
+  '@korajs/sync@1.0.0-beta.13':
+    resolution: {integrity: sha512-twe70JPA0y0wz1SHATqhtNUHUhuZkvAo57DS625azQLmBdGTW2teS9UZBrGiZQLj2bbS71Nryrg3LcRIv68ltA==}
 
   '@playwright/test@1.61.1':
     resolution: {integrity: sha512-8nKv6+0RJSL9FE4jYOEGXnPeM/Hg12qZpmqzZjRh3qM0Y7c3z1mrOTfFLids72RDQYVh9WpLEfR5WdpNX4fkig==}
@@ -1683,12 +1683,12 @@ packages:
     engines: {node: '>=6'}
     hasBin: true
 
-  korajs@1.0.0-beta.8:
-    resolution: {integrity: sha512-/A6ttkOBHtTyoHxel7LngaM9mZzoPpOs+Fk5v/maWVAILcHCga+/vO28RE7MvYs7Y4/aURNaPmaacCzKI88jIQ==}
+  korajs@1.0.0-beta.13:
+    resolution: {integrity: sha512-iVu4EMiLPIEGuYhk+e66k7+07IceXAzSSf4do1BeciMWxFlu2sOb84Sg5yQY9jkVpFyFwHEiv8PxpHm4lvXZow==}
     peerDependencies:
-      '@korajs/react': 1.0.0-beta.8
-      '@korajs/svelte': 1.0.0-beta.8
-      '@korajs/vue': 1.0.0-beta.8
+      '@korajs/react': 1.0.0-beta.13
+      '@korajs/svelte': 1.0.0-beta.13
+      '@korajs/vue': 1.0.0-beta.13
       react: ^18.0.0 || ^19.0.0
       svelte: ^4.0.0 || ^5.0.0
       vue: ^3.4.0
@@ -2757,52 +2757,56 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
 
-  '@korajs/auth@1.0.0-beta.7(better-sqlite3@12.9.0)(postgres@3.4.9)(react@19.2.6)':
+  '@korajs/auth@1.0.0-beta.13(better-sqlite3@12.9.0)(postgres@3.4.9)(react@19.2.6)':
     dependencies:
-      '@korajs/core': 1.0.0-beta.7
+      '@korajs/core': 1.0.0-beta.13
     optionalDependencies:
       better-sqlite3: 12.9.0
       postgres: 3.4.9
       react: 19.2.6
 
-  '@korajs/cli@1.0.0-beta.7':
+  '@korajs/cli@1.0.0-beta.13':
     dependencies:
       '@clack/prompts': 1.3.0
-      '@korajs/core': 1.0.0-beta.7
+      '@korajs/core': 1.0.0-beta.13
       citty: 0.1.6
       conf: 15.1.0
       esbuild: 0.28.0
       validate-npm-package-name: 7.0.2
+      ws: 8.20.0
+    transitivePeerDependencies:
+      - bufferutil
+      - utf-8-validate
 
-  '@korajs/core@1.0.0-beta.7': {}
+  '@korajs/core@1.0.0-beta.13': {}
 
-  '@korajs/devtools@1.0.0-beta.7':
+  '@korajs/devtools@1.0.0-beta.13':
     dependencies:
-      '@korajs/core': 1.0.0-beta.7
+      '@korajs/core': 1.0.0-beta.13
       htm: 3.1.1
       preact: 10.29.1
 
-  '@korajs/merge@1.0.0-beta.7':
+  '@korajs/merge@1.0.0-beta.13':
     dependencies:
-      '@korajs/core': 1.0.0-beta.7
+      '@korajs/core': 1.0.0-beta.13
       lib0: 0.2.117
       yjs: 13.6.30
 
-  '@korajs/react@1.0.0-beta.8(@sqlite.org/sqlite-wasm@3.51.0-build1)(react@19.2.6)':
+  '@korajs/react@1.0.0-beta.13(@sqlite.org/sqlite-wasm@3.51.0-build1)(react@19.2.6)':
     dependencies:
-      '@korajs/core': 1.0.0-beta.7
-      '@korajs/store': 1.0.0-beta.8(@sqlite.org/sqlite-wasm@3.51.0-build1)
-      '@korajs/sync': 1.0.0-beta.7
+      '@korajs/core': 1.0.0-beta.13
+      '@korajs/store': 1.0.0-beta.13(@sqlite.org/sqlite-wasm@3.51.0-build1)
+      '@korajs/sync': 1.0.0-beta.13
       react: 19.2.6
       yjs: 13.6.30
     transitivePeerDependencies:
       - '@sqlite.org/sqlite-wasm'
 
-  '@korajs/server@1.0.0-beta.7(@types/better-sqlite3@7.6.13)(postgres@3.4.9)':
+  '@korajs/server@1.0.0-beta.13(@types/better-sqlite3@7.6.13)(postgres@3.4.9)':
     dependencies:
-      '@korajs/core': 1.0.0-beta.7
-      '@korajs/merge': 1.0.0-beta.7
-      '@korajs/sync': 1.0.0-beta.7
+      '@korajs/core': 1.0.0-beta.13
+      '@korajs/merge': 1.0.0-beta.13
+      '@korajs/sync': 1.0.0-beta.13
       better-sqlite3: 12.9.0
       drizzle-orm: 0.45.2(@types/better-sqlite3@7.6.13)(better-sqlite3@12.9.0)(postgres@3.4.9)
       ws: 8.20.0
@@ -2839,17 +2843,17 @@ snapshots:
       - sqlite3
       - utf-8-validate
 
-  '@korajs/store@1.0.0-beta.8(@sqlite.org/sqlite-wasm@3.51.0-build1)':
+  '@korajs/store@1.0.0-beta.13(@sqlite.org/sqlite-wasm@3.51.0-build1)':
     dependencies:
-      '@korajs/core': 1.0.0-beta.7
+      '@korajs/core': 1.0.0-beta.13
       yjs: 13.6.30
     optionalDependencies:
       '@sqlite.org/sqlite-wasm': 3.51.0-build1
 
-  '@korajs/sync@1.0.0-beta.7':
+  '@korajs/sync@1.0.0-beta.13':
     dependencies:
-      '@korajs/core': 1.0.0-beta.7
-      '@korajs/merge': 1.0.0-beta.7
+      '@korajs/core': 1.0.0-beta.13
+      '@korajs/merge': 1.0.0-beta.13
       protobufjs: 8.0.3
 
   '@playwright/test@1.61.1':
@@ -3638,15 +3642,15 @@ snapshots:
 
   json5@2.2.3: {}
 
-  korajs@1.0.0-beta.8(@korajs/react@1.0.0-beta.8(@sqlite.org/sqlite-wasm@3.51.0-build1)(react@19.2.6))(@sqlite.org/sqlite-wasm@3.51.0-build1)(react@19.2.6):
+  korajs@1.0.0-beta.13(@korajs/react@1.0.0-beta.13(@sqlite.org/sqlite-wasm@3.51.0-build1)(react@19.2.6))(@sqlite.org/sqlite-wasm@3.51.0-build1)(react@19.2.6):
     dependencies:
-      '@korajs/core': 1.0.0-beta.7
-      '@korajs/devtools': 1.0.0-beta.7
-      '@korajs/merge': 1.0.0-beta.7
-      '@korajs/store': 1.0.0-beta.8(@sqlite.org/sqlite-wasm@3.51.0-build1)
-      '@korajs/sync': 1.0.0-beta.7
+      '@korajs/core': 1.0.0-beta.13
+      '@korajs/devtools': 1.0.0-beta.13
+      '@korajs/merge': 1.0.0-beta.13
+      '@korajs/store': 1.0.0-beta.13(@sqlite.org/sqlite-wasm@3.51.0-build1)
+      '@korajs/sync': 1.0.0-beta.13
     optionalDependencies:
-      '@korajs/react': 1.0.0-beta.8(@sqlite.org/sqlite-wasm@3.51.0-build1)(react@19.2.6)
+      '@korajs/react': 1.0.0-beta.13(@sqlite.org/sqlite-wasm@3.51.0-build1)(react@19.2.6)
       react: 19.2.6
     transitivePeerDependencies:
       - '@sqlite.org/sqlite-wasm'

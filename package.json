@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "packageManager": "pnpm@10.11.0",
   "scripts": {
     "dev": "concurrently -k -n vite,server -c cyan,green \"vite\" \"node --import tsx --watch server.ts\"",
     "dev:vite": "vite",
@@ -24,11 +25,11 @@
     "logs": "kora logs --url http://localhost:3001"
   },
   "dependencies": {
-    "@korajs/auth": "1.0.0-beta.7",
-    "@korajs/core": "1.0.0-beta.7",
-    "@korajs/react": "1.0.0-beta.8",
-    "@korajs/server": "1.0.0-beta.7",
-    "@korajs/store": "1.0.0-beta.8",
+    "@korajs/auth": "1.0.0-beta.13",
+    "@korajs/core": "1.0.0-beta.13",
+    "@korajs/react": "1.0.0-beta.13",
+    "@korajs/server": "1.0.0-beta.13",
+    "@korajs/store": "1.0.0-beta.13",
     "@sqlite.org/sqlite-wasm": ">=3.51.0-build1",
     "@tiptap/extension-link": "^3.31.3",
     "@tiptap/extension-placeholder": "^3.31.3",
@@ -38,7 +39,7 @@
     "@tiptap/starter-kit": "^3.31.3",
     "better-sqlite3": "^12.9.0",
     "isomorphic-dompurify": "^4.2.0",
-    "korajs": "1.0.0-beta.8",
+    "korajs": "1.0.0-beta.13",
     "lucide-react": "^0.468.0",
     "postgres": "^3.4.0",
     "qrcode": "^1.5.4",
@@ -57,7 +58,7 @@
     ]
   },
   "devDependencies": {
-    "@korajs/cli": "1.0.0-beta.7",
+    "@korajs/cli": "1.0.0-beta.13",
     "@playwright/test": "^1.61.1",
     "@tailwindcss/vite": "^4.0.0",
     "@types/better-sqlite3": "^7.6.13",
