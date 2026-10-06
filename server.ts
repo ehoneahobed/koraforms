@@ -26,6 +26,7 @@ import { evaluatePublicResponseAcceptance } from './src/domain/responseAcceptanc
 import { validatePublishedResponsePayload } from './src/domain/responseValidation'
 import { buildEmailNotificationPayload, buildSideEffectDeliveryJobs, buildWebhookPayload, isDeliverableWebhookUrl, isPublicWebhookIpAddress, normalizeWebhookConfig } from './src/domain/responseSideEffects'
 import { buildOpsDiagnosticsSnapshot } from './src/domain/opsDiagnostics'
+import { bindLegacyDeviceNodeClaims } from './src/domain/nodeClaims'
 import { MAX_PUBLIC_RESPONSE_BODY_BYTES, MAX_ROUTE_REQUEST_BODY_BYTES, SYNC_MAX_OPERATION_BYTES } from './src/domain/limits'
 import type { FormField, FormSettings } from './src/types'
 type AnalyticsEventMetadata = Record<string, unknown>
@@ -529,6 +530,16 @@ async function main(): Promise<void> {
 
 	await store.setSchema(koraFormsSchema)
 	console.log('Materialized collection tables initialized')
+
+	// Before accepting connections: bind node ids written before node claims
+	// existed (beta.7) to their auth device's owner, or those devices are refused
+	// NODE_ID_CLAIMED forever. Idempotent; never replaces an existing claim.
+	try {
+		const claims = await bindLegacyDeviceNodeClaims(store, userStore)
+		console.log(JSON.stringify({ event: 'node_claims_bound', ...claims }))
+	} catch (error) {
+		console.error('Binding legacy device node claims failed; affected devices stay refused until the next start', error)
+	}
 
 	const auth = createKoraAuthServer({
 		userStore,
