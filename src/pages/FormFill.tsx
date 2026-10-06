@@ -12,7 +12,7 @@ import { copyToClipboard } from '../utils/clipboard'
 import { InlineLoader } from '../components/shared/BrandLoader'
 import { RichText } from '../components/shared/RichText'
 import { htmlToPlainText, isRichTextEmpty } from '../utils/richText'
-import { isDisplayOnlyField, parseFormFields, parseFormSettings, safeJsonParse } from '../domain/forms'
+import { isDisplayOnlyField, parseFormFields, parseFormSettings, parseResponseData } from '../domain/forms'
 import { readJsonFromStorage, writeJsonToStorage } from '../utils/storage'
 import {
 	buildPrefillValues,
@@ -597,7 +597,7 @@ export function FormFill({ formId, navigate }: Props) {
 			.then((record) => {
 				if (!mounted || !record) return
 				const progress = normalizeSavedProgress({
-					values: safeJsonParse<Record<string, string>>(record.answers, {}),
+					values: parseResponseData(record.answers),
 					currentIndex: record.currentIndex ?? undefined,
 					savedAt: record.updatedAt || record.savedAt,
 				})
@@ -684,7 +684,7 @@ export function FormFill({ formId, navigate }: Props) {
 			.then(res => res.ok ? res.json() : null)
 			.then(data => {
 				if (data?.data) {
-					const saved = safeJsonParse<Record<string, string>>(data.data, {})
+					const saved = parseResponseData(data.data)
 					setValues(saved)
 					setCurrentIndex(resumeIndexForValues(fields, saved))
 					savePublicFormProgress({
@@ -1184,7 +1184,19 @@ export function FormFill({ formId, navigate }: Props) {
 	}
 
 	// Question screen
-	const field = visibleFields[currentIndex]!
+	const field = visibleFields[currentIndex]
+	if (!field) {
+		// No question at this index: a form without questions, or one whose
+		// question list could not be read. Never index past the list.
+		return (
+			<div className="min-h-screen flex items-center justify-center bg-gray-50 px-4 dark:bg-gray-950">
+				<div className="max-w-md text-center">
+					<h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">This form has no questions to answer</h1>
+					<p className="mt-2 text-[15px] text-gray-500 dark:text-gray-400">Please contact the form owner.</p>
+				</div>
+			</div>
+		)
+	}
 	const isLast = currentIndex === visibleFields.length - 1
 	const error = errors[field.id]
 

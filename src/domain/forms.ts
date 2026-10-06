@@ -40,11 +40,42 @@ export function safeJsonParse<T>(value: unknown, fallback: T): T {
 	}
 }
 
+/** How many layers of JSON-string encoding a stored json value may carry. */
+const MAX_JSON_STRING_LAYERS = 3
+
+/**
+ * Reads the CONTAINER of a stored json field (a list or an object) whatever
+ * encoding the row carries:
+ * - beta.13 writes: the value itself;
+ * - builds before beta.13 wrote JSON strings, and some legacy rows carry a JSON
+ *   string of a JSON string. The beta.7 server decoded one layer when it
+ *   materialized rows; the beta.13 server rebuilds rows from the operations
+ *   as written, so the reader has to remove those layers.
+ * Only whole strings that decode to further JSON are unwrapped, at most a few
+ * layers, and only until a list or object appears. Values inside the
+ * container are never touched, so a text answer that looks like JSON stays the
+ * respondent's text. Returns `null` when the value is not that kind of container.
+ */
+export function readJsonContainer(value: unknown, kind: 'array'): unknown[] | null
+export function readJsonContainer(value: unknown, kind: 'object'): Record<string, unknown> | null
+export function readJsonContainer(value: unknown, kind: 'array' | 'object'): unknown[] | Record<string, unknown> | null {
+	let current = value
+	for (let layer = 0; layer < MAX_JSON_STRING_LAYERS && typeof current === 'string'; layer++) {
+		try {
+			current = JSON.parse(current)
+		} catch {
+			return null
+		}
+	}
+	if (kind === 'array') return Array.isArray(current) ? current : null
+	return isPlainObject(current) ? current : null
+}
+
 export function parseFormSettings(value: unknown): FormSettings {
-	const parsed = safeJsonParse<unknown>(value || {}, {})
+	const parsed = readJsonContainer(value, 'object')
 	// A copy: settings now arrive as objects from the store, and callers such
 	// as serializeArchiveSettings modify the result.
-	return isPlainObject(parsed) ? { ...parsed } as FormSettings : {}
+	return parsed ? { ...parsed } as FormSettings : {}
 }
 
 /**
@@ -80,8 +111,8 @@ export function serializeFormSettings(settings: FormSettings): FormSettings {
 }
 
 export function parseFormFields(value: unknown): FormField[] {
-	const parsed = safeJsonParse<unknown>(value || [], [])
-	if (!Array.isArray(parsed)) return []
+	const parsed = readJsonContainer(value, 'array')
+	if (!parsed) return []
 
 	const fields: FormField[] = []
 	for (const item of parsed) {
@@ -102,16 +133,17 @@ export interface ResponseMeta {
 
 /**
  * Reads a json object field that may hold an object or, in rows written before
- * the beta.13 upgrade, a JSON string. Anything else becomes `{}`.
+ * the beta.13 upgrade, a (possibly repeatedly) JSON-encoded string. Anything
+ * else becomes `{}`.
  */
 export function parseJsonRecord(value: unknown): Record<string, unknown> {
-	const parsed = safeJsonParse<unknown>(value, {})
-	return isPlainObject(parsed) ? toJsonValue({ ...parsed }) : {}
+	const parsed = readJsonContainer(value, 'object')
+	return parsed ? toJsonValue({ ...parsed }) : {}
 }
 
 export function parseResponseData(value: unknown): Record<string, string> {
-	const parsed = safeJsonParse<unknown>(value || {}, {})
-	if (!isPlainObject(parsed)) return {}
+	const parsed = readJsonContainer(value, 'object')
+	if (!parsed) return {}
 
 	const data: Record<string, string> = {}
 	for (const [key, entryValue] of Object.entries(parsed)) {
@@ -122,8 +154,8 @@ export function parseResponseData(value: unknown): Record<string, string> {
 }
 
 export function parseResponseMeta(value: unknown): ResponseMeta | undefined {
-	const parsed = safeJsonParse<unknown>(value || {}, {})
-	if (!isPlainObject(parsed) || !isPlainObject(parsed._meta)) return undefined
+	const parsed = readJsonContainer(value, 'object')
+	if (!parsed || !isPlainObject(parsed._meta)) return undefined
 	return parsed._meta as ResponseMeta
 }
 

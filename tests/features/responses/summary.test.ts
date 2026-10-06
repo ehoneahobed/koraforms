@@ -156,6 +156,35 @@ test('form version analytics separates current and older published revisions', (
 	assert.equal(versions[0]?.conversionRate, 100)
 	assert.equal(versions[1]?.partialSessions, 1)
 	assert.equal(versions[1]?.conversionRate, 0)
+	// Both versions were first seen the same day: readable names, numbered in order.
+	const dayLabel = new Date(now).toLocaleDateString('en', { month: 'short', day: 'numeric', year: 'numeric' })
+	assert.equal(versions.find(version => version.versionHash === 'v1hash')?.label, `Version from ${dayLabel} (1)`)
+	assert.equal(versions.find(version => version.versionHash === 'v2hash')?.label, `Version from ${dayLabel} (2)`)
+})
+
+test('version labels name a version by the day it was first seen, never by its hash', () => {
+	const jul28 = new Date(2026, 6, 28, 10).getTime()
+	const versions = buildFormVersionAnalytics([
+		{ id: 'old', formVersionHash: '1816841135', submittedAt: jul28, data: '{}' },
+		{ id: 'none', formVersionHash: '', submittedAt: jul28, data: '{}' },
+	], [])
+	const labelled = Object.fromEntries(versions.map(version => [version.versionHash, version.label]))
+	assert.equal(labelled['1816841135'], 'Version from Jul 28, 2026')
+	assert.equal(labelled.unversioned, 'Unversioned')
+})
+
+test('a version keeps its name in every time range, and the range only limits the counts', () => {
+	const firstSeen = Date.now() - 70 * 24 * 60 * 60 * 1000
+	const responses = [
+		{ id: 'old', formVersionHash: 'legacy', submittedAt: firstSeen, data: '{}' },
+		{ id: 'recent', formVersionHash: 'legacy', submittedAt: Date.now() - 60_000, data: '{}' },
+	]
+	const expected = `Version from ${new Date(firstSeen).toLocaleDateString('en', { month: 'short', day: 'numeric', year: 'numeric' })}`
+	for (const [range, count] of [['30d', 1], ['all', 2]] as const) {
+		const [version] = buildResponsesAnalyticsSummary([], responses, range, []).formVersions
+		assert.equal(version?.label, expected, range)
+		assert.equal(version?.responses, count, range)
+	}
 })
 
 test('filterResponses applies field filters against parsed response data', () => {

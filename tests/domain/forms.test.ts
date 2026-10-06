@@ -9,7 +9,9 @@ import {
 	isResponseField,
 	parseFormFields,
 	parseFormSettings,
+	parseJsonRecord,
 	parseResponseData,
+	readJsonContainer,
 	parseResponseMeta,
 	safeJsonParse,
 	serializeFormFields,
@@ -93,4 +95,43 @@ test('parseFormSettings returns a copy of an object value', () => {
 	const parsed = parseFormSettings(stored)
 	delete parsed.archived
 	assert.equal(stored.archived, true)
+})
+
+// What builds before beta.13 left in json fields, as the beta.13 server and the
+// local store now return them (see readJsonContainer).
+const legacyFields = [{ id: 'field_1', type: 'text', label: 'Full Name', required: true }]
+const once = JSON.stringify(legacyFields)
+const twice = JSON.stringify(once)
+
+test('json field readers unwrap legacy string encodings of the container', () => {
+	for (const stored of [legacyFields, once, twice]) {
+		assert.deepEqual(parseFormFields(stored), legacyFields)
+	}
+	const settings = { maxResponses: 50, closesAt: 1 }
+	for (const stored of [settings, JSON.stringify(settings), JSON.stringify(JSON.stringify(settings))]) {
+		assert.deepEqual(parseFormSettings(stored), settings)
+	}
+	const data = { name: 'Ada', _meta: { duration: 5 } }
+	for (const stored of [data, JSON.stringify(data), JSON.stringify(JSON.stringify(data))]) {
+		assert.deepEqual(parseResponseData(stored), { name: 'Ada' })
+		assert.deepEqual(parseJsonRecord(stored), data)
+	}
+})
+
+test('answers that look like JSON stay the respondent text', () => {
+	const answer = JSON.stringify({ looks: 'like json' })
+	const nested = JSON.stringify(JSON.stringify(['a', 'b']))
+	const stored = JSON.stringify({ note: answer, list: nested, number: '42', quoted: '"hi"' })
+	assert.deepEqual(parseResponseData(stored), { note: answer, list: nested, number: '42', quoted: '"hi"' })
+	assert.deepEqual(parseResponseData(JSON.stringify(stored)), { note: answer, list: nested, number: '42', quoted: '"hi"' })
+})
+
+test('json field readers refuse non-containers and runaway encodings', () => {
+	assert.deepEqual(parseFormFields('not json'), [])
+	assert.deepEqual(parseFormFields('{"a":1}'), [])
+	assert.deepEqual(parseFormSettings('[1,2]'), {})
+	assert.deepEqual(parseFormSettings(JSON.stringify('plain text')), {})
+	let deep: unknown = { a: 1 }
+	for (let layer = 0; layer < 5; layer++) deep = JSON.stringify(deep)
+	assert.equal(readJsonContainer(deep, 'object'), null)
 })

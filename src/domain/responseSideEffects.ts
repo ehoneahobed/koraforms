@@ -1,4 +1,4 @@
-import { safeJsonParse } from './forms'
+import { parseJsonRecord } from './forms'
 
 export interface ResponseSideEffectForm {
 	id: string
@@ -153,7 +153,7 @@ export function buildWebhookPayload(
 		form,
 		response: {
 			submittedAt,
-			data: safeJsonParse<Record<string, unknown>>(responseData, {}),
+			data: parseJsonRecord(responseData),
 			fields: fieldsMap,
 		},
 	}
@@ -226,7 +226,7 @@ function responseEntries(
 	responseData: string,
 	fieldsMap: Record<string, ResponseSideEffectField>,
 ): Array<{ label: string; value: string }> {
-	const data = safeJsonParse<Record<string, unknown>>(responseData, {})
+	const data = parseJsonRecord(responseData)
 	const entries: Array<{ label: string; value: string }> = []
 	for (const [fieldId, value] of Object.entries(data)) {
 		if (fieldId === '_meta') continue
