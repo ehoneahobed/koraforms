@@ -13,7 +13,22 @@
  * Safe to run on every start: a node that already has an owner is never
  * touched, so a real claim is never replaced. `''` means an administrator
  * released the node, which is bound like an unclaimed one.
+ *
+ * Runs its full scan once. Ownerless nodes only come from history written
+ * before node claims existed, and every one of them is present at the first
+ * start; a node created later is claimed by its own device at its first
+ * handshake. So after a run with no failures the server records a marker
+ * claim, and later starts skip the scan (one lookup) instead of re-reading
+ * every historical node before accepting connections.
  */
+
+/**
+ * Marker recorded as a node claim once the scan has completed. The `kora:`
+ * namespace is refused for device node ids and for user ids, so no client can
+ * present or own it.
+ */
+export const LEGACY_CLAIMS_MARKER_NODE = 'kora:app:koraforms:legacy-node-claims-bound:v1'
+const LEGACY_CLAIMS_MARKER_OWNER = 'kora:app:koraforms'
 
 export interface NodeClaimStore {
 	getNodeIdsAfterDelivery?(afterDeliverySequence: number): Promise<string[]>
@@ -39,15 +54,20 @@ export interface NodeClaimBindingResult {
 	failed: number
 	/** False when the store cannot read or write node claims. */
 	supported: boolean
+	/** True when an earlier run completed, so nothing was scanned. */
+	skipped: boolean
 }
 
 export async function bindLegacyDeviceNodeClaims(
 	store: NodeClaimStore,
 	users: DeviceDirectory,
 ): Promise<NodeClaimBindingResult> {
-	const result: NodeClaimBindingResult = { nodes: 0, devices: 0, bound: 0, alreadyClaimed: 0, failed: 0, supported: true }
+	const result: NodeClaimBindingResult = { nodes: 0, devices: 0, bound: 0, alreadyClaimed: 0, failed: 0, supported: true, skipped: false }
 	if (!store.getNodeIdsAfterDelivery || !store.getNodeClaimOwner || !store.releaseNodeClaim || !store.claimNode) {
 		return { ...result, supported: false }
+	}
+	if (await store.getNodeClaimOwner(LEGACY_CLAIMS_MARKER_NODE)) {
+		return { ...result, skipped: true }
 	}
 	for (const nodeId of await store.getNodeIdsAfterDelivery(0)) {
 		if (nodeId.startsWith('kora:')) continue
@@ -62,6 +82,11 @@ export async function bindLegacyDeviceNodeClaims(
 		await store.releaseNodeClaim(nodeId)
 		if (await store.claimNode(nodeId, device.userId)) result.bound += 1
 		else result.failed += 1
+	}
+	// Only a run that bound everything it could is final: after a failure the
+	// next start scans again.
+	if (result.failed === 0) {
+		await store.claimNode(LEGACY_CLAIMS_MARKER_NODE, LEGACY_CLAIMS_MARKER_OWNER)
 	}
 	return result
 }
