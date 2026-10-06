@@ -71,6 +71,17 @@ test('webhook payload preserves structured response data for integrations', () =
 	})
 })
 
+test('webhook and email payloads read a legacy encoded response without changing answers', () => {
+	const answers = { name: 'Ada', message: '{"looks":"like json"}' }
+	const legacy = JSON.stringify(JSON.stringify(answers))
+	const payload = buildWebhookPayload({ id: 'form-1', title: 'RSVP', slug: 'rsvp' }, legacy, fieldsMap, 123)
+	assert.deepEqual((payload.response as { data: unknown }).data, answers)
+
+	const email = buildEmailNotificationPayload({ id: 'form-1', title: 'RSVP', slug: 'rsvp' }, legacy, fieldsMap, 'https://forms.example.com')
+	assert.match(email.html, /Ada/)
+	assert.match(email.html, /&quot;looks&quot;:&quot;like json&quot;/)
+})
+
 test('webhook URL gating accepts only HTTPS public destinations', () => {
 	assert.equal(isDeliverableWebhookUrl('https://example.com/hook'), true)
 	assert.equal(isDeliverableWebhookUrl('http://example.com/hook'), false)

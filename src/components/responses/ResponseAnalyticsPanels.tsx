@@ -367,7 +367,7 @@ function FormVersionPanel({ versions }: { versions: ReturnType<typeof buildRespo
 				<div>
 					<h3 className="text-[16px] font-semibold tracking-[-0.01em] text-slate-950 dark:text-gray-100">Version performance</h3>
 					<p className="mt-1 text-[13px] text-slate-500 dark:text-gray-400">
-						Compare published revisions without mixing old form behavior into the current experience.
+						Compare published revisions without mixing old form behavior into the current experience. Counts cover the selected time range.
 					</p>
 				</div>
 				{current && (

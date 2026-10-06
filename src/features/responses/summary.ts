@@ -212,7 +212,8 @@ export function buildResponsesAnalyticsSummary(
 		deviceBreakdown: buildDeviceBreakdown(filteredResponses),
 		lifecycle: buildRespondentLifecycleSummary(filteredEvents, filteredResponses),
 		fieldJourney: buildFieldJourneySummary(fields, filteredEvents, filteredResponses),
-		formVersions: buildFormVersionAnalytics(filteredResponses, filteredEvents),
+		// Labels come from all activity so a version keeps its name whatever range is selected.
+		formVersions: buildFormVersionAnalytics(filteredResponses, filteredEvents, undefined, { responses, events: analyticsEvents }),
 		crossInsights: computeCrossInsights(fields, responseData),
 		completionSparkline: buildCompletionSparkline(fields, filteredResponses, responseData, dailyCounts),
 		fillRateSparkline: buildFillRateSparkline(fields, filteredResponses, responseData, dailyCounts),
@@ -403,6 +404,7 @@ export function buildFormVersionAnalytics(
 	responses: Record<string, unknown>[],
 	events: Record<string, unknown>[],
 	currentVersionHash?: string,
+	history?: { responses: Record<string, unknown>[]; events: Record<string, unknown>[] },
 ): FormVersionAnalytics[] {
 	const versions = new Map<string, {
 		versionHash: string
@@ -471,6 +473,7 @@ export function buildFormVersionAnalytics(
 			.filter(version => version.versionHash !== 'unversioned')
 			.sort((a, b) => b.lastSeenAt - a.lastSeenAt)[0]?.versionHash || ''
 
+	const labels = versionLabels(history ? firstSeenByVersion(history.responses, history.events) : firstSeenByVersion(responses, events))
 	return [...versions.values()]
 		.sort((a, b) => b.lastSeenAt - a.lastSeenAt)
 		.map(version => {
@@ -478,7 +481,7 @@ export function buildFormVersionAnalytics(
 			const completed = Math.max(version.submissions, version.responses)
 			return {
 				versionHash: version.versionHash,
-				label: version.versionHash === 'unversioned' ? 'Unversioned' : `Version ${version.versionHash.slice(0, 7)}`,
+				label: labels.get(version.versionHash) ?? 'Unversioned',
 				isCurrent: latestVersionHash ? version.versionHash === latestVersionHash : false,
 				views: version.views,
 				starts: version.starts,
@@ -490,6 +493,51 @@ export function buildFormVersionAnalytics(
 				lastSeenAt: version.lastSeenAt,
 			}
 		})
+}
+
+/**
+ * Readable version names. The version hash is a content fingerprint of the
+ * published form (offlineModel stableHash, a 32-bit number), not something a
+ * creator recognises, so a version is named by the day it was first seen;
+ * versions first seen on the same day are numbered in order.
+ */
+function firstSeenByVersion(
+	responses: readonly Record<string, unknown>[],
+	events: readonly Record<string, unknown>[],
+): { versionHash: string; firstSeenAt: number }[] {
+	const firstSeen = new Map<string, number>()
+	const remember = (versionHash: unknown, timestamp: number) => {
+		const normalized = String(versionHash || '').trim() || 'unversioned'
+		const known = firstSeen.get(normalized) ?? 0
+		const valid = Number.isFinite(timestamp) && timestamp > 0 ? timestamp : 0
+		firstSeen.set(normalized, known === 0 ? valid : valid === 0 ? known : Math.min(known, valid))
+	}
+	for (const event of events) remember(event.formVersionHash, Number(event.occurredAt || event.updatedAt || 0))
+	for (const response of responses) remember(response.formVersionHash, Number(response.submittedAt || 0))
+	return [...firstSeen].map(([versionHash, firstSeenAt]) => ({ versionHash, firstSeenAt }))
+}
+
+function versionLabels(versions: readonly { versionHash: string; firstSeenAt: number }[]): Map<string, string> {
+	const labels = new Map<string, string>()
+	const byDay = new Map<string, string[]>()
+	const ordered = [...versions]
+		.filter(version => version.versionHash !== 'unversioned')
+		.sort((a, b) => a.firstSeenAt - b.firstSeenAt || a.versionHash.localeCompare(b.versionHash))
+	for (const version of ordered) {
+		const day = version.firstSeenAt > 0
+			? new Date(version.firstSeenAt).toLocaleDateString('en', { month: 'short', day: 'numeric', year: 'numeric' })
+			: 'an unknown date'
+		const sameDay = byDay.get(day) ?? []
+		sameDay.push(version.versionHash)
+		byDay.set(day, sameDay)
+	}
+	for (const [day, hashes] of byDay) {
+		hashes.forEach((hash, index) => {
+			labels.set(hash, hashes.length > 1 ? `Version from ${day} (${index + 1})` : `Version from ${day}`)
+		})
+	}
+	labels.set('unversioned', 'Unversioned')
+	return labels
 }
 
 export function searchAndSortResponses<T extends Record<string, unknown>>(

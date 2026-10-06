@@ -1975,6 +1975,9 @@ function publicFormResponse(form: Record<string, unknown>, settings: ReturnType<
 	const { accessPassword: _accessPassword, ...safeForm } = form
 	return {
 		...safeForm,
+		// Always the question list itself: legacy rows can store it as a JSON
+		// string, or a JSON string of a JSON string (see readJsonContainer).
+		fields: parseFormFields(form.fields),
 		settings: serializeFormSettings(stripFormAccessSecrets(settings)),
 	}
 }
