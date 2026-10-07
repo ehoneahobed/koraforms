@@ -27,7 +27,7 @@ import { validatePublishedResponsePayload } from './src/domain/responseValidatio
 import { buildEmailNotificationPayload, buildSideEffectDeliveryJobs, buildWebhookPayload, isDeliverableWebhookUrl, isPublicWebhookIpAddress, normalizeWebhookConfig } from './src/domain/responseSideEffects'
 import { buildOpsDiagnosticsSnapshot } from './src/domain/opsDiagnostics'
 import { bindLegacyDeviceNodeClaims } from './src/domain/nodeClaims'
-import { MAX_PUBLIC_RESPONSE_BODY_BYTES, MAX_ROUTE_REQUEST_BODY_BYTES, SYNC_MAX_OPERATION_BYTES } from './src/domain/limits'
+import { MAX_PUBLIC_RESPONSE_BODY_BYTES, MAX_ROUTE_REQUEST_BODY_BYTES, SYNC_MAX_OPERATION_BYTES, resolveRateLimitScale } from './src/domain/limits'
 import type { FormField, FormSettings } from './src/types'
 type AnalyticsEventMetadata = Record<string, unknown>
 type SavedAnalyticsFilters = Array<{ fieldId: string; value: string }>
@@ -421,7 +421,7 @@ const RATE_LIMITS: Record<RateLimitBucket, { limit: number; windowMs: number }> 
 	collaborator_action: { limit: 60, windowMs: 60_000 },
 }
 
-function createRateLimiter() {
+function createRateLimiter(scale = 1) {
 	const buckets = new Map<string, { count: number; resetAt: number }>()
 
 	return {
@@ -436,7 +436,7 @@ function createRateLimiter() {
 				return { limited: false, retryAfterSeconds: 0 }
 			}
 			current.count += 1
-			if (current.count <= policy.limit) return { limited: false, retryAfterSeconds: 0 }
+			if (current.count <= policy.limit * scale) return { limited: false, retryAfterSeconds: 0 }
 			return {
 				limited: true,
 				retryAfterSeconds: Math.max(1, Math.ceil((current.resetAt - now) / 1000)),
@@ -525,7 +525,8 @@ function resolveAuthSecret(): string {
 async function main(): Promise<void> {
 	const { store, userStore } = await createStores()
 	const blobStore = new FilesystemBlobStore(process.env.BLOB_STORE_PATH || DEFAULT_BLOB_DIR)
-	const rateLimiter = createRateLimiter()
+	// Production limits are fixed; only a non-production (e2e) server may scale them.
+	const rateLimiter = createRateLimiter(resolveRateLimitScale(process.env))
 	const jwtSecret = resolveAuthSecret()
 
 	await store.setSchema(koraFormsSchema)
@@ -1552,6 +1553,23 @@ async function main(): Promise<void> {
 								where: { slug: formId, status: 'published' },
 								limit: 1,
 							})
+						}
+						if (!form && clientSubmissionId) {
+							// A device that sent a response, then lost the reply (or crashed
+							// before forgetting it), resends it. If the form has closed since,
+							// it is still a duplicate of an accepted response, not a refusal:
+							// a refusal would leave the respondent a copy "needing review".
+							const [anyForm] = [
+								...await req.kora.query('forms', { where: { id: formId }, limit: 1 }),
+								...await req.kora.query('forms', { where: { slug: formId }, limit: 1 }),
+							]
+							if (anyForm) {
+								const [accepted] = await req.kora.query('responses', {
+									where: { formId: String(anyForm.id), clientSubmissionId },
+									limit: 1,
+								})
+								if (accepted) return withCors({ status: 200, body: { success: true, duplicate: true } })
+							}
 						}
 						if (!form) {
 							logPublicResponseRejection({

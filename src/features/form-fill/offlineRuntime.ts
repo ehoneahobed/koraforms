@@ -22,10 +22,18 @@ import {
 	type ResponseSubmissionFlushItem,
 	type ResponseSubmissionLocalStatus,
 	type ResponseSubmissionRecord,
+	PublicOfflineLimitError,
 } from './offlineModel'
-import { whenPublicAppReady, type PublicApp } from '../../publicKora'
+import { whenPublicAppReady, whenPublicAppReadyWithin, type PublicApp } from '../../publicKora'
+import {
+	countPendingAcrossQueues,
+	saveFallbackSubmission,
+	settleLateKoraInsert,
+	type KoraPresence,
+	type PendingElsewhere,
+} from './fallbackQueue'
 import { getPublicStoreIssues } from './publicStoreIssues'
-import { deleteLocalBlobsFromResponseJson, getLocalBlobStorageUsage } from './blobStorage'
+import { deleteLocalBlobsFromResponseJson, getLocalBlobStorageUsage, preloadLocalBlobStore } from './blobStorage'
 import { serializeJsonForTransport } from '../../domain/forms'
 
 export { getPublicStoreIssues }
@@ -194,6 +202,22 @@ function adjustPublicSubmissionStatusHint(
 	}
 }
 
+function sumPublicSubmissionHints(): number {
+	if (typeof window === 'undefined') return 0
+	try {
+		let total = 0
+		for (let index = 0; index < window.localStorage.length; index++) {
+			const key = window.localStorage.key(index)
+			if (key?.startsWith(PUBLIC_SUBMISSION_HINT_PREFIX)) {
+				total += readPublicSubmissionStatusHint(key.slice(PUBLIC_SUBMISSION_HINT_PREFIX.length)).pending
+			}
+		}
+		return total
+	} catch {
+		return 0
+	}
+}
+
 export function getPublicSubmissionStatusHint(formId: string): { pending: number; rejected: number } {
 	const hint = readPublicSubmissionStatusHint(formId)
 	return { pending: hint.pending, rejected: hint.rejected }
@@ -217,14 +241,220 @@ export async function enqueueResponseSubmission(
 		.exec()
 	if (existing[0]) return existing[0]
 
-	const [formPendingCount, totalPendingCount] = await Promise.all([
-		countPendingResponseSubmissions(record.formId),
-		countPendingResponseSubmissions(),
-	])
-	assertPendingSubmissionLimit({ formPendingCount, totalPendingCount })
+	// The limits cover both queues: responses kept in the fallback queue count too.
+	assertPendingSubmissionLimit(await countPendingAcrossQueues(
+		record.formId,
+		koraQueueView(publicApp),
+		record.clientSubmissionId,
+	))
 	const inserted = await publicApp.response_submissions.insert(record)
 	adjustPublicSubmissionStatusHint(record.formId, { pending: 1 }, record.submittedAt)
 	return inserted
+}
+
+/** How long a status read or clean-up decision waits for the local database. */
+const KORA_LOOKUP_WAIT_MS = 1_500
+
+/** Kora's queue as seen by the shared limits, read from an open database. */
+function koraQueueView(publicApp: PublicApp): PendingElsewhere {
+	return {
+		counts: async formId => ({
+			form: await countPendingResponseSubmissions(formId),
+			total: await countPendingResponseSubmissions(),
+		}),
+		holds: async (clientSubmissionId) => {
+			const rows = await publicApp.response_submissions.where({ clientSubmissionId }).limit(1).exec()
+			return rows[0] ? 'present' : 'absent'
+		},
+	}
+}
+
+/**
+ * Kora's queue for a caller that must not wait for the database: when it is
+ * not open within a moment, the counts come from the per-form hints Kora's
+ * queue keeps in localStorage, and whether it holds a response is `unknown`.
+ */
+function koraQueueViewWithin(waitMs: number): PendingElsewhere {
+	const open = () => whenPublicAppReadyWithin(waitMs)
+	return {
+		counts: async (formId) => {
+			try {
+				const publicApp = await open()
+				return await withTimeout(koraQueueView(publicApp).counts(formId), waitMs)
+			} catch {
+				return { form: readPublicSubmissionStatusHint(formId).pending, total: sumPublicSubmissionHints() }
+			}
+		},
+		holds: clientSubmissionId => koraSubmissionPresence(clientSubmissionId, waitMs),
+	}
+}
+
+/**
+ * Whether Kora's queue holds a submission, in any state. `unknown` when the
+ * database cannot be asked right now: callers must then keep what Kora might
+ * still need (the response's attachments).
+ */
+export async function koraSubmissionPresence(clientSubmissionId: string, waitMs = KORA_LOOKUP_WAIT_MS): Promise<KoraPresence> {
+	try {
+		const publicApp = await whenPublicAppReadyWithin(waitMs)
+		return await withTimeout(koraQueueView(publicApp).holds(clientSubmissionId), waitMs)
+	} catch {
+		return 'unknown'
+	}
+}
+
+/** Responses waiting on this device in either queue, each counted once. */
+export async function countPendingSubmissionsOnDevice(waitMs = KORA_LOOKUP_WAIT_MS): Promise<number> {
+	const { totalPendingCount } = await countPendingAcrossQueues('', koraQueueViewWithin(waitMs))
+	return totalPendingCount
+}
+
+/** How long a submit waits for a local database that is still opening. */
+const STORE_WAIT_AT_SUBMIT_MS = 4_000
+/** How long a submit waits for the queue insert itself. */
+const STORE_INSERT_TIMEOUT_MS = 15_000
+
+/**
+ * Keeps a completed response on this device until it can be sent. Kora's local
+ * database is the normal home; when it is not open within a few seconds (it
+ * could not download its files before the connection dropped, or it failed),
+ * the response goes to the fallback queue instead of waiting for Kora's
+ * 60-second init timeout. Throws only when nothing on the device can keep it,
+ * with a message the respondent can act on.
+ */
+export async function queueResponseSubmissionDurably(params: {
+	formId: string
+	slug?: string
+	formVersionHash?: string
+	data: string
+	clientSubmissionId: string
+	now: number
+}): Promise<{ storage: 'kora' | 'fallback' }> {
+	const fallback = async (mayAlsoBeInKoraQueue = false): Promise<{ storage: 'fallback' }> => {
+		await saveFallbackSubmission({
+			clientSubmissionId: params.clientSubmissionId,
+			formId: params.formId,
+			slug: params.slug,
+			formVersionHash: params.formVersionHash,
+			data: params.data,
+			submittedAt: params.now,
+			mayAlsoBeInKoraQueue,
+		}, { pendingElsewhere: koraQueueViewWithin(KORA_LOOKUP_WAIT_MS) })
+		return { storage: 'fallback' }
+	}
+
+	try {
+		await whenPublicAppReadyWithin(STORE_WAIT_AT_SUBMIT_MS)
+	} catch {
+		return fallback()
+	}
+	const inserting = enqueueResponseSubmission(params)
+	try {
+		await withTimeout(inserting, STORE_INSERT_TIMEOUT_MS)
+		return { storage: 'kora' }
+	} catch (error) {
+		// The device limit is a decision, not a storage failure: show it.
+		if (error instanceof PublicOfflineLimitError) throw error
+		const timedOut = error instanceof InsertTimeoutError
+		const saved = await fallback(timedOut)
+		// A slow insert can still land: then Kora's queue sends the response and
+		// owns its attachments, and the copy kept here is dropped (if a flush sent
+		// it first, the server ignores Kora's copy by its clientSubmissionId). If
+		// it fails, the copy here is the only one and owns the attachments.
+		if (timedOut) void settleLateKoraInsert(params.clientSubmissionId, inserting).catch(() => undefined)
+		return saved
+	}
+}
+
+class InsertTimeoutError extends Error {
+	constructor(timeoutMs: number) {
+		super(`The local database did not answer within ${timeoutMs}ms`)
+		this.name = 'InsertTimeoutError'
+	}
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+	return new Promise<T>((resolve, reject) => {
+		const timer = setTimeout(() => reject(new InsertTimeoutError(timeoutMs)), timeoutMs)
+		promise.then(
+			(value) => {
+				clearTimeout(timer)
+				resolve(value)
+			},
+			(error: unknown) => {
+				clearTimeout(timer)
+				reject(error)
+			},
+		)
+	})
+}
+
+/**
+ * Loads the attachment store while online, for forms that collect files or
+ * signatures. Without it an offline attachment is still kept, in IndexedDB.
+ */
+export function preloadAttachmentStore(): Promise<boolean> {
+	return preloadLocalBlobStore()
+}
+
+const RUNTIME_CACHE_NAME = 'koraforms-runtime-v1'
+let warmOfflinePromise: Promise<boolean> | null = null
+
+/**
+ * Prepares everything an offline submit needs while the page is still online:
+ * opens the local database (which downloads sqlite3.wasm and the worker), then
+ * copies the database files and this page's scripts
+ * into the service worker's cache so a later offline reload finds them. Done in
+ * the page because a first visit is not controlled by the service worker yet.
+ * Resolves `true` once the local database is open; `false` when it could not
+ * open (the respondent can still submit through the fallback queue).
+ */
+export function warmOfflineSubmitPath(): Promise<boolean> {
+	if (!warmOfflinePromise) {
+		const warming = whenPublicAppReady().then(
+			() => {
+				void cacheOfflineSubmitAssets().catch(() => undefined)
+				return true
+			},
+			() => false,
+		)
+		warmOfflinePromise = warming
+		void warming.then((ready) => {
+			if (!ready && warmOfflinePromise === warming) warmOfflinePromise = null
+		})
+	}
+	return warmOfflinePromise
+}
+
+async function cacheOfflineSubmitAssets(): Promise<void> {
+	if (typeof window === 'undefined' || !('caches' in window)) return
+	const { PUBLIC_STORE_ASSET_URLS } = await import('../../publicKoraBootstrap')
+	const pageScripts = performance
+		.getEntriesByType('resource')
+		.map(entry => entry.name)
+		.filter((name) => {
+			try {
+				const url = new URL(name)
+				return url.origin === window.location.origin
+					&& url.pathname.startsWith('/assets/')
+					&& /\.(?:js|css|wasm)$/.test(url.pathname)
+			} catch {
+				return false
+			}
+		})
+	const urls = new Set([...PUBLIC_STORE_ASSET_URLS, ...pageScripts].map(url => new URL(url, window.location.origin).href))
+	const cache = await caches.open(RUNTIME_CACHE_NAME)
+	for (const url of urls) {
+		try {
+			if (await cache.match(url)) continue
+			// The files were just downloaded for the database open; with their ETag
+			// this is a revalidation, not a second download.
+			const response = await fetch(url, { credentials: 'same-origin' })
+			if (response.ok) await cache.put(url, response)
+		} catch {
+			// One missing file must not stop the rest; the service worker warms too.
+		}
+	}
 }
 
 export async function savePublicFormProgress(

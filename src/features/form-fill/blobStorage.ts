@@ -263,9 +263,29 @@ async function getKoraLocalBlobUsage(): Promise<{ bytes: number; count: number }
 
 function getKoraBlobStore(): Promise<KoraBlobStore> {
 	if (!koraBlobStorePromise) {
-		koraBlobStorePromise = loadKoraBlobStore()
+		const loading = loadKoraBlobStore()
+		koraBlobStorePromise = loading
+		// A failed load (offline before the chunk arrived) is retried next time
+		// instead of disabling the OPFS blob store for the rest of the page.
+		loading.catch(() => {
+			if (koraBlobStorePromise === loading) koraBlobStorePromise = null
+		})
 	}
 	return koraBlobStorePromise
+}
+
+/**
+ * Loads the OPFS blob store while the respondent is online, so an attachment
+ * added after the connection drops does not need a network fetch. Attachments
+ * still fall back to IndexedDB when this fails.
+ */
+export async function preloadLocalBlobStore(): Promise<boolean> {
+	try {
+		await getKoraBlobStore()
+		return true
+	} catch {
+		return false
+	}
 }
 
 function openBlobDatabase(): Promise<IDBDatabase> {

@@ -34,11 +34,11 @@ import {
 	yesNoValueForKey,
 } from '../features/form-fill/flow'
 import {
-	countPendingResponseSubmissions,
 	countRejectedResponseSubmissions,
 	clearPublicFormProgress,
-	enqueueResponseSubmission,
+	countPendingSubmissionsOnDevice,
 	flushResponseSubmissions,
+	koraSubmissionPresence,
 	getPublicOfflineDiagnostics,
 	getPublicOfflineReadiness,
 	getPublicSubmissionStatusHint,
@@ -47,7 +47,10 @@ import {
 	readPublicFormProgress,
 	savePublicFormVersion,
 	savePublicFormProgress,
+	preloadAttachmentStore,
+	queueResponseSubmissionDurably,
 	shouldQueueSubmission,
+	warmOfflineSubmitPath,
 	type PublicOfflineReadiness,
 	type PublicFormSource,
 } from '../features/form-fill/offlineRuntime'
@@ -57,6 +60,7 @@ import {
 	recordPublicFormAnalyticsEvent,
 } from '../features/form-fill/analytics'
 import { createSubmissionId } from '../features/form-fill/offlineModel'
+import { countFallbackSubmissions, flushFallbackSubmissions } from '../features/form-fill/fallbackQueue'
 import { deleteLocalBlobsFromResponseJson, hydrateLocalBlobValues } from '../features/form-fill/blobStorage'
 
 function isPermanentHttpSubmissionStatus(status: number): boolean {
@@ -207,6 +211,13 @@ export function FormFill({ formId, navigate }: Props) {
 	const showOfflineDiagnostics = useMemo(() => isOfflineDiagnosticsMode(), [])
 
 	useEffect(() => {
+		// Start opening the local database at once: on a first visit it has to
+		// download sqlite3.wasm and its worker, and that must finish before the
+		// respondent's connection drops for an offline submit to use it.
+		void warmOfflineSubmitPath()
+	}, [])
+
+	useEffect(() => {
 		const controller = new AbortController()
 		let mounted = true
 
@@ -237,9 +248,10 @@ export function FormFill({ formId, navigate }: Props) {
 					setForm(data)
 					setFormSource('network')
 					// Persist offline in the background — do not block first paint on sqlite-wasm.
-					void savePublicFormVersion(formId, data)
-						.then(record => {
-							if (!record || !mounted) return
+					// "Available offline" only once the database the offline submit uses is open.
+					void Promise.all([savePublicFormVersion(formId, data), warmOfflineSubmitPath()])
+						.then(([record, storeReady]) => {
+							if (!record || !storeReady || !mounted) return
 							setFormVersionHash(record.versionHash)
 							setFormPersistedOffline(true)
 							setOfflinePersistenceError(false)
@@ -311,12 +323,14 @@ export function FormFill({ formId, navigate }: Props) {
 		const hintFormId = String(form?.id || formId)
 		const hint = getPublicSubmissionStatusHint(hintFormId)
 		Promise.all([
-			resolveWithTimeout(countPendingResponseSubmissions(), PUBLIC_STATUS_READ_TIMEOUT_MS, null),
+			// Both queues, a response held by both counted once.
+			countPendingSubmissionsOnDevice(PUBLIC_STATUS_READ_TIMEOUT_MS).catch(() => null),
 			resolveWithTimeout(countRejectedResponseSubmissions(), PUBLIC_STATUS_READ_TIMEOUT_MS, null),
+			countFallbackSubmissions().catch(() => ({ pending: 0, rejected: 0 })),
 		])
-			.then(([pending, rejected]) => {
-				setPendingOfflineSubmissions(pending ?? hint.pending)
-				setRejectedOfflineSubmissions(rejected ?? hint.rejected)
+			.then(([pending, rejected, fallback]) => {
+				setPendingOfflineSubmissions(pending ?? hint.pending + fallback.pending)
+				setRejectedOfflineSubmissions((rejected ?? hint.rejected) + fallback.rejected)
 			})
 			.catch(() => {
 				setPendingOfflineSubmissions(hint.pending)
@@ -337,17 +351,36 @@ export function FormFill({ formId, navigate }: Props) {
 			refreshPendingOfflineCount()
 			return
 		}
-		const result = await flushResponseSubmissions(
-			item => submitResponseToServer(item.formId, item.data, item.clientSubmissionId, item.submittedAt, item.formVersionHash),
-		)
-		refreshPendingOfflineCount()
-		if (result.synced > 0 && result.remaining === 0) {
-			setLastSyncMessage(`${result.synced} offline response${result.synced === 1 ? '' : 's'} synced`)
-		} else if (result.rejected > 0) {
-			setLastSyncMessage(`${result.rejected} response${result.rejected === 1 ? '' : 's'} needs review before it can sync`)
-		} else if (result.failed > 0) {
-			setLastSyncMessage(`${result.remaining} response${result.remaining === 1 ? '' : 's'} still waiting to sync`)
+		const send = (item: { formId: string; data: string; clientSubmissionId: string; submittedAt: number; formVersionHash: string }) =>
+			submitResponseToServer(item.formId, item.data, item.clientSubmissionId, item.submittedAt, item.formVersionHash)
+		const report = (result: { synced: number; failed: number; rejected: number; remaining: number }) => {
+			refreshPendingOfflineCount()
+			if (result.synced > 0 && result.remaining === 0) {
+				setLastSyncMessage(`${result.synced} offline response${result.synced === 1 ? '' : 's'} synced`)
+			} else if (result.rejected > 0) {
+				setLastSyncMessage(`${result.rejected} response${result.rejected === 1 ? '' : 's'} needs review before it can sync`)
+			} else if (result.failed > 0) {
+				setLastSyncMessage(`${result.remaining} response${result.remaining === 1 ? '' : 's'} still waiting to sync`)
+			}
 		}
+		// Responses kept outside Kora (its database could not open) need no
+		// database to send, so they go first and are reported without waiting
+		// for a store that may still be opening.
+		const fallback = await flushFallbackSubmissions(send, {
+			// Kora's queue owns the attachments of a response it holds; whether it
+			// holds one is asked, never assumed.
+			koraPresence: id => koraSubmissionPresence(id),
+			deleteBlobs: data => deleteLocalBlobsFromResponseJson(data),
+		}).catch(() => ({ synced: 0, failed: 0, rejected: 0, remaining: 0 }))
+		if (fallback.synced > 0 || fallback.failed > 0 || fallback.rejected > 0) report(fallback)
+		const queued = await flushResponseSubmissions(send)
+			.catch(() => ({ synced: 0, failed: 0, rejected: 0, remaining: 0 }))
+		report({
+			synced: fallback.synced + queued.synced,
+			failed: fallback.failed + queued.failed,
+			rejected: fallback.rejected + queued.rejected,
+			remaining: fallback.remaining + queued.remaining,
+		})
 	}, [refreshPendingOfflineCount, submitResponseToServer])
 
 	useEffect(() => {
@@ -395,33 +428,25 @@ export function FormFill({ formId, navigate }: Props) {
 		clientSubmissionId: string,
 		clientSubmittedAt: number,
 	): Promise<'accepted' | 'queued'> => {
+		const keepOnDevice = async (): Promise<'queued'> => {
+			await queueResponseSubmissionDurably({
+				formId: realFormId,
+				slug: formId,
+				formVersionHash,
+				data: responseData,
+				clientSubmissionId,
+				now: clientSubmittedAt,
+			})
+			refreshPendingOfflineCount()
+			return 'queued'
+		}
+		if (typeof navigator !== 'undefined' && !navigator.onLine) return keepOnDevice()
 		try {
-			if (typeof navigator !== 'undefined' && !navigator.onLine) {
-				await enqueueResponseSubmission({
-					formId: realFormId,
-					slug: formId,
-					formVersionHash,
-					data: responseData,
-					clientSubmissionId,
-					now: clientSubmittedAt,
-				})
-				refreshPendingOfflineCount()
-				return 'queued'
-			}
 			await submitResponseToServer(realFormId, responseData, clientSubmissionId, clientSubmittedAt)
 			return 'accepted'
 		} catch (error) {
 			if (shouldQueueSubmission(error, typeof navigator === 'undefined' ? true : navigator.onLine)) {
-				await enqueueResponseSubmission({
-					formId: realFormId,
-					slug: formId,
-					formVersionHash,
-					data: responseData,
-					clientSubmissionId,
-					now: clientSubmittedAt,
-				})
-				refreshPendingOfflineCount()
-				return 'queued'
+				return keepOnDevice()
 			}
 			throw error
 		}
@@ -492,6 +517,12 @@ export function FormFill({ formId, navigate }: Props) {
 	const [duplicateSubmissionDraft, setDuplicateSubmissionDraft] = useState<PendingDuplicateSubmission | null>(null)
 
 	const fields: FormField[] = useMemo(() => parseFormFields(form?.fields), [form?.fields])
+	const collectsAttachments = useMemo(() => fields.some(field => field.type === 'file' || field.type === 'signature'), [fields])
+	useEffect(() => {
+		// Files and signatures added after the connection drops then use the
+		// OPFS attachment store; without it they are kept in IndexedDB.
+		if (collectsAttachments) void preloadAttachmentStore()
+	}, [collectsAttachments])
 	const settings: FormSettings = useMemo(() => parseFormSettings(form?.settings), [form?.settings])
 
 	const themeVars = useMemo(() => getThemeCSSVars(String(form?.theme || 'red')), [form?.theme])
