@@ -1554,6 +1554,23 @@ async function main(): Promise<void> {
 								limit: 1,
 							})
 						}
+						if (!form && clientSubmissionId) {
+							// A device that sent a response, then lost the reply (or crashed
+							// before forgetting it), resends it. If the form has closed since,
+							// it is still a duplicate of an accepted response, not a refusal:
+							// a refusal would leave the respondent a copy "needing review".
+							const [anyForm] = [
+								...await req.kora.query('forms', { where: { id: formId }, limit: 1 }),
+								...await req.kora.query('forms', { where: { slug: formId }, limit: 1 }),
+							]
+							if (anyForm) {
+								const [accepted] = await req.kora.query('responses', {
+									where: { formId: String(anyForm.id), clientSubmissionId },
+									limit: 1,
+								})
+								if (accepted) return withCors({ status: 200, body: { success: true, duplicate: true } })
+							}
+						}
 						if (!form) {
 							logPublicResponseRejection({
 								reason: 'form_not_found',

@@ -233,3 +233,28 @@ test('without IndexedDB, two tabs that save offline at the same moment both keep
 		await seeded.owner.close()
 	}
 })
+
+test('resending an accepted response after the form closed is a duplicate, not a refusal', async ({ page, baseURL }, testInfo) => {
+	test.setTimeout(60_000)
+	const seeded = await seedPublishedForm(page, baseURL, testInfo, [
+		{ id: 'f_name', type: 'text', label: 'Your name', required: true },
+	])
+	try {
+		const send = async (clientSubmissionId: string) => page.request.post('/api/public/responses', {
+			data: { formId: seeded.formId, data: JSON.stringify({ f_name: 'Ada Resent' }), clientSubmissionId },
+		})
+		const id = `resend-${Date.now()}`
+		expect((await send(id)).status()).toBe(201)
+		// The device lost the reply (or closed before forgetting it); the creator closes the form.
+		await seeded.owner.forms.update(seeded.formId, { status: 'closed' })
+		await expect.poll(async () => (await page.request.get(`/api/public/forms/${seeded.slug}`)).status(), { timeout: 20_000 }).toBe(404)
+		const resent = await send(id)
+		expect(resent.status()).toBe(200)
+		expect(await resent.json()).toMatchObject({ duplicate: true })
+		// A response the server never accepted is still refused.
+		expect((await send(`${id}-new`)).status()).toBe(404)
+		await expect.poll(async () => (await ownerResponses(seeded)).length, { timeout: 20_000 }).toBe(1)
+	} finally {
+		await seeded.owner.close()
+	}
+})
