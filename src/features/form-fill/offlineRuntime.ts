@@ -22,10 +22,12 @@ import {
 	type ResponseSubmissionFlushItem,
 	type ResponseSubmissionLocalStatus,
 	type ResponseSubmissionRecord,
+	PublicOfflineLimitError,
 } from './offlineModel'
-import { whenPublicAppReady, type PublicApp } from '../../publicKora'
+import { whenPublicAppReady, whenPublicAppReadyWithin, type PublicApp } from '../../publicKora'
+import { forgetPendingFallbackSubmission, saveFallbackSubmission } from './fallbackQueue'
 import { getPublicStoreIssues } from './publicStoreIssues'
-import { deleteLocalBlobsFromResponseJson, getLocalBlobStorageUsage } from './blobStorage'
+import { deleteLocalBlobsFromResponseJson, getLocalBlobStorageUsage, preloadLocalBlobStore } from './blobStorage'
 import { serializeJsonForTransport } from '../../domain/forms'
 
 export { getPublicStoreIssues }
@@ -225,6 +227,157 @@ export async function enqueueResponseSubmission(
 	const inserted = await publicApp.response_submissions.insert(record)
 	adjustPublicSubmissionStatusHint(record.formId, { pending: 1 }, record.submittedAt)
 	return inserted
+}
+
+/** How long a submit waits for a local database that is still opening. */
+const STORE_WAIT_AT_SUBMIT_MS = 4_000
+/** How long a submit waits for the queue insert itself. */
+const STORE_INSERT_TIMEOUT_MS = 15_000
+
+/**
+ * Keeps a completed response on this device until it can be sent. Kora's local
+ * database is the normal home; when it is not open within a few seconds (it
+ * could not download its files before the connection dropped, or it failed),
+ * the response goes to the fallback queue instead of waiting for Kora's
+ * 60-second init timeout. Throws only when nothing on the device can keep it,
+ * with a message the respondent can act on.
+ */
+export async function queueResponseSubmissionDurably(params: {
+	formId: string
+	slug?: string
+	formVersionHash?: string
+	data: string
+	clientSubmissionId: string
+	now: number
+}): Promise<{ storage: 'kora' | 'fallback' }> {
+	const fallback = async (mayAlsoBeInKoraQueue = false): Promise<{ storage: 'fallback' }> => {
+		await saveFallbackSubmission({
+			clientSubmissionId: params.clientSubmissionId,
+			formId: params.formId,
+			slug: params.slug,
+			formVersionHash: params.formVersionHash,
+			data: params.data,
+			submittedAt: params.now,
+			mayAlsoBeInKoraQueue,
+		})
+		return { storage: 'fallback' }
+	}
+
+	try {
+		await whenPublicAppReadyWithin(STORE_WAIT_AT_SUBMIT_MS)
+	} catch {
+		return fallback()
+	}
+	const inserting = enqueueResponseSubmission(params)
+	try {
+		await withTimeout(inserting, STORE_INSERT_TIMEOUT_MS)
+		return { storage: 'kora' }
+	} catch (error) {
+		// The device limit is a decision, not a storage failure: show it.
+		if (error instanceof PublicOfflineLimitError) throw error
+		const timedOut = error instanceof InsertTimeoutError
+		const saved = await fallback(timedOut)
+		// A slow insert can still land: then Kora's queue sends the response and
+		// the copy kept here is dropped, unless a flush has already sent it (the
+		// server ignores the second copy by its clientSubmissionId).
+		if (timedOut) {
+			void inserting
+				.then(() => forgetPendingFallbackSubmission(params.clientSubmissionId))
+				.catch(() => undefined)
+		}
+		return saved
+	}
+}
+
+class InsertTimeoutError extends Error {
+	constructor(timeoutMs: number) {
+		super(`The local database did not save the response within ${timeoutMs}ms`)
+		this.name = 'InsertTimeoutError'
+	}
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+	return new Promise<T>((resolve, reject) => {
+		const timer = setTimeout(() => reject(new InsertTimeoutError(timeoutMs)), timeoutMs)
+		promise.then(
+			(value) => {
+				clearTimeout(timer)
+				resolve(value)
+			},
+			(error: unknown) => {
+				clearTimeout(timer)
+				reject(error)
+			},
+		)
+	})
+}
+
+/**
+ * Loads the attachment store while online, for forms that collect files or
+ * signatures. Without it an offline attachment is still kept, in IndexedDB.
+ */
+export function preloadAttachmentStore(): Promise<boolean> {
+	return preloadLocalBlobStore()
+}
+
+const RUNTIME_CACHE_NAME = 'koraforms-runtime-v1'
+let warmOfflinePromise: Promise<boolean> | null = null
+
+/**
+ * Prepares everything an offline submit needs while the page is still online:
+ * opens the local database (which downloads sqlite3.wasm and the worker), then
+ * copies the database files and this page's scripts
+ * into the service worker's cache so a later offline reload finds them. Done in
+ * the page because a first visit is not controlled by the service worker yet.
+ * Resolves `true` once the local database is open; `false` when it could not
+ * open (the respondent can still submit through the fallback queue).
+ */
+export function warmOfflineSubmitPath(): Promise<boolean> {
+	if (!warmOfflinePromise) {
+		const warming = whenPublicAppReady().then(
+			() => {
+				void cacheOfflineSubmitAssets().catch(() => undefined)
+				return true
+			},
+			() => false,
+		)
+		warmOfflinePromise = warming
+		void warming.then((ready) => {
+			if (!ready && warmOfflinePromise === warming) warmOfflinePromise = null
+		})
+	}
+	return warmOfflinePromise
+}
+
+async function cacheOfflineSubmitAssets(): Promise<void> {
+	if (typeof window === 'undefined' || !('caches' in window)) return
+	const { PUBLIC_STORE_ASSET_URLS } = await import('../../publicKoraBootstrap')
+	const pageScripts = performance
+		.getEntriesByType('resource')
+		.map(entry => entry.name)
+		.filter((name) => {
+			try {
+				const url = new URL(name)
+				return url.origin === window.location.origin
+					&& url.pathname.startsWith('/assets/')
+					&& /\.(?:js|css|wasm)$/.test(url.pathname)
+			} catch {
+				return false
+			}
+		})
+	const urls = new Set([...PUBLIC_STORE_ASSET_URLS, ...pageScripts].map(url => new URL(url, window.location.origin).href))
+	const cache = await caches.open(RUNTIME_CACHE_NAME)
+	for (const url of urls) {
+		try {
+			if (await cache.match(url)) continue
+			// The files were just downloaded for the database open; with their ETag
+			// this is a revalidation, not a second download.
+			const response = await fetch(url, { credentials: 'same-origin' })
+			if (response.ok) await cache.put(url, response)
+		} catch {
+			// One missing file must not stop the rest; the service worker warms too.
+		}
+	}
 }
 
 export async function savePublicFormProgress(
