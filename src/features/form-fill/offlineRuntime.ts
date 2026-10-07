@@ -25,7 +25,13 @@ import {
 	PublicOfflineLimitError,
 } from './offlineModel'
 import { whenPublicAppReady, whenPublicAppReadyWithin, type PublicApp } from '../../publicKora'
-import { forgetPendingFallbackSubmission, saveFallbackSubmission } from './fallbackQueue'
+import {
+	countPendingAcrossQueues,
+	saveFallbackSubmission,
+	settleLateKoraInsert,
+	type KoraPresence,
+	type PendingElsewhere,
+} from './fallbackQueue'
 import { getPublicStoreIssues } from './publicStoreIssues'
 import { deleteLocalBlobsFromResponseJson, getLocalBlobStorageUsage, preloadLocalBlobStore } from './blobStorage'
 import { serializeJsonForTransport } from '../../domain/forms'
@@ -196,6 +202,22 @@ function adjustPublicSubmissionStatusHint(
 	}
 }
 
+function sumPublicSubmissionHints(): number {
+	if (typeof window === 'undefined') return 0
+	try {
+		let total = 0
+		for (let index = 0; index < window.localStorage.length; index++) {
+			const key = window.localStorage.key(index)
+			if (key?.startsWith(PUBLIC_SUBMISSION_HINT_PREFIX)) {
+				total += readPublicSubmissionStatusHint(key.slice(PUBLIC_SUBMISSION_HINT_PREFIX.length)).pending
+			}
+		}
+		return total
+	} catch {
+		return 0
+	}
+}
+
 export function getPublicSubmissionStatusHint(formId: string): { pending: number; rejected: number } {
 	const hint = readPublicSubmissionStatusHint(formId)
 	return { pending: hint.pending, rejected: hint.rejected }
@@ -219,14 +241,72 @@ export async function enqueueResponseSubmission(
 		.exec()
 	if (existing[0]) return existing[0]
 
-	const [formPendingCount, totalPendingCount] = await Promise.all([
-		countPendingResponseSubmissions(record.formId),
-		countPendingResponseSubmissions(),
-	])
-	assertPendingSubmissionLimit({ formPendingCount, totalPendingCount })
+	// The limits cover both queues: responses kept in the fallback queue count too.
+	assertPendingSubmissionLimit(await countPendingAcrossQueues(
+		record.formId,
+		koraQueueView(publicApp),
+		record.clientSubmissionId,
+	))
 	const inserted = await publicApp.response_submissions.insert(record)
 	adjustPublicSubmissionStatusHint(record.formId, { pending: 1 }, record.submittedAt)
 	return inserted
+}
+
+/** How long a status read or clean-up decision waits for the local database. */
+const KORA_LOOKUP_WAIT_MS = 1_500
+
+/** Kora's queue as seen by the shared limits, read from an open database. */
+function koraQueueView(publicApp: PublicApp): PendingElsewhere {
+	return {
+		counts: async formId => ({
+			form: await countPendingResponseSubmissions(formId),
+			total: await countPendingResponseSubmissions(),
+		}),
+		holds: async (clientSubmissionId) => {
+			const rows = await publicApp.response_submissions.where({ clientSubmissionId }).limit(1).exec()
+			return rows[0] ? 'present' : 'absent'
+		},
+	}
+}
+
+/**
+ * Kora's queue for a caller that must not wait for the database: when it is
+ * not open within a moment, the counts come from the per-form hints Kora's
+ * queue keeps in localStorage, and whether it holds a response is `unknown`.
+ */
+function koraQueueViewWithin(waitMs: number): PendingElsewhere {
+	const open = () => whenPublicAppReadyWithin(waitMs)
+	return {
+		counts: async (formId) => {
+			try {
+				const publicApp = await open()
+				return await withTimeout(koraQueueView(publicApp).counts(formId), waitMs)
+			} catch {
+				return { form: readPublicSubmissionStatusHint(formId).pending, total: sumPublicSubmissionHints() }
+			}
+		},
+		holds: clientSubmissionId => koraSubmissionPresence(clientSubmissionId, waitMs),
+	}
+}
+
+/**
+ * Whether Kora's queue holds a submission, in any state. `unknown` when the
+ * database cannot be asked right now: callers must then keep what Kora might
+ * still need (the response's attachments).
+ */
+export async function koraSubmissionPresence(clientSubmissionId: string, waitMs = KORA_LOOKUP_WAIT_MS): Promise<KoraPresence> {
+	try {
+		const publicApp = await whenPublicAppReadyWithin(waitMs)
+		return await withTimeout(koraQueueView(publicApp).holds(clientSubmissionId), waitMs)
+	} catch {
+		return 'unknown'
+	}
+}
+
+/** Responses waiting on this device in either queue, each counted once. */
+export async function countPendingSubmissionsOnDevice(waitMs = KORA_LOOKUP_WAIT_MS): Promise<number> {
+	const { totalPendingCount } = await countPendingAcrossQueues('', koraQueueViewWithin(waitMs))
+	return totalPendingCount
 }
 
 /** How long a submit waits for a local database that is still opening. */
@@ -259,7 +339,7 @@ export async function queueResponseSubmissionDurably(params: {
 			data: params.data,
 			submittedAt: params.now,
 			mayAlsoBeInKoraQueue,
-		})
+		}, { pendingElsewhere: koraQueueViewWithin(KORA_LOOKUP_WAIT_MS) })
 		return { storage: 'fallback' }
 	}
 
@@ -278,20 +358,17 @@ export async function queueResponseSubmissionDurably(params: {
 		const timedOut = error instanceof InsertTimeoutError
 		const saved = await fallback(timedOut)
 		// A slow insert can still land: then Kora's queue sends the response and
-		// the copy kept here is dropped, unless a flush has already sent it (the
-		// server ignores the second copy by its clientSubmissionId).
-		if (timedOut) {
-			void inserting
-				.then(() => forgetPendingFallbackSubmission(params.clientSubmissionId))
-				.catch(() => undefined)
-		}
+		// owns its attachments, and the copy kept here is dropped (if a flush sent
+		// it first, the server ignores Kora's copy by its clientSubmissionId). If
+		// it fails, the copy here is the only one and owns the attachments.
+		if (timedOut) void settleLateKoraInsert(params.clientSubmissionId, inserting).catch(() => undefined)
 		return saved
 	}
 }
 
 class InsertTimeoutError extends Error {
 	constructor(timeoutMs: number) {
-		super(`The local database did not save the response within ${timeoutMs}ms`)
+		super(`The local database did not answer within ${timeoutMs}ms`)
 		this.name = 'InsertTimeoutError'
 	}
 }

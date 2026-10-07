@@ -190,3 +190,46 @@ test('when the local database cannot open, a completed response survives closing
 		await seeded.owner.close()
 	}
 })
+
+test('without IndexedDB, two tabs that save offline at the same moment both keep and deliver their response', async ({ page, context, baseURL }, testInfo) => {
+	test.setTimeout(120_000)
+	const seeded = await seedPublishedForm(page, baseURL, testInfo, [
+		{ id: 'f_name', type: 'text', label: 'Your name', required: true },
+	])
+	try {
+		// No IndexedDB (some private modes) and no database: localStorage is the only store.
+		await context.addInitScript(() => {
+			Object.defineProperty(window, 'indexedDB', { configurable: true, get: () => undefined })
+		})
+		await context.route(WASM, route => route.abort())
+		const second = await context.newPage()
+		const tabs = [page, second]
+		for (const tab of tabs) {
+			await tab.goto(`/f/${seeded.slug}`)
+			await expect(tab.getByRole('heading', { name: 'Member Registration' })).toBeVisible({ timeout: 15_000 })
+		}
+		await context.setOffline(true)
+		for (const [index, tab] of tabs.entries()) {
+			await tab.getByRole('button', { name: /start/i }).click()
+			await expect(tab.getByRole('heading', { name: /your name/i })).toBeVisible()
+			await tab.getByRole('textbox').fill(`Tab ${index + 1}`)
+		}
+		await Promise.all(tabs.map(tab => tab.getByRole('button', { name: /submit/i }).click()))
+		for (const tab of tabs) {
+			await expect(tab.getByRole('heading', { name: 'Saved on this device' })).toBeVisible({ timeout: 15_000 })
+		}
+		// Responses kept in localStorage, in the per-response keys or the earlier single array.
+		const saved = async () => page.evaluate(() => {
+			const legacy = JSON.parse(localStorage.getItem('koraforms-public-fallback-submissions') || '[]') as unknown[]
+			return Object.keys(localStorage).filter(key => key.startsWith('koraforms-public-fallback-submission:')).length + legacy.length
+		})
+		await expect.poll(saved, { timeout: 5_000 }).toBe(2)
+
+		await context.setOffline(false)
+		await expect.poll(async () => (await ownerResponses(seeded)).map(response => response.f_name).sort(), { timeout: 30_000 }).toEqual(['Tab 1', 'Tab 2'])
+		await expect.poll(saved, { timeout: 10_000 }).toBe(0)
+		await second.close()
+	} finally {
+		await seeded.owner.close()
+	}
+})

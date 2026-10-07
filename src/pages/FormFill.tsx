@@ -34,10 +34,11 @@ import {
 	yesNoValueForKey,
 } from '../features/form-fill/flow'
 import {
-	countPendingResponseSubmissions,
 	countRejectedResponseSubmissions,
 	clearPublicFormProgress,
+	countPendingSubmissionsOnDevice,
 	flushResponseSubmissions,
+	koraSubmissionPresence,
 	getPublicOfflineDiagnostics,
 	getPublicOfflineReadiness,
 	getPublicSubmissionStatusHint,
@@ -322,12 +323,13 @@ export function FormFill({ formId, navigate }: Props) {
 		const hintFormId = String(form?.id || formId)
 		const hint = getPublicSubmissionStatusHint(hintFormId)
 		Promise.all([
-			resolveWithTimeout(countPendingResponseSubmissions(), PUBLIC_STATUS_READ_TIMEOUT_MS, null),
+			// Both queues, a response held by both counted once.
+			countPendingSubmissionsOnDevice(PUBLIC_STATUS_READ_TIMEOUT_MS).catch(() => null),
 			resolveWithTimeout(countRejectedResponseSubmissions(), PUBLIC_STATUS_READ_TIMEOUT_MS, null),
 			countFallbackSubmissions().catch(() => ({ pending: 0, rejected: 0 })),
 		])
 			.then(([pending, rejected, fallback]) => {
-				setPendingOfflineSubmissions((pending ?? hint.pending) + fallback.pending)
+				setPendingOfflineSubmissions(pending ?? hint.pending + fallback.pending)
 				setRejectedOfflineSubmissions((rejected ?? hint.rejected) + fallback.rejected)
 			})
 			.catch(() => {
@@ -364,11 +366,12 @@ export function FormFill({ formId, navigate }: Props) {
 		// Responses kept outside Kora (its database could not open) need no
 		// database to send, so they go first and are reported without waiting
 		// for a store that may still be opening.
-		const fallback = await flushFallbackSubmissions(
-			send,
-			// Kora's queue owns the attachments of a response it may also hold.
-			item => (item.mayAlsoBeInKoraQueue ? Promise.resolve() : deleteLocalBlobsFromResponseJson(item.data)),
-		).catch(() => ({ synced: 0, failed: 0, rejected: 0, remaining: 0 }))
+		const fallback = await flushFallbackSubmissions(send, {
+			// Kora's queue owns the attachments of a response it holds; whether it
+			// holds one is asked, never assumed.
+			koraPresence: id => koraSubmissionPresence(id),
+			deleteBlobs: data => deleteLocalBlobsFromResponseJson(data),
+		}).catch(() => ({ synced: 0, failed: 0, rejected: 0, remaining: 0 }))
 		if (fallback.synced > 0 || fallback.failed > 0 || fallback.rejected > 0) report(fallback)
 		const queued = await flushResponseSubmissions(send)
 			.catch(() => ({ synced: 0, failed: 0, rejected: 0, remaining: 0 }))
