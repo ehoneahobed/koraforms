@@ -1,16 +1,23 @@
 # Kora Beta Integration Audit
 
-Date: July 29, 2026 (baseline updated to 1.0.0-beta.13 on October 5, 2026)
+Date: July 29, 2026 (baseline updated to 1.0.0-beta.14 on October 8, 2026)
 
 This audit records the KoraForms integration baseline for the latest published Kora.js beta dist-tag. KoraForms is not in production yet, so the app intentionally drops compatibility paths for older beta framework behavior instead of preserving deprecated workarounds.
 
 ## Installed Baseline
 
-Every Kora package is pinned to exactly `1.0.0-beta.13`:
+Every Kora package is pinned to exactly `1.0.0-beta.14`:
 
 - `korajs`, `@korajs/core`, `@korajs/store`, `@korajs/react`, `@korajs/server`, `@korajs/auth`, `@korajs/cli`
 
 The package manager is pinned to pnpm 10.11 through `packageManager` in `package.json` (the Dockerfile and CI use the same version). pnpm 11 and later ignore `pnpm.onlyBuiltDependencies`; with the pin, a newer local pnpm switches to 10.11 so `better-sqlite3`, `esbuild` and `protobufjs` still build on a fresh clone.
+
+## 1.0.0-beta.14 Upgrade Notes
+
+- The boot-time binding of legacy node claims is gone: Kora hands a node with history but no owner to its signed-in device at the handshake (`deviceNodeHandover`, on by default). `tests/integration/node-claims.test.ts` pins the store half.
+- The forms slug constraint applies among published forms (`where: { status: 'published' }`). The former `{ $ne: 'draft' }` never matched, and beta.14 refuses it at startup. Publishing a second form with a live slug is refused by the server and undone on the author's device with a notice.
+- `server.ts` imports `src/schema.ts`; the runtime Docker stage copies it, and `tests/integration/dockerfile-runtime-files.test.ts` fails when a file the server imports at runtime is missing from the image.
+- `/__kora/*` endpoints whose token is unset answer `403` in production.
 
 ## 1.0.0-beta.13 Upgrade Notes
 
