@@ -28,7 +28,20 @@ export function htmlToPlainText(value: string): string {
 		el.innerHTML = value
 		return (el.textContent || '').replace(/\u00a0/g, ' ').trim()
 	}
-	return value.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+	return decodeHtmlEntities(value.replace(/<[^>]+>/g, ' ')).replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim()
+}
+
+const NAMED_ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: '\u00a0' }
+
+/** Decode the HTML entities a rich-text editor emits (named basics and numeric). */
+function decodeHtmlEntities(value: string): string {
+	return value.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (match, entity: string) => {
+		if (entity[0] === '#') {
+			const code = entity[1]?.toLowerCase() === 'x' ? Number.parseInt(entity.slice(2), 16) : Number.parseInt(entity.slice(1), 10)
+			return Number.isFinite(code) && code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : match
+		}
+		return NAMED_ENTITIES[entity.toLowerCase()] ?? match
+	})
 }
 
 /** True when rich text has no visible content. */

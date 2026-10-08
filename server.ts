@@ -26,6 +26,7 @@ import { evaluatePublicResponseAcceptance } from './src/domain/responseAcceptanc
 import { validatePublishedResponsePayload } from './src/domain/responseValidation'
 import { buildEmailNotificationPayload, buildSideEffectDeliveryJobs, buildWebhookPayload, isDeliverableWebhookUrl, isPublicWebhookIpAddress, normalizeWebhookConfig } from './src/domain/responseSideEffects'
 import { buildOpsDiagnosticsSnapshot } from './src/domain/opsDiagnostics'
+import { formLinkPreview, previewTargetFor } from './src/domain/linkPreview'
 import { MAX_PUBLIC_RESPONSE_BODY_BYTES, MAX_ROUTE_REQUEST_BODY_BYTES, SYNC_MAX_OPERATION_BYTES, resolveRateLimitScale } from './src/domain/limits'
 import type { FormField, FormSettings } from './src/types'
 type AnalyticsEventMetadata = Record<string, unknown>
@@ -404,6 +405,14 @@ async function main(): Promise<void> {
 		store,
 		port,
 		staticDir: distDir,
+		// Shared form links preview the form itself (title and description of a
+		// published form) instead of the generic KoraForms card.
+		shellMeta: async ({ path, kora }) => {
+			const target = previewTargetFor(path)
+			if (!target) return null
+			const [form] = await kora.query('forms', { where: { slug: target.key, status: 'published' }, limit: 1 })
+			return formLinkPreview(form ?? null, target, publicBaseUrl(), (candidate) => parseFormSettings(candidate.settings).publicResults === true)
+		},
 		syncPath: '/kora-sync',
 		trustProxy: readTrustProxyEnv(),
 		// The default (1 MiB) would refuse public responses with attachments
