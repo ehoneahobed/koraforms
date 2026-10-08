@@ -39,7 +39,10 @@ export default defineSchema({
 			constraints: [{
 				type: 'unique',
 				fields: ['slug'],
-				where: { status: { $ne: 'draft' } },
+				// Live links resolve slugs among published forms only. A constraint
+				// `where` matches by equality: the previous `{ $ne: 'draft' }` never
+				// applied (Kora beta.14 refuses it), so slugs were not unique at all.
+				where: { status: 'published' },
 				onConflict: 'first-write-wins',
 			}],
 		},

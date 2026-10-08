@@ -34,6 +34,7 @@ COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/server.ts ./
 COPY --from=builder /app/src/domain ./src/domain
 COPY --from=builder /app/src/types.ts ./src/types.ts
+COPY --from=builder /app/src/schema.ts ./src/schema.ts
 # Server imports shared helpers from src/utils (via types/domain). Keep this in
 # sync with server.ts imports: missing files crash the container at boot.
 COPY --from=builder /app/src/utils/formula.ts ./src/utils/formula.ts
