@@ -88,7 +88,7 @@ test('shared form links preview the published form; drafts keep the generic card
 		assert.match(pub.body, /<meta name="description" content="Check the seals before restart\." \/>/)
 		assert.match(pub.body, /<link rel="canonical" href="https:\/\/forms\.example\/f\/pump-3" \/>/)
 		const byId = await get(`${base}/f/f-pub`, crawler)
-		assert.match(byId.body, /<title>Pump 3 handover<\/title>/)
+		assert.match(byId.body, /<title>KoraForms<\/title>/, 'id paths are not previewed: the public form API resolves slugs only')
 		const draft = await get(`${base}/f/draft-1`, crawler)
 		assert.equal(draft.status, 200)
 		assert.match(draft.body, /<title>KoraForms<\/title>/)

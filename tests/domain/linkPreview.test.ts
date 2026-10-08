@@ -51,7 +51,20 @@ test('long descriptions are cut at a word; empty ones get an honest fallback', (
 	assert.equal(untitled?.title, 'Untitled form')
 })
 
-test('a form without a slug links by id', () => {
-	const preview = formLinkPreview({ ...published, slug: '' }, { key: 'f1', page: 'form' }, BASE, never)
-	assert.equal(preview?.url, 'https://forms.example/f/f1')
+test('a form without a slug is not previewed (the public API resolves slugs only)', () => {
+	assert.equal(formLinkPreview({ ...published, slug: '' }, { key: 'f1', page: 'form' }, BASE, never), null)
+})
+
+test('rich-text titles and descriptions preview as plain text, entities decoded', () => {
+	const preview = formLinkPreview(
+		{ ...published, title: '<p><strong>Tom &amp; Jerry</strong> survey</p>', description: '<p>Rate&nbsp;us: <em>&lt;1 min&gt;</em> &#8212; thanks</p>' },
+		{ key: 'pump-3', page: 'form' },
+		BASE,
+		never,
+	)
+	assert.equal(preview?.title, 'Tom & Jerry survey')
+	assert.equal(preview?.description, 'Rate us: <1 min> \u2014 thanks')
+	const empty = formLinkPreview({ ...published, title: '<p></p>', description: '<p><br></p>' }, { key: 'pump-3', page: 'form' }, BASE, never)
+	assert.equal(empty?.title, 'Untitled form')
+	assert.match(empty?.description ?? '', /keeps working without internet/)
 })

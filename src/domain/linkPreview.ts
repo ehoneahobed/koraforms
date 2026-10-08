@@ -9,6 +9,8 @@
  * generic KoraForms card, so nothing unpublished leaks through a preview.
  */
 
+import { htmlToPlainText } from '../utils/plainText'
+
 /** The fields of a form a preview may read. */
 export interface PreviewForm {
 	id: unknown
@@ -28,7 +30,11 @@ export interface FormLinkPreview {
 	siteName: 'KoraForms'
 }
 
-/** The form a shell path names: `/f/<slug or id>` and `/f/<slug>/results`. */
+/**
+ * The form a shell path names: `/f/<slug>` and `/f/<slug>/results`. Published forms
+ * always have a slug and the public form API resolves slugs only, so id paths are
+ * not previewed (a preview for a link that cannot load would mislead).
+ */
 export interface PreviewTarget {
 	key: string
 	page: 'form' | 'results'
@@ -65,7 +71,8 @@ export function formLinkPreview(
 	if (target.page === 'results' && !resultsArePublic(form)) return null
 	const title = plain(form.title) || 'Untitled form'
 	const description = excerpt(plain(form.description)) || FALLBACK_DESCRIPTION
-	const slug = plain(form.slug) || String(form.id)
+	const slug = plain(form.slug)
+	if (!slug) return null
 	const path = `/f/${encodeURIComponent(slug)}${target.page === 'results' ? '/results' : ''}`
 	return {
 		title: target.page === 'results' ? `Results: ${title}` : title,
@@ -76,8 +83,9 @@ export function formLinkPreview(
 	}
 }
 
+/** Titles and descriptions may be rich text (`<p><strong>…`): previews show plain text. */
 function plain(value: unknown): string {
-	return typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : ''
+	return typeof value === 'string' ? htmlToPlainText(value).replace(/\s+/g, ' ').trim() : ''
 }
 
 function excerpt(text: string): string {

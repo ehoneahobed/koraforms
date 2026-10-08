@@ -410,9 +410,8 @@ async function main(): Promise<void> {
 		shellMeta: async ({ path, kora }) => {
 			const target = previewTargetFor(path)
 			if (!target) return null
-			const [bySlug] = await kora.query('forms', { where: { slug: target.key, status: 'published' }, limit: 1 })
-			const form = bySlug ?? (target.page === 'form' ? await kora.findById('forms', target.key) : null)
-			return formLinkPreview(form, target, publicBaseUrl(), (candidate) => parseFormSettings(candidate.settings).publicResults === true)
+			const [form] = await kora.query('forms', { where: { slug: target.key, status: 'published' }, limit: 1 })
+			return formLinkPreview(form ?? null, target, publicBaseUrl(), (candidate) => parseFormSettings(candidate.settings).publicResults === true)
 		},
 		syncPath: '/kora-sync',
 		trustProxy: readTrustProxyEnv(),
