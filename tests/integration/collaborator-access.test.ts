@@ -1,0 +1,57 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import { MemoryServerStore, createKoraServer } from '@korajs/server'
+import schema from '../../src/schema'
+import { backfillFormMemberships, grantFormMembership, revokeFormMembership } from '../../src/domain/collaboratorAccess'
+
+// Accepted collaborations become form memberships: at startup for rows accepted before
+// access rules existed, and through the collaborator routes afterwards.
+
+async function setup() {
+	const store = new MemoryServerStore()
+	await store.setSchema(schema, { accessRulesEnforced: true })
+	const server = createKoraServer({ store, schema, experimentalAccessRules: true, accessSweepIntervalMs: 0 })
+	const kora = server.getKoraContext()
+	await kora.apply({ collection: 'forms', type: 'insert', recordId: 'f1', data: { title: 'Survey', ownerId: 'alice' } })
+	const collaborator = (recordId: string, data: Record<string, unknown>) =>
+		kora.apply({
+			collection: 'form_collaborators',
+			type: 'insert',
+			recordId,
+			data: { formId: 'f1', email: `${recordId}@example.com`, expiresAt: 0, createdAt: 0, ...data },
+		})
+	return { store, server, kora, collaborator }
+}
+
+test('startup backfill grants accepted collaborators their role, once', async () => {
+	const { store, server, collaborator } = await setup()
+	try {
+		await collaborator('bob', { userId: 'bob', role: 'viewer', status: 'accepted' })
+		await collaborator('carol', { role: 'editor' }) // pending: no user yet
+		assert.equal(await backfillFormMemberships(server.getKoraContext(), server.access), 1)
+		const bob = (await store.getMembershipIntervals?.('bob')) ?? []
+		assert.deepEqual(bob.map((i) => [i.group, i.role, i.leftSeq]), [['forms:f1', 'viewer', null]])
+		assert.equal(await backfillFormMemberships(server.getKoraContext(), server.access), 0, 'a matching membership is left alone')
+		// The owner is a member through the form itself.
+		const alice = (await store.getMembershipIntervals?.('alice')) ?? []
+		assert.deepEqual(alice.map((i) => [i.group, i.role, i.source]), [['forms:f1', 'owner', 'owner']])
+	} finally {
+		await server.stop?.()
+	}
+})
+
+test('a role change and a removal move the membership', async () => {
+	const { store, server } = await setup()
+	try {
+		const collab = { formId: 'f1', userId: 'bob', role: 'viewer', status: 'accepted' }
+		await grantFormMembership(server.access, collab)
+		await grantFormMembership(server.access, { ...collab, role: 'admin' })
+		assert.equal((await store.getMembershipIntervals?.('bob'))?.[0]?.role, 'admin')
+		await revokeFormMembership(server.access, collab)
+		assert.notEqual((await store.getMembershipIntervals?.('bob'))?.[0]?.leftSeq, null)
+		await grantFormMembership(server.access, { ...collab, status: 'pending' })
+		assert.equal((await store.getMembershipIntervals?.('bob'))?.length, 1, 'a pending invitation grants nothing')
+	} finally {
+		await server.stop?.()
+	}
+})

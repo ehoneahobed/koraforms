@@ -27,6 +27,7 @@ import { validatePublishedResponsePayload } from './src/domain/responseValidatio
 import { buildEmailNotificationPayload, buildSideEffectDeliveryJobs, buildWebhookPayload, isDeliverableWebhookUrl, isPublicWebhookIpAddress, normalizeWebhookConfig } from './src/domain/responseSideEffects'
 import { buildOpsDiagnosticsSnapshot } from './src/domain/opsDiagnostics'
 import { formLinkPreview, previewTargetFor } from './src/domain/linkPreview'
+import { backfillFormMemberships, grantFormMembership, revokeFormMembership } from './src/domain/collaboratorAccess'
 import { MAX_PUBLIC_RESPONSE_BODY_BYTES, MAX_ROUTE_REQUEST_BODY_BYTES, SYNC_MAX_OPERATION_BYTES, resolveRateLimitScale } from './src/domain/limits'
 import type { FormField, FormSettings } from './src/types'
 type AnalyticsEventMetadata = Record<string, unknown>
@@ -82,7 +83,7 @@ type NormalizedPublicAnalyticsEvent = {
 	updatedAt: number
 }
 
-const SCHEMA_VERSION = 19
+const SCHEMA_VERSION = 20
 const RESUME_LINK_TTL_MS = 30 * 24 * 60 * 60 * 1000
 const MAX_RESUME_PAYLOAD_BYTES = 128 * 1024
 const MAX_PUBLIC_ANALYTICS_EVENTS_PER_BATCH = 50
@@ -250,7 +251,8 @@ async function main(): Promise<void> {
 	const rateLimiter = createRateLimiter(resolveRateLimitScale(process.env))
 	const jwtSecret = resolveAuthSecret()
 
-	await store.setSchema(koraFormsSchema)
+	// The schema declares access rules; the sync server below enforces them.
+	await store.setSchema(koraFormsSchema, { accessRulesEnforced: true })
 	console.log('Materialized collection tables initialized')
 
 	// Node ids written before node claims existed (beta.12 and older) are claimed
@@ -419,11 +421,11 @@ async function main(): Promise<void> {
 		// between 1 and 2 MiB with 413 before the route runs.
 		maxRequestBodyBytes: MAX_ROUTE_REQUEST_BODY_BYTES,
 		syncOptions: {
-			// Authenticated users get full access. Public respondent submissions
-			// are finalized through validated public routes that now write through
-			// Kora's route data-plane API. Anonymous sync remains closed until the
-			// framework can scope and validate public submission operations before
-			// owner-visible materialization.
+			// Each signed-in user syncs only the forms they own or collaborate on, as the
+			// schema's access rules say. Public respondent submissions are finalized
+			// through validated public routes that write through Kora's route data plane;
+			// anonymous sessions read and write nothing.
+			experimentalAccessRules: true,
 			auth: new MixedAuthProvider({
 				primary: auth.auth,
 				anonymousScopes: {},
@@ -761,6 +763,7 @@ async function main(): Promise<void> {
 							userId,
 							status: 'accepted',
 						})
+						await grantFormMembership(req.access, { ...collab, userId, status: 'accepted' })
 
 						// Record audit event
 						await insertRouteRecord(req.kora, 'audit_events', randomUUID(), {
@@ -818,6 +821,9 @@ async function main(): Promise<void> {
 						}
 
 						await updateRouteRecord(req.kora, 'form_collaborators', collaboratorId, { role })
+						if (collab.status === 'accepted') {
+							await grantFormMembership(req.access, { ...collab, role })
+						}
 
 						await insertRouteRecord(req.kora, 'audit_events', randomUUID(), {
 							formId,
@@ -870,8 +876,9 @@ async function main(): Promise<void> {
 							return withCors({ status: 403, body: { error: 'Only the form owner can remove admins.' } })
 						}
 
-						// Mark as declined (removes access via status transition)
+						// Mark as declined, and end the membership: their devices drop the form.
 						await updateRouteRecord(req.kora, 'form_collaborators', collaboratorId, { status: 'declined' })
+						await revokeFormMembership(req.access, collab)
 
 						await insertRouteRecord(req.kora, 'audit_events', randomUUID(), {
 							formId,
@@ -915,6 +922,7 @@ async function main(): Promise<void> {
 						}
 
 						await updateRouteRecord(req.kora, 'form_collaborators', String(collab.id), { status: 'declined' })
+						await revokeFormMembership(req.access, collab)
 
 						await insertRouteRecord(req.kora, 'audit_events', randomUUID(), {
 							formId,
@@ -1490,6 +1498,9 @@ async function main(): Promise<void> {
 	sideEffectProcessor.start()
 
 	const url = await server.start()
+	// Collaborations accepted before access rules existed become memberships.
+	const backfilled = await backfillFormMemberships(server.kora, server.access)
+	if (backfilled > 0) console.log(`Granted ${backfilled} collaborator membership(s)`)
 	createCentralBlobGarbageCollector(server, blobStore).start()
 	console.log(`KoraForms running at ${url}`)
 }
