@@ -56,3 +56,21 @@ export async function backfillFormMemberships(
 	}
 	return result.granted
 }
+
+/**
+ * End a collaboration (removed by an admin, or the collaborator left): the membership
+ * goes first, so the person loses access even if anything after it fails, then the
+ * collaborator row is deleted (an accepted row cannot move to another status, and a
+ * deleted invitation's link stops working).
+ */
+export async function endCollaboration(
+	kora: ProductionHttpRouteContext,
+	access: AccessApi,
+	collab: Pick<CollaboratorMembership, 'formId' | 'userId'> & { id: string },
+): Promise<void> {
+	await revokeFormMembership(access, collab)
+	const result = await kora.apply({ collection: 'form_collaborators', type: 'delete', recordId: collab.id })
+	if (!result.ok) {
+		throw new Error(`Removing collaborator ${collab.id} failed: ${result.code} ${result.message}`)
+	}
+}

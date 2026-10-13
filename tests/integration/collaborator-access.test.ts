@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { MemoryServerStore, createKoraServer } from '@korajs/server'
 import schema from '../../src/schema'
-import { backfillFormMemberships, grantFormMembership, revokeFormMembership } from '../../src/domain/collaboratorAccess'
+import { backfillFormMemberships, endCollaboration, grantFormMembership, revokeFormMembership } from '../../src/domain/collaboratorAccess'
 
 // Accepted collaborations become form memberships: at startup for rows accepted before
 // access rules existed, and through the collaborator routes afterwards.
@@ -51,6 +51,20 @@ test('a role change and a removal move the membership', async () => {
 		assert.notEqual((await store.getMembershipIntervals?.('bob'))?.[0]?.leftSeq, null)
 		await grantFormMembership(server.access, { ...collab, status: 'pending' })
 		assert.equal((await store.getMembershipIntervals?.('bob'))?.length, 1, 'a pending invitation grants nothing')
+	} finally {
+		await server.stop?.()
+	}
+})
+
+test('removing an accepted collaborator ends the membership and the collaboration', async () => {
+	const { store, server, kora, collaborator } = await setup()
+	try {
+		await collaborator('bob', { userId: 'bob', role: 'editor', status: 'accepted' })
+		await grantFormMembership(server.access, { formId: 'f1', userId: 'bob', role: 'editor', status: 'accepted' })
+		await endCollaboration(kora, server.access, { id: 'bob', formId: 'f1', userId: 'bob' })
+		const bob = (await store.getMembershipIntervals?.('bob')) ?? []
+		assert.ok(bob.every((i) => i.leftSeq !== null), 'no live membership remains')
+		assert.equal(await kora.findById('form_collaborators', 'bob'), null)
 	} finally {
 		await server.stop?.()
 	}

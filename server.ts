@@ -27,7 +27,7 @@ import { validatePublishedResponsePayload } from './src/domain/responseValidatio
 import { buildEmailNotificationPayload, buildSideEffectDeliveryJobs, buildWebhookPayload, isDeliverableWebhookUrl, isPublicWebhookIpAddress, normalizeWebhookConfig } from './src/domain/responseSideEffects'
 import { buildOpsDiagnosticsSnapshot } from './src/domain/opsDiagnostics'
 import { formLinkPreview, previewTargetFor } from './src/domain/linkPreview'
-import { backfillFormMemberships, grantFormMembership, revokeFormMembership } from './src/domain/collaboratorAccess'
+import { backfillFormMemberships, endCollaboration, grantFormMembership } from './src/domain/collaboratorAccess'
 import { MAX_PUBLIC_RESPONSE_BODY_BYTES, MAX_ROUTE_REQUEST_BODY_BYTES, SYNC_MAX_OPERATION_BYTES, resolveRateLimitScale } from './src/domain/limits'
 import type { FormField, FormSettings } from './src/types'
 type AnalyticsEventMetadata = Record<string, unknown>
@@ -876,9 +876,8 @@ async function main(): Promise<void> {
 							return withCors({ status: 403, body: { error: 'Only the form owner can remove admins.' } })
 						}
 
-						// Mark as declined, and end the membership: their devices drop the form.
-						await updateRouteRecord(req.kora, 'form_collaborators', collaboratorId, { status: 'declined' })
-						await revokeFormMembership(req.access, collab)
+						// End the membership (their devices drop the form), then the collaborator row.
+						await endCollaboration(req.kora, req.access, { ...collab, id: collaboratorId })
 
 						await insertRouteRecord(req.kora, 'audit_events', randomUUID(), {
 							formId,
@@ -921,8 +920,7 @@ async function main(): Promise<void> {
 							return withCors({ status: 404, body: { error: 'You are not a collaborator on this form.' } })
 						}
 
-						await updateRouteRecord(req.kora, 'form_collaborators', String(collab.id), { status: 'declined' })
-						await revokeFormMembership(req.access, collab)
+						await endCollaboration(req.kora, req.access, { ...collab, id: String(collab.id) })
 
 						await insertRouteRecord(req.kora, 'audit_events', randomUUID(), {
 							formId,
