@@ -36,15 +36,16 @@ export async function revokeFormMembership(access: AccessApi, collab: Pick<Colla
 }
 
 /**
- * Give every accepted collaborator the membership their row says, for collaborations
- * accepted before access rules existed (and any grant a crash interrupted). Runs at
- * startup; Kora leaves memberships that already match alone. Returns how many were
- * granted.
+ * Make form memberships match the collaborators table, both ways: every accepted
+ * collaborator holds the membership their row says, and a form membership with no
+ * accepted row is ended. Runs at startup, before sync connections are accepted, so it
+ * also finishes a removal a crash interrupted. Kora leaves matching memberships alone.
+ * Returns how many memberships were granted and revoked.
  */
-export async function backfillFormMemberships(
+export async function reconcileFormMemberships(
 	kora: ProductionHttpRouteContext,
 	access: AccessApi,
-): Promise<number> {
+): Promise<{ granted: number; revoked: number }> {
 	const accepted = await kora.query('form_collaborators', { where: { status: 'accepted' }, limit: 100_000 })
 	const memberships = accepted
 		.filter((row) => row.formId && row.userId)
@@ -52,25 +53,37 @@ export async function backfillFormMemberships(
 	const result = await access.backfill(memberships)
 	if (result.failed.length > 0) {
 		const first = result.failed[0]
-		throw new Error(`Backfilling form memberships failed for ${result.failed.length} collaborator(s): ${first?.code} ${first?.message}`)
+		throw new Error(`Granting form memberships failed for ${result.failed.length} collaborator(s): ${first?.code} ${first?.message}`)
 	}
-	return result.granted
+	const wanted = new Set(memberships.map((m) => `${m.userId}\u0000${m.group[1]}`))
+	let revoked = 0
+	for (const row of await kora.query('members', { limit: 100_000 })) {
+		const group = String(row.group ?? '')
+		if (!group.startsWith('forms:')) continue
+		const formId = group.slice('forms:'.length)
+		const userId = String(row.userId ?? '')
+		if (wanted.has(`${userId}\u0000${formId}`)) continue
+		await revokeFormMembership(access, { formId, userId })
+		revoked += 1
+	}
+	return { granted: result.granted, revoked }
 }
 
 /**
- * End a collaboration (removed by an admin, or the collaborator left): the membership
- * goes first, so the person loses access even if anything after it fails, then the
- * collaborator row is deleted (an accepted row cannot move to another status, and a
- * deleted invitation's link stops working).
+ * End a collaboration (removed by an admin, or the collaborator left): the collaborator
+ * row is deleted (an accepted row cannot move to another status, and a deleted
+ * invitation's link stops working), then the membership ends.
  */
 export async function endCollaboration(
 	kora: ProductionHttpRouteContext,
 	access: AccessApi,
 	collab: Pick<CollaboratorMembership, 'formId' | 'userId'> & { id: string },
 ): Promise<void> {
-	await revokeFormMembership(access, collab)
+	// The row is the source of truth: delete it first, so a crash before the revoke is
+	// finished by the startup reconciliation instead of re-granting the removed user.
 	const result = await kora.apply({ collection: 'form_collaborators', type: 'delete', recordId: collab.id })
 	if (!result.ok) {
 		throw new Error(`Removing collaborator ${collab.id} failed: ${result.code} ${result.message}`)
 	}
+	await revokeFormMembership(access, collab)
 }

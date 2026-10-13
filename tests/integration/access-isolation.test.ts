@@ -124,6 +124,15 @@ test('forms and responses reach their owner and collaborators only, and leave on
 		const [stored] = await server.getKoraContext().query('forms', { where: { id: form.id }, limit: 1 })
 		assert.equal(stored?.title, 'Survey')
 
+		// An editor still cannot change collected results.
+		await grantFormMembership(server.access, { formId: form.id, userId: 'bob', role: 'editor', status: 'accepted' })
+		await settle()
+		const refusalsBefore = bob.rejections.length
+		await bob.store.collection('responses').insert({ formId: form.id, submittedAt: 2 })
+		await settle()
+		assert.ok(bob.rejections.length > refusalsBefore, 'an editor cannot add a response')
+		assert.equal((await server.getKoraContext().query('responses', { where: { formId: form.id } })).length, 1)
+
 		// Removed: Bob's device drops the form and its responses.
 		await revokeFormMembership(server.access, { formId: form.id, userId: 'bob' })
 		await settle()

@@ -84,10 +84,11 @@ export default defineSchema({
 			indexes: ['formId', 'clientSubmissionId', 'formVersionHash', 'submittedAt'],
 			access: {
 				read: member('formId', 'viewer', FORM),
-				// Respondents submit through the public routes (server writes); a creator may add
-				// sample responses.
-				create: member('formId', 'editor', FORM),
-				update: member('formId', 'editor', FORM),
+				// Respondents submit through the public routes (server writes). Collected results
+				// are not editable by editors: only admins and the owner (sample responses, a
+				// workspace restore) write them from a device.
+				create: member('formId', 'admin', FORM),
+				update: member('formId', 'admin', FORM),
 				delete: member('formId', 'admin', FORM),
 			},
 		},

@@ -27,7 +27,7 @@ import { validatePublishedResponsePayload } from './src/domain/responseValidatio
 import { buildEmailNotificationPayload, buildSideEffectDeliveryJobs, buildWebhookPayload, isDeliverableWebhookUrl, isPublicWebhookIpAddress, normalizeWebhookConfig } from './src/domain/responseSideEffects'
 import { buildOpsDiagnosticsSnapshot } from './src/domain/opsDiagnostics'
 import { formLinkPreview, previewTargetFor } from './src/domain/linkPreview'
-import { backfillFormMemberships, endCollaboration, grantFormMembership } from './src/domain/collaboratorAccess'
+import { endCollaboration, grantFormMembership, reconcileFormMemberships } from './src/domain/collaboratorAccess'
 import { MAX_PUBLIC_RESPONSE_BODY_BYTES, MAX_ROUTE_REQUEST_BODY_BYTES, SYNC_MAX_OPERATION_BYTES, resolveRateLimitScale } from './src/domain/limits'
 import type { FormField, FormSettings } from './src/types'
 type AnalyticsEventMetadata = Record<string, unknown>
@@ -1495,10 +1495,13 @@ async function main(): Promise<void> {
 	sideEffectProcessor = createSideEffectProcessor(server.kora)
 	sideEffectProcessor.start()
 
+	// Memberships follow the collaborators table before any device connects: a collaborator
+	// reconnecting at startup must find their access in place.
+	const reconciled = await reconcileFormMemberships(server.kora, server.access)
+	if (reconciled.granted + reconciled.revoked > 0) {
+		console.log(`Collaborator memberships: ${reconciled.granted} granted, ${reconciled.revoked} revoked`)
+	}
 	const url = await server.start()
-	// Collaborations accepted before access rules existed become memberships.
-	const backfilled = await backfillFormMemberships(server.kora, server.access)
-	if (backfilled > 0) console.log(`Granted ${backfilled} collaborator membership(s)`)
 	createCentralBlobGarbageCollector(server, blobStore).start()
 	console.log(`KoraForms running at ${url}`)
 }
