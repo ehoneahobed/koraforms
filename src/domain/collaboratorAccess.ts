@@ -55,7 +55,12 @@ export async function reconcileFormMemberships(
 		const first = result.failed[0]
 		throw new Error(`Granting form memberships failed for ${result.failed.length} collaborator(s): ${first?.code} ${first?.message}`)
 	}
-	const wanted = new Set(memberships.map((m) => `${m.userId}\u0000${m.group[1]}`))
+	// Collaborations of a deleted form grant nothing: Kora reports them in missingGroups,
+	// and their memberships are revoked below like any membership with no accepted row.
+	const missing = new Set(result.missingGroups.map((m) => `${m.userId}\u0000${typeof m.group === 'string' ? m.group : m.group[1]}`))
+	const wanted = new Set(
+		memberships.map((m) => `${m.userId}\u0000${m.group[1]}`).filter((key) => !missing.has(key)),
+	)
 	let revoked = 0
 	for (const row of await kora.query('members', { limit: 100_000 })) {
 		const group = String(row.group ?? '')

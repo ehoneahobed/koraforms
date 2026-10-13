@@ -82,3 +82,17 @@ test('startup reconciliation finishes a removal a crash interrupted', async () =
 		await server.stop?.()
 	}
 })
+
+test('a deleted form keeps no collaborator access, even with its collaborator rows left', async () => {
+	const { store, server, kora, collaborator } = await setup()
+	try {
+		await collaborator('bob', { userId: 'bob', role: 'editor', status: 'accepted' })
+		await reconcileFormMemberships(kora, server.access)
+		await kora.apply({ collection: 'forms', type: 'delete', recordId: 'f1' })
+		assert.deepEqual(await reconcileFormMemberships(kora, server.access), { granted: 0, revoked: 1 })
+		const bob = (await store.getMembershipIntervals?.('bob')) ?? []
+		assert.ok(bob.every((i) => i.leftSeq !== null), 'no live membership remains')
+	} finally {
+		await server.stop?.()
+	}
+})

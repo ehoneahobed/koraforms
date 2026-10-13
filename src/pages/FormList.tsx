@@ -182,13 +182,15 @@ export function FormList({ navigate, userId }: Props) {
 	}
 
 	const handleDeleteForm = async (form: FormRecord) => {
-		await deleteForm(String(form.id))
-		void recordAuditEvent(app.audit_events, {
+		// The audit event first: once the form is gone, its owner is no longer a member and
+		// the server refuses audit writes for it.
+		await recordAuditEvent(app.audit_events, {
 			formId: String(form.id),
 			actorId: userId,
 			eventType: 'form_deleted',
 			summary: 'Deleted form',
 		})
+		await deleteForm(String(form.id))
 	}
 
 	const handleCopyLink = async (form: FormRecord) => {
