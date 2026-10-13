@@ -38,7 +38,7 @@ export async function revokeFormMembership(access: AccessApi, collab: Pick<Colla
 /**
  * Give every accepted collaborator the membership their row says, for collaborations
  * accepted before access rules existed (and any grant a crash interrupted). Runs at
- * startup; a membership that already matches is left alone. Returns how many were
+ * startup; Kora leaves memberships that already match alone. Returns how many were
  * granted.
  */
 export async function backfillFormMemberships(
@@ -46,22 +46,13 @@ export async function backfillFormMemberships(
 	access: AccessApi,
 ): Promise<number> {
 	const accepted = await kora.query('form_collaborators', { where: { status: 'accepted' }, limit: 100_000 })
-	let granted = 0
-	for (const row of accepted) {
-		const collab = {
-			formId: String(row.formId ?? ''),
-			userId: String(row.userId ?? ''),
-			role: String(row.role ?? 'editor'),
-			status: 'accepted',
-		}
-		if (!collab.formId || !collab.userId) continue
-		const [existing] = await kora.query('members', {
-			where: { userId: collab.userId, group: `forms:${collab.formId}` },
-			limit: 1,
-		})
-		if (existing && existing.role === collab.role) continue
-		await grantFormMembership(access, collab)
-		granted += 1
+	const memberships = accepted
+		.filter((row) => row.formId && row.userId)
+		.map((row) => ({ userId: String(row.userId), group: formGroup(String(row.formId)), role: String(row.role ?? 'editor') }))
+	const result = await access.backfill(memberships)
+	if (result.failed.length > 0) {
+		const first = result.failed[0]
+		throw new Error(`Backfilling form memberships failed for ${result.failed.length} collaborator(s): ${first?.code} ${first?.message}`)
 	}
-	return granted
+	return result.granted
 }

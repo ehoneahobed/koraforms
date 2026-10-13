@@ -25,11 +25,11 @@
     "logs": "kora logs --url http://localhost:3001"
   },
   "dependencies": {
-    "@korajs/auth": "0.0.0-canary-20261010205528",
-    "@korajs/core": "0.0.0-canary-20261010205528",
-    "@korajs/react": "0.0.0-canary-20261010205528",
-    "@korajs/server": "0.0.0-canary-20261010205528",
-    "@korajs/store": "0.0.0-canary-20261010205528",
+    "@korajs/auth": "0.0.0-canary-20261013035517",
+    "@korajs/core": "0.0.0-canary-20261013035517",
+    "@korajs/react": "0.0.0-canary-20261013035517",
+    "@korajs/server": "0.0.0-canary-20261013035517",
+    "@korajs/store": "0.0.0-canary-20261013035517",
     "@sqlite.org/sqlite-wasm": ">=3.51.0-build1",
     "@tiptap/extension-link": "^3.31.3",
     "@tiptap/extension-placeholder": "^3.31.3",
@@ -39,7 +39,7 @@
     "@tiptap/starter-kit": "^3.31.3",
     "better-sqlite3": "^12.9.0",
     "isomorphic-dompurify": "^4.2.0",
-    "korajs": "0.0.0-canary-20261010205528",
+    "korajs": "0.0.0-canary-20261013035517",
     "lucide-react": "^0.468.0",
     "postgres": "^3.4.0",
     "qrcode": "^1.5.4",
@@ -57,9 +57,9 @@
     ]
   },
   "devDependencies": {
-    "@korajs/cli": "0.0.0-canary-20261010205528",
-    "@korajs/merge": "0.0.0-canary-20261010205528",
-    "@korajs/sync": "0.0.0-canary-20261010205528",
+    "@korajs/cli": "0.0.0-canary-20261013035517",
+    "@korajs/merge": "0.0.0-canary-20261013035517",
+    "@korajs/sync": "0.0.0-canary-20261013035517",
     "@playwright/test": "^1.61.1",
     "@tailwindcss/vite": "^4.0.0",
     "@types/better-sqlite3": "^7.6.13",
