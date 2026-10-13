@@ -1,4 +1,4 @@
-import { defineSchema, t } from 'korajs'
+import { and, defineSchema, member, memberOfKey, owner, t } from 'korajs'
 import type { FormField, FormSettings } from './types'
 
 type ResponseData = Record<string, unknown>
@@ -7,9 +7,27 @@ type AnalyticsEventMetadata = Record<string, unknown>
 type SavedAnalyticsFilters = Array<{ fieldId: string; value: string }>
 type ResponseExportPresetConfig = { selectedFieldIds: string[]; includeMetadata: boolean }
 
+/** A collaborator's access to a form: `member(field, 'viewer', FORM)`. */
+const FORM = { group: 'forms' } as const
+
 export default defineSchema({
-	version: 19,
+	version: 20,
+	// Who may read and write what, enforced by the sync server and followed live by
+	// every device: a form is a group; its creator is its 'owner', and accepted
+	// collaborators are members with their role (written by the collaborator routes).
+	access: {
+		memberships: 'members',
+		roles: ['viewer', 'editor', 'admin', 'owner'],
+		groups: { forms: { owner: 'ownerId', role: 'owner' } },
+	},
 	collections: {
+		// Form memberships of accepted collaborators. Server-written only.
+		members: {
+			fields: { userId: t.string(), group: t.string(), role: t.string() },
+			indexes: ['userId', 'group'],
+			access: { read: memberOfKey('group') },
+		},
+
 		// A form definition (e.g. "Customer Feedback", "Event Registration")
 		forms: {
 			fields: {
@@ -27,8 +45,8 @@ export default defineSchema({
 				theme: t.string().default('red'),
 				// Counter merge: concurrent submissions add rather than overwrite
 				responseCount: t.number().default(0).merge('counter'),
-				// User who created this form
-				ownerId: t.string().default(''),
+				// User who created this form (filled with the signed-in user on insert)
+				ownerId: t.string().stamp('userId'),
 				// URL-friendly slug for shareable links
 				slug: t.string().default(''),
 				accessPassword: t.secret().hashed().optional(),
@@ -45,6 +63,12 @@ export default defineSchema({
 				where: { status: 'published' },
 				onConflict: 'first-write-wins',
 			}],
+			access: {
+				read: member('id'),
+				create: owner('ownerId'),
+				update: member('id', 'editor'),
+				delete: member('id', 'owner'),
+			},
 		},
 
 		// A single form submission
@@ -58,6 +82,15 @@ export default defineSchema({
 				submittedAt: t.number(),
 			},
 			indexes: ['formId', 'clientSubmissionId', 'formVersionHash', 'submittedAt'],
+			access: {
+				read: member('formId', 'viewer', FORM),
+				// Respondents submit through the public routes (server writes). Collected results
+				// are not editable by editors: only admins and the owner (sample responses, a
+				// workspace restore) write them from a device.
+				create: member('formId', 'admin', FORM),
+				update: member('formId', 'admin', FORM),
+				delete: member('formId', 'admin', FORM),
+			},
 		},
 
 		form_analytics_events: {
@@ -89,12 +122,14 @@ export default defineSchema({
 				fields: ['formId', 'clientEventId'],
 				onConflict: 'first-write-wins',
 			}],
+			// Recorded by the public routes; the creator reads them.
+			access: { read: member('formId', 'viewer', FORM) },
 		},
 
 		response_filter_views: {
 			fields: {
 				formId: t.string(),
-				ownerId: t.string().default(''),
+				ownerId: t.string().stamp('userId'),
 				name: t.string(),
 				timeRange: t.enum(['7d', '14d', '30d', '90d', 'all']).default('30d'),
 				filters: t.json<SavedAnalyticsFilters>().default([]),
@@ -107,12 +142,17 @@ export default defineSchema({
 				fields: ['formId', 'ownerId', 'name'],
 				onConflict: 'last-write-wins',
 			}],
+			// Each user's own saved views of a form they can read.
+			access: {
+				read: and(owner('ownerId'), member('formId', 'viewer', FORM)),
+				write: and(owner('ownerId'), member('formId', 'viewer', FORM)),
+			},
 		},
 
 		response_export_presets: {
 			fields: {
 				formId: t.string(),
-				ownerId: t.string().default(''),
+				ownerId: t.string().stamp('userId'),
 				name: t.string(),
 				format: t.enum(['csv', 'json']).default('csv'),
 				config: t.json<ResponseExportPresetConfig>().default({ selectedFieldIds: [], includeMetadata: true }),
@@ -125,6 +165,11 @@ export default defineSchema({
 				fields: ['formId', 'ownerId', 'name'],
 				onConflict: 'last-write-wins',
 			}],
+			// Each user's own saved views of a form they can read.
+			access: {
+				read: and(owner('ownerId'), member('formId', 'viewer', FORM)),
+				write: and(owner('ownerId'), member('formId', 'viewer', FORM)),
+			},
 		},
 
 		// Sanitized, immutable public form payloads cached in Kora's local
@@ -152,6 +197,11 @@ export default defineSchema({
 				fields: ['slug', 'versionHash'],
 				onConflict: 'first-write-wins',
 			}],
+			access: {
+				read: member('formId', 'viewer', FORM),
+				create: member('formId', 'editor', FORM),
+				update: member('formId', 'editor', FORM),
+			},
 		},
 
 		// Respondent-side durable outbox. These records live in Kora's offline
@@ -181,6 +231,8 @@ export default defineSchema({
 				fields: ['formId', 'clientSubmissionId'],
 				onConflict: 'first-write-wins',
 			}],
+			// Lives in the respondent's local database only (it never syncs).
+			access: {},
 		},
 
 		public_form_progress: {
@@ -200,6 +252,8 @@ export default defineSchema({
 				fields: ['slug'],
 				onConflict: 'last-write-wins',
 			}],
+			// Lives in the respondent's local database only (it never syncs).
+			access: {},
 		},
 
 		resume_links: {
@@ -223,6 +277,8 @@ export default defineSchema({
 				fields: ['token'],
 				onConflict: 'first-write-wins',
 			}],
+			// Server-only: resume tokens are handed out by the public routes.
+			access: {},
 		},
 
 		side_effect_deliveries: {
@@ -245,6 +301,8 @@ export default defineSchema({
 				updatedAt: t.number(),
 			},
 			indexes: ['responseId', 'formId', 'type', 'status', 'nextAttemptAt', 'createdAt'],
+			// Written by the server's delivery worker; the creator sees delivery status.
+			access: { read: member('formId', 'viewer', FORM) },
 		},
 
 		form_collaborators: {
@@ -269,6 +327,8 @@ export default defineSchema({
 				fields: ['formId', 'email'],
 				onConflict: 'last-write-wins',
 			}],
+			// Invitations are written by the collaborator routes.
+			access: { read: member('formId', 'viewer', FORM) },
 		},
 
 		audit_events: {
@@ -305,6 +365,11 @@ export default defineSchema({
 				createdAt: t.number(),
 			},
 			indexes: ['formId', 'actorId', 'eventType', 'createdAt'],
+			access: {
+				read: member('formId', 'viewer', FORM),
+				// A member records their own actions; the server records the rest.
+				create: and(owner('actorId'), member('formId', 'viewer', FORM)),
+			},
 		},
 	},
 })

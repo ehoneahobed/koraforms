@@ -12,6 +12,16 @@ Every Kora package is pinned to exactly `1.0.0-beta.14`:
 
 The package manager is pinned to pnpm 10.11 through `packageManager` in `package.json` (the Dockerfile and CI use the same version). pnpm 11 and later ignore `pnpm.onlyBuiltDependencies`; with the pin, a newer local pnpm switches to 10.11 so `better-sqlite3`, `esbuild` and `protobufjs` still build on a fresh clone.
 
+## Access Rules (Kora beta.15 canary)
+
+KoraForms runs on a Kora canary with access rules (`experimentalAccessRules`), schema version 20:
+
+- A form is an access group. Its creator is its `owner` (`forms.ownerId` is `t.string().stamp('userId')`, filled on insert); accepted collaborators are members with their role (`viewer` < `editor` < `admin` < `owner`), written to the new `members` collection by the collaborator routes (`src/domain/collaboratorAccess.ts`). Collaborations accepted before this change are granted at startup.
+- Each signed-in user's devices sync only the forms they own or collaborate on, with their responses, analytics events, audit events, invitations and delivery status. Saved response views and export presets are their author's own. Respondent-only collections (`response_submissions`, `public_form_progress`) and `resume_links` never sync.
+- Removing a collaborator or a collaborator leaving drops the form from their devices at once; a role change applies to their next write.
+- Writes are checked by the server against the role: viewers cannot edit, editors cannot delete responses or the form, only the owner deletes a form.
+- `tests/integration/access-isolation.test.ts` runs two real devices against the sync server; `tests/integration/collaborator-access.test.ts` covers the memberships.
+
 ## 1.0.0-beta.14 Upgrade Notes
 
 - The boot-time binding of legacy node claims is gone: Kora hands a node with history but no owner to its signed-in device at the handshake (`deviceNodeHandover`, on by default). `tests/integration/node-claims.test.ts` pins the store half.
@@ -27,7 +37,6 @@ The package manager is pinned to pnpm 10.11 through `packageManager` in `package
 - Production trusts one proxy hop for `X-Forwarded-For` (`trustProxy`, overridable with `KORA_TRUST_PROXY`); route rate limits key on `req.ip`. The app no longer parses forwarding headers itself and no longer patches `ws` for keepalive: Kora's built-in 25 s heartbeats cover the Azure ingress idle timeout.
 - `useQuery` renders `[]` before its first local result. Pages where "loading" and "nothing found" differ use `useQueryState`. Failed local queries are thrown to route-level error boundaries.
 - Creator notices cover `store:storage-blocked`, `store:durability-lost`, `store:schema-ahead` and terminal `sync:operation-rejected`; the respondent runtime treats durability loss and blocked storage as blocking readiness issues.
-- Per-user sync scopes are not declared yet; that work follows in a separate change.
 
 ## Framework Capabilities Adopted
 
