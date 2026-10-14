@@ -197,7 +197,7 @@ export function createFormSharing(options: FormSharingOptions): FormSharing {
 			const group = formGroup(space[1])
 			const [members, pending] = await Promise.all([
 				request.kora.query(SPACE_MEMBERS, { where: { group }, limit: MAX_PEOPLE_PER_FORM + 1 }),
-				request.kora.query(SPACE_INVITATIONS, { where: { group }, limit: MAX_PEOPLE_PER_FORM * 4 }),
+				request.kora.query(SPACE_INVITATIONS, { where: { group }, limit: 100_000 }),
 			])
 			// Expired invitations hold no seat, and re-sending one does not take another.
 			const now = Date.now()
