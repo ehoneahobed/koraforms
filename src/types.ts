@@ -2,6 +2,8 @@
 import { escapeHtml, htmlToPlainText, looksLikeHtml } from './utils/plainText'
 
 export type CollaboratorRole = 'viewer' | 'editor' | 'admin'
+/** A user's role in a form: the owner, or what their invitation gave them. */
+export type FormRole = CollaboratorRole | 'owner'
 export type CollaboratorStatus = 'pending' | 'accepted' | 'declined'
 
 // Form field types supported by the form builder

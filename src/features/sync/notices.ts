@@ -19,7 +19,6 @@ export type KoraNoticeAction =
 const COLLECTION_LABELS: Record<string, string> = {
 	forms: 'form',
 	responses: 'response',
-	form_collaborators: 'collaborator change',
 	response_filter_views: 'saved view',
 	response_export_presets: 'export preset',
 }

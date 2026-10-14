@@ -43,3 +43,6 @@ export function resolveRateLimitScale(env: { NODE_ENV?: string; KORAFORMS_TEST_R
 	if (!Number.isInteger(scale) || scale < 1) return 1
 	return Math.min(scale, MAX_TEST_RATE_LIMIT_SCALE)
 }
+
+/** People per form besides its owner: members and pending invitations together. */
+export const MAX_PEOPLE_PER_FORM = 20

@@ -16,11 +16,11 @@ The package manager is pinned to pnpm 10.11 through `packageManager` in `package
 
 KoraForms runs on a Kora canary with access rules (`experimentalAccessRules`), schema version 20:
 
-- A form is an access group. Its creator is its `owner` (`forms.ownerId` is `t.string().stamp('userId')`, filled on insert); accepted collaborators are members with their role (`viewer` < `editor` < `admin` < `owner`), written to the new `members` collection by the collaborator routes (`src/domain/collaboratorAccess.ts`). Collaborations accepted before this change are granted at startup.
+- A form is an access group and a sharing space (`@korajs/spaces`, schema v21). Its creator is its `owner` (`forms.ownerId` is `t.string().stamp('userId')`, filled on insert); people join by email invitation as `viewer`, `editor` or `admin` (`viewer` < `editor` < `admin` < `owner`). Invitations, roles, removal and leaving are the kit's routes (`/api/spaces`, `src/domain/sharing.ts`), each one server transaction; accepting needs a verified email (`@korajs/auth` email verification). Collaborators from before v21 (`form_collaborators`) are moved at startup: accepted ones become members before devices connect, pending invitations are re-sent with new links in the background.
 - Each signed-in user's devices sync only the forms they own or collaborate on, with their responses, analytics events, audit events, invitations and delivery status. Saved response views and export presets are their author's own. Respondent-only collections (`response_submissions`, `public_form_progress`) and `resume_links` never sync.
 - Removing a collaborator or a collaborator leaving drops the form from their devices at once; a role change applies to their next write.
 - Writes are checked by the server against the role: viewers cannot edit, editors cannot delete responses or the form, only the owner deletes a form.
-- `tests/integration/access-isolation.test.ts` runs two real devices against the sync server; `tests/integration/collaborator-access.test.ts` covers the memberships.
+- `tests/integration/access-isolation.test.ts` runs two real devices against the sync server; `tests/integration/sharing.test.ts` and `sharing-upgrade.test.ts` cover sharing and the v20 upgrade.
 
 ## 1.0.0-beta.14 Upgrade Notes
 

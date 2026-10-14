@@ -15,7 +15,7 @@ Set these values before a public deployment:
 | `DATABASE_URL` | PostgreSQL production data store. |
 | `PUBLIC_URL` | Canonical public origin used for links and metadata. |
 | `KORA_BACKUP_TOKEN` | Optional bearer token for protected backup endpoints. |
-| `RESEND_API_KEY` | Optional. Email notifications stay disabled until this is configured. |
+| `RESEND_API_KEY` | Required for collaboration: invitation and email-verification emails (accepting an invitation needs a verified address). Without it in production those sends fail and are reported to the user; response notification emails stay disabled. Outside production, emails are logged instead. |
 
 Keep `KORA_METRICS_TOKEN` and `KORA_BACKUP_TOKEN` out of client bundles and screenshots. Rotate them after accidental disclosure.
 

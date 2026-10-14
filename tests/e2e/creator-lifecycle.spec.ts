@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
 import { parseFormFields, parseFormSettings } from '../../src/domain/forms'
 import { createBlankForm, newAccount, openDevice, signUpThroughUi, type Device } from './creator-helpers'
@@ -170,16 +171,27 @@ test('invite a collaborator who accepts, then sign out', async ({ page, browser,
 	await ownerDevice.close()
 	await page.goto(`/forms/${formId}/edit?panel=collaborators`, { waitUntil: 'domcontentloaded' })
 	await page.getByPlaceholder('Email address').fill(collaborator.email)
-	const invited = page.waitForResponse(response => response.url().endsWith('/api/forms/collaborators/invite'))
-	await page.getByRole('button', { name: /invite|send/i }).last().click()
+	const invited = page.waitForResponse(response => response.url().endsWith('/api/spaces/invitations/create'))
+	await page.getByRole('button', { name: /^invite$/i }).click()
 	const invite = await invited
 	expect(invite.status(), await invite.text()).toBe(200)
-	const { inviteToken } = (await invite.json()) as { inviteToken: string }
+	// No mailer in the e2e server: the inviter is given the link.
+	const { url } = (await invite.json()) as { url: string }
+	const inviteToken = url.split('#')[1] ?? ''
 	await expect(page.getByText(collaborator.email)).toBeVisible({ timeout: 20_000 })
 
 	const other = await (await browser.newContext()).newPage()
 	await signUpThroughUi(other, collaborator)
-	await other.goto(`/invite/${inviteToken}`, { waitUntil: 'domcontentloaded' })
+	await other.goto(`/invite#${inviteToken}`, { waitUntil: 'domcontentloaded' })
+	// Accepting needs a verified address: sign-up emailed a link.
+	await expect(other.getByRole('heading', { name: /verify your email/i })).toBeVisible({ timeout: 20_000 })
+	let verifyToken = ''
+	await expect.poll(() => (verifyToken = verificationTokenFor(collaborator.email)), { timeout: 20_000 }).not.toBe('')
+	await other.goto(`/verify-email#${verifyToken}`, { waitUntil: 'domcontentloaded' })
+	await expect(other.getByRole('heading', { name: /email verified/i })).toBeVisible({ timeout: 20_000 })
+	await other.getByRole('button', { name: /continue to your invitation/i }).click()
+	await expect(other.getByRole('heading', { name: /you're invited/i })).toBeVisible({ timeout: 20_000 })
+	await other.getByRole('button', { name: /accept invitation/i }).click()
 	await expect(other.getByRole('heading', { name: /you're in/i })).toBeVisible({ timeout: 20_000 })
 	await other.getByRole('button', { name: /open form/i }).click()
 	await expect(other).toHaveURL(new RegExp(`/forms/${formId}/edit`))
@@ -191,3 +203,19 @@ test('invite a collaborator who accepts, then sign out', async ({ page, browser,
 	await page.goto('/dashboard', { waitUntil: 'domcontentloaded' })
 	await expect(page).toHaveURL(/\/signin/, { timeout: 20_000 })
 })
+
+/** The newest verification link the e2e server "sent" to `email` (its dev mailbox), as a token. */
+function verificationTokenFor(email: string): string {
+	let lines: string[]
+	try {
+		lines = readFileSync(resolve('.kora/e2e/mailbox.jsonl'), 'utf8').trim().split('\n')
+	} catch {
+		return ''
+	}
+	for (const line of lines.reverse()) {
+		const message = JSON.parse(line) as { to: string; text: string }
+		const match = message.to === email ? /\/verify-email#([A-Za-z0-9_-]+)/.exec(message.text) : null
+		if (match?.[1]) return match[1]
+	}
+	return ''
+}

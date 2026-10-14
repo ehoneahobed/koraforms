@@ -51,6 +51,7 @@ const Templates = lazy(() => import('./pages/Templates').then(m => ({ default: m
 const TemplateLibrary = lazy(() => import('./pages/TemplateLibrary').then(m => ({ default: m.TemplateLibrary })))
 const TemplateDetail = lazy(() => import('./pages/TemplateDetail').then(m => ({ default: m.TemplateDetail })))
 const AcceptInvite = lazy(() => import('./pages/AcceptInvite').then(m => ({ default: m.AcceptInvite })))
+const VerifyEmail = lazy(() => import('./pages/VerifyEmail').then(m => ({ default: m.VerifyEmail })))
 const HowItWorks = lazy(() => import('./pages/HowItWorks').then(m => ({ default: m.HowItWorks })))
 const Help = lazy(() => import('./pages/Help').then(m => ({ default: m.Help })))
 const Privacy = lazy(() => import('./pages/Privacy').then(m => ({ default: m.Privacy })))
@@ -77,9 +78,7 @@ import {
 import { buildPublishedFormVersionRecord, buildVersionRestorePayload, sortPublishedVersions } from './features/forms/versionHistory'
 import type { PublicFormVersionRecord } from './features/form-fill/offlineModel'
 import { recordAuditEvent } from './features/audit/events'
-import { useFormCollaborators, useFormRole, useSharedFormIds } from './features/collaborators/hooks'
-import { hasFormAccess } from './features/collaborators/access'
-import type { CollaboratorRecord } from './features/collaborators/access'
+import { pendingLinkPath } from './features/collaborators/pendingLinks'
 
 // ---------------------------------------------------------------------------
 // Dark mode management
@@ -654,13 +653,6 @@ function FormPageShell({ navigate, userId }: { navigate: (path: string) => void;
 		attention: 'bg-red-400',
 	}[syncDisplay.tone]
 
-	// Collaborator data
-	const formCollaborators = useFormCollaborators(formId || '')
-	const formRole = useFormRole(
-		form ? String(form.ownerId || '') : '',
-		userId,
-		formId || '',
-	)
 
 	const tabs: { key: FormShellTab; label: string }[] = [
 		{ key: 'build', label: 'Build' },
@@ -798,10 +790,7 @@ function FormPageShell({ navigate, userId }: { navigate: (path: string) => void;
 				<CollaboratorsPanel
 					formId={formId}
 					formTitle={formTitle}
-					collaborators={formCollaborators}
-					userRole={formRole?.role || 'owner'}
 					userId={userId}
-					userEmail={user?.email || ''}
 				/>
 			)}
 			{activePanel === 'settings' && form && (
@@ -981,7 +970,7 @@ function SignInPage() {
 		if (templateKey && FORM_TEMPLATES[templateKey]) {
 			return <Navigate to={`/forms/new/edit?template=${templateKey}`} replace />
 		}
-		const from = (location.state as { from?: { pathname: string } })?.from?.pathname || '/dashboard'
+		const from = (location.state as { from?: { pathname: string } })?.from?.pathname || pendingLinkPath() || '/dashboard'
 		return <Navigate to={from} replace />
 	}
 
@@ -991,6 +980,7 @@ function SignInPage() {
 function SignUpPage() {
 	const navigate = useAppNavigate()
 	const { isAuthenticated, isLoading } = useAuth()
+	const location = useLocation()
 	const [searchParams] = useSearchParams()
 
 	useEffect(() => {
@@ -1002,7 +992,8 @@ function SignUpPage() {
 		if (templateKey && FORM_TEMPLATES[templateKey]) {
 			return <Navigate to={`/forms/new/edit?template=${templateKey}`} replace />
 		}
-		return <Navigate to="/dashboard" replace />
+		const from = (location.state as { from?: { pathname: string } })?.from?.pathname || pendingLinkPath() || '/dashboard'
+		return <Navigate to={from} replace />
 	}
 
 	return <SignUp navigate={navigate} />
@@ -1073,7 +1064,9 @@ export function App() {
 					<Route path="/help" element={<HelpPage />} />
 					<Route path="/privacy" element={<PrivacyPage />} />
 					<Route path="/terms" element={<TermsPage />} />
-					<Route path="/invite/:token" element={<Suspense fallback={<InlineLoader message="Loading..." />}><AcceptInvite /></Suspense>} />
+					<Route path="/invite" element={<Suspense fallback={<InlineLoader message="Loading..." />}><AcceptInvite /></Suspense>} />
+					<Route path="/invite/:legacyToken" element={<Suspense fallback={<InlineLoader message="Loading..." />}><AcceptInvite /></Suspense>} />
+					<Route path="/verify-email" element={<Suspense fallback={<InlineLoader message="Loading..." />}><VerifyEmail /></Suspense>} />
 					<Route path="/templates/:templateKey" element={<TemplateDetailPage />} />
 					<Route path="/templates" element={<PublicTemplatesPage />} />
 
