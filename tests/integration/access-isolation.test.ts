@@ -15,7 +15,6 @@ import type { SyncTransport } from '@korajs/sync'
 import { SimpleEventEmitter } from '@korajs/core/internal'
 import { ApplyPipeline, MergeAwareSyncStore, StoreQueueStorage, StoreSyncStatePersistence } from 'korajs/testing'
 import schema from '../../src/schema'
-import { grantFormMembership, revokeFormMembership } from '../../src/domain/collaboratorAccess'
 
 // What each signed-in user's devices hold follows the schema's access rules: a form
 // and its responses reach the owner and accepted collaborators only, a removed
@@ -111,7 +110,7 @@ test('forms and responses reach their owner and collaborators only, and leave on
 		assert.deepEqual(await bob.ids('responses'), [])
 
 		// Bob accepts an invitation as a viewer.
-		await grantFormMembership(server.access, { formId: form.id, userId: 'bob', role: 'viewer', status: 'accepted' })
+		await server.access.grant({ userId: 'bob', group: ['forms', form.id], role: 'viewer' })
 		await settle()
 		assert.deepEqual(await bob.ids('forms'), [form.id])
 		assert.deepEqual(await bob.ids('responses'), [response.id])
@@ -125,7 +124,7 @@ test('forms and responses reach their owner and collaborators only, and leave on
 		assert.equal(stored?.title, 'Survey')
 
 		// An editor still cannot change collected results.
-		await grantFormMembership(server.access, { formId: form.id, userId: 'bob', role: 'editor', status: 'accepted' })
+		await server.access.grant({ userId: 'bob', group: ['forms', form.id], role: 'editor' })
 		await settle()
 		const refusalsBefore = bob.rejections.length
 		await bob.store.collection('responses').insert({ formId: form.id, submittedAt: 2 })
@@ -134,7 +133,7 @@ test('forms and responses reach their owner and collaborators only, and leave on
 		assert.equal((await server.getKoraContext().query('responses', { where: { formId: form.id } })).length, 1)
 
 		// Removed: Bob's device drops the form and its responses.
-		await revokeFormMembership(server.access, { formId: form.id, userId: 'bob' })
+		await server.access.revoke({ userId: 'bob', group: ['forms', form.id] })
 		await settle()
 		assert.deepEqual(await bob.ids('forms'), [])
 		assert.deepEqual(await bob.ids('responses'), [])

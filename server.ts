@@ -1,3 +1,4 @@
+import { appendFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { lookup } from 'node:dns/promises'
 import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
@@ -27,7 +28,7 @@ import { validatePublishedResponsePayload } from './src/domain/responseValidatio
 import { buildEmailNotificationPayload, buildSideEffectDeliveryJobs, buildWebhookPayload, isDeliverableWebhookUrl, isPublicWebhookIpAddress, normalizeWebhookConfig } from './src/domain/responseSideEffects'
 import { buildOpsDiagnosticsSnapshot } from './src/domain/opsDiagnostics'
 import { formLinkPreview, previewTargetFor } from './src/domain/linkPreview'
-import { endCollaboration, grantFormMembership, reconcileFormMemberships } from './src/domain/collaboratorAccess'
+import { createFormSharing } from './src/domain/sharing'
 import { MAX_PUBLIC_RESPONSE_BODY_BYTES, MAX_ROUTE_REQUEST_BODY_BYTES, SYNC_MAX_OPERATION_BYTES, resolveRateLimitScale } from './src/domain/limits'
 import type { FormField, FormSettings } from './src/types'
 type AnalyticsEventMetadata = Record<string, unknown>
@@ -36,6 +37,7 @@ type ResponseExportPresetConfig = { selectedFieldIds: string[]; includeMetadata:
 
 // The one KoraForms schema, shared by the client and the server's materialized tables.
 import koraFormsSchema from './src/schema'
+import type { FormRole } from './src/types'
 
 type SideEffectDeliveryRecord = {
 	id: string
@@ -83,7 +85,7 @@ type NormalizedPublicAnalyticsEvent = {
 	updatedAt: number
 }
 
-const SCHEMA_VERSION = 20
+const SCHEMA_VERSION = 21
 const RESUME_LINK_TTL_MS = 30 * 24 * 60 * 60 * 1000
 const MAX_RESUME_PAYLOAD_BYTES = 128 * 1024
 const MAX_PUBLIC_ANALYTICS_EVENTS_PER_BATCH = 50
@@ -92,23 +94,6 @@ const MAX_PUBLIC_RESULTS_LIMIT = 500
 const WEBHOOK_TIMEOUT_MS = 10_000
 const WEBHOOK_ERROR_BODY_LIMIT = 2048
 const DEVELOPMENT_AUTH_SECRET = 'koraforms-dev-secret-change-in-production'
-const MAX_COLLABORATORS_PER_FORM = 20
-const INVITE_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000
-
-type CollaboratorRole = 'viewer' | 'editor' | 'admin'
-
-interface FormCollaboratorRecord {
-	id: string
-	formId: string
-	userId: string
-	email: string
-	role: CollaboratorRole
-	status: 'pending' | 'accepted' | 'declined'
-	invitedBy: string
-	inviteToken: string
-	expiresAt: number
-	createdAt: number
-}
 const DEFAULT_BLOB_DIR = './koraforms-blobs'
 const DEFAULT_SYNC_MAX_OPS_PER_MINUTE = 600
 const DEFAULT_BLOB_GC_INTERVAL_HOURS = 24
@@ -125,8 +110,6 @@ type RateLimitBucket =
 	| 'public_submit'
 	| 'owner_email_test'
 	| 'owner_webhook_test'
-	| 'collaborator_invite'
-	| 'collaborator_action'
 
 const RATE_LIMITS: Record<RateLimitBucket, { limit: number; windowMs: number }> = {
 	auth: { limit: 30, windowMs: 60_000 },
@@ -139,8 +122,6 @@ const RATE_LIMITS: Record<RateLimitBucket, { limit: number; windowMs: number }> 
 	public_submit: { limit: 20, windowMs: 60_000 },
 	owner_email_test: { limit: 20, windowMs: 60_000 },
 	owner_webhook_test: { limit: 20, windowMs: 60_000 },
-	collaborator_invite: { limit: 30, windowMs: 60_000 },
-	collaborator_action: { limit: 60, windowMs: 60_000 },
 }
 
 function createRateLimiter(scale = 1) {
@@ -262,6 +243,16 @@ async function main(): Promise<void> {
 	const auth = createKoraAuthServer({
 		userStore,
 		jwtSecret,
+		// A verified address is what lets someone accept a form invitation sent to it.
+		emailVerification: {
+			url: (token) => `${publicBaseUrl()}/verify-email#${token}`,
+			send: ({ to, url }) =>
+				sendAppEmail(to, {
+					subject: 'Verify your KoraForms email',
+					html: buildVerifyEmailHtml(url),
+					text: `Verify your email address for KoraForms: ${url}\n\nIf you did not create a KoraForms account, ignore this email.`,
+				}),
+		},
 	})
 
 	const port = Number(process.env.PORT) || 3001
@@ -311,25 +302,39 @@ async function main(): Promise<void> {
 		return payload.sub
 	}
 
-	/** Check if a user is the owner or an accepted collaborator with the given minimum role */
+	const ROLE_RANK: Record<FormRole, number> = { viewer: 0, editor: 1, admin: 2, owner: 3 }
+
+	/** The form and the user's role in it, if it is at least `minRole` (the access index decides). */
 	async function checkFormAccess(
-		kora: ProductionHttpRouteContext,
+		req: ProductionHttpRouteRequest,
 		formId: string,
 		userId: string,
-		minRole: CollaboratorRole = 'viewer',
-	): Promise<{ form: Record<string, unknown>; role: 'owner' | CollaboratorRole } | null> {
-		const form = await kora.findById('forms', formId)
-		if (!form) return null
-		if (String(form.ownerId || '') === userId) {
-			return { form, role: 'owner' }
-		}
-		const collabs = await kora.query('form_collaborators', { where: { formId, userId, status: 'accepted' }, limit: 1 })
-		const collab = collabs[0] as unknown as FormCollaboratorRecord | undefined
-		if (!collab) return null
-		const roleRank: Record<string, number> = { viewer: 0, editor: 1, admin: 2, owner: 3 }
-		if ((roleRank[collab.role] ?? -1) < (roleRank[minRole] ?? 0)) return null
-		return { form, role: collab.role }
+		minRole: FormRole = 'viewer',
+	): Promise<{ form: Record<string, unknown>; role: FormRole } | null> {
+		const held = await req.access.roleOf(userId, ['forms', formId])
+		const role = held?.role as FormRole | undefined
+		if (!role || (ROLE_RANK[role] ?? -1) < ROLE_RANK[minRole]) return null
+		const form = await req.kora.findById('forms', formId)
+		return form ? { form, role } : null
 	}
+
+	const sharing = createFormSharing({
+		auth,
+		findUser: async (userId) => {
+			const user = await userStore.findById(userId)
+			return user ? { email: String(user.email || ''), name: user.name ? String(user.name) : null } : null
+		},
+		kora: () => server.kora,
+		appUrl: publicBaseUrl(),
+		// Without a mailer (development) the inviter is shown the link instead.
+		sendInvitation: process.env.RESEND_API_KEY || process.env.NODE_ENV === 'production'
+			? (to, invitation) => deliverEmailNotification(to, {
+				subject: `${invitation.inviterName} invited you to collaborate on "${invitation.formTitle}"`,
+				html: buildCollaboratorInviteEmailHtml(invitation.inviterName, invitation.formTitle, invitation.role, invitation.url),
+				text: `${invitation.inviterName} invited you to collaborate on "${invitation.formTitle}" as ${invitation.role}. Accept the invitation: ${invitation.url}`,
+			})
+			: null,
+	})
 
 	// -----------------------------------------------------------------------
 	// Production server — handles static files, WebSocket sync, CORS, health
@@ -493,7 +498,7 @@ async function main(): Promise<void> {
 							return withCors({ status: 400, body: { error: 'Enter an active HTTPS webhook URL before testing.' } })
 						}
 
-						const access = await checkFormAccess(req.kora, formId, userId, 'editor')
+						const access = await checkFormAccess(req, formId, userId, 'editor')
 						if (!access) {
 							return withCors({ status: 404, body: { error: 'Form not found' } })
 						}
@@ -569,7 +574,7 @@ async function main(): Promise<void> {
 							return withCors({ status: 400, body: { error: 'Enter a valid notification email before testing.' } })
 						}
 
-						const access = await checkFormAccess(req.kora, formId, userId, 'editor')
+						const access = await checkFormAccess(req, formId, userId, 'editor')
 						if (!access) {
 							return withCors({ status: 404, body: { error: 'Form not found' } })
 						}
@@ -598,347 +603,14 @@ async function main(): Promise<void> {
 					}
 				},
 			},
-			// Collaborator invitation — sends email and creates pending record
-			{
-				path: '/api/forms/collaborators/invite',
-				async handle(req: ProductionHttpRouteRequest): Promise<ProductionHttpRouteResponse> {
+			// Sharing: invitations, roles, removal, leaving (@korajs/spaces), and the people list.
+			...[sharing.route, sharing.peopleRoute].map((route): ProductionHttpRoute => ({
+				path: route.path,
+				async handle(req) {
 					if (req.method === 'OPTIONS') return withCors({ status: 204 })
-					if (req.method !== 'POST') return withCors({ status: 405, body: { error: 'Method not allowed' } })
-					const userId = await authenticatedRouteUserId(req)
-					if (!userId) return withCors({ status: 401, body: { error: 'Unauthorized' } })
-					const limited = rateLimit(req, 'collaborator_invite')
-					if (limited) return limited
-
-					try {
-						const body = parseRequestBody<{ formId?: unknown; email?: unknown; role?: unknown }>(req)
-						const formId = boundedString(body?.formId, 180)
-						const email = boundedString(body?.email, 320)
-						const role = boundedString(body?.role, 20)
-						if (!formId || !isValidNotificationEmail(email)) {
-							return withCors({ status: 400, body: { error: 'Valid form ID and email are required.' } })
-						}
-						if (role !== 'viewer' && role !== 'editor' && role !== 'admin') {
-							return withCors({ status: 400, body: { error: 'Role must be viewer, editor, or admin.' } })
-						}
-
-						// Only owner and admin can invite
-						const access = await checkFormAccess(req.kora, formId, userId, 'admin')
-						if (!access && !(await req.kora.findById('forms', formId))) {
-							// Created on the device and not synced yet: not a permission problem.
-							return withCors({ status: 409, body: { error: 'This form has not reached the server yet. Try again once it has synced.' } })
-						}
-						if (!access) {
-							return withCors({ status: 403, body: { error: 'Only form owners and admins can invite collaborators.' } })
-						}
-						// Non-owners cannot assign admin role
-						if (access.role !== 'owner' && role === 'admin') {
-							return withCors({ status: 403, body: { error: 'Only the form owner can assign admin role.' } })
-						}
-
-						// Check collaborator limit
-						const existing = await req.kora.query('form_collaborators', { where: { formId }, limit: MAX_COLLABORATORS_PER_FORM + 5 })
-						const activeCollabs = (existing as unknown as FormCollaboratorRecord[]).filter(c => c.status !== 'declined')
-						if (activeCollabs.length >= MAX_COLLABORATORS_PER_FORM) {
-							return withCors({ status: 400, body: { error: `Maximum ${MAX_COLLABORATORS_PER_FORM} collaborators per form.` } })
-						}
-
-						// Check if already invited
-						const existingByEmail = activeCollabs.find(c => String(c.email).toLowerCase() === email.toLowerCase())
-						if (existingByEmail && existingByEmail.status === 'accepted') {
-							return withCors({ status: 409, body: { error: 'This person already has access to this form.' } })
-						}
-
-						// Check if inviting self
-						const inviterUser = await userStore.findById(userId)
-						if (inviterUser && String(inviterUser.email || '').toLowerCase() === email.toLowerCase()) {
-							return withCors({ status: 400, body: { error: 'You cannot invite yourself.' } })
-						}
-
-						// Check if the owner is being invited
-						const form = access.form
-						const ownerUser = await userStore.findById(String(form.ownerId || ''))
-						if (ownerUser && String(ownerUser.email || '').toLowerCase() === email.toLowerCase()) {
-							return withCors({ status: 400, body: { error: 'This person is the form owner.' } })
-						}
-
-						const now = Date.now()
-						const inviteToken = randomBytes(32).toString('hex')
-						const recordId = randomUUID()
-
-						// If re-inviting a previously pending invite, update via last-write-wins constraint
-						const collabRecord = {
-							formId,
-							userId: '',
-							email: email.toLowerCase(),
-							role,
-							status: 'pending',
-							invitedBy: userId,
-							inviteToken,
-							expiresAt: now + INVITE_EXPIRY_MS,
-							createdAt: now,
-						}
-
-						// Check if invitee already has an account
-						const inviteeUser = await userStore.findByEmail(email.toLowerCase())
-						if (inviteeUser) {
-							collabRecord.userId = String(inviteeUser.id)
-						}
-
-						await insertRouteRecord(req.kora, 'form_collaborators', recordId, collabRecord)
-
-						// Record audit event
-						await insertRouteRecord(req.kora, 'audit_events', randomUUID(), {
-							formId,
-							actorId: userId,
-							actorType: 'user',
-							eventType: 'collaborator_invited',
-							summary: `Invited ${email} as ${role}`,
-							metadata: { email, role },
-							createdAt: now,
-						})
-
-						// Send invitation email
-						const formTitle = String(form.title || 'Untitled Form')
-						const inviterName = inviterUser?.name || 'Someone'
-						const acceptUrl = `${publicBaseUrl()}/invite/${inviteToken}`
-						try {
-							await deliverEmailNotification(email, {
-								subject: `${inviterName} invited you to collaborate on "${formTitle}"`,
-								html: buildCollaboratorInviteEmailHtml(inviterName, formTitle, role, acceptUrl),
-								text: `${inviterName} invited you to collaborate on "${formTitle}" as ${role}. Accept the invitation: ${acceptUrl}`,
-							})
-						} catch (emailErr) {
-							// Invitation record is created; email failure is non-fatal
-							console.warn('Failed to send collaborator invitation email:', emailErr)
-						}
-
-						return withCors({ status: 200, body: { message: `Invitation sent to ${email}.`, inviteToken } })
-					} catch (error) {
-						console.error('Collaborator invite error:', error)
-						return withCors({ status: 500, body: { error: 'Failed to send invitation.' } })
-					}
+					return withCors(await route.handle(req))
 				},
-			},
-			// Accept a collaborator invitation
-			{
-				path: '/api/forms/collaborators/accept',
-				async handle(req: ProductionHttpRouteRequest): Promise<ProductionHttpRouteResponse> {
-					if (req.method === 'OPTIONS') return withCors({ status: 204 })
-					if (req.method !== 'POST') return withCors({ status: 405, body: { error: 'Method not allowed' } })
-					const userId = await authenticatedRouteUserId(req)
-					if (!userId) return withCors({ status: 401, body: { error: 'Sign in to accept this invitation.' } })
-					const limited = rateLimit(req, 'collaborator_action')
-					if (limited) return limited
-
-					try {
-						const body = parseRequestBody<{ inviteToken?: unknown }>(req)
-						const inviteToken = boundedString(body?.inviteToken, 128)
-						if (!inviteToken) {
-							return withCors({ status: 400, body: { error: 'Invitation token is required.' } })
-						}
-
-						const collabs = await req.kora.query('form_collaborators', { where: { inviteToken }, limit: 1 })
-						const collab = collabs[0] as unknown as FormCollaboratorRecord | undefined
-						if (!collab) {
-							return withCors({ status: 404, body: { error: 'Invitation not found or already used.' } })
-						}
-						if (collab.status !== 'pending') {
-							return withCors({ status: 400, body: { error: 'This invitation has already been responded to.' } })
-						}
-						if (collab.expiresAt < Date.now()) {
-							return withCors({ status: 410, body: { error: 'This invitation has expired. Ask the form owner to resend it.' } })
-						}
-
-						// Verify the accepting user's email matches the invitation
-						const user = await userStore.findById(userId)
-						if (!user) {
-							return withCors({ status: 401, body: { error: 'User not found.' } })
-						}
-						const userEmail = String(user.email || '').toLowerCase()
-						if (userEmail !== String(collab.email || '').toLowerCase()) {
-							return withCors({ status: 403, body: { error: `This invitation was sent to ${collab.email}. Sign in with that email to accept it.` } })
-						}
-
-						await updateRouteRecord(req.kora, 'form_collaborators', String(collab.id), {
-							userId,
-							status: 'accepted',
-						})
-						await grantFormMembership(req.access, { ...collab, userId, status: 'accepted' })
-
-						// Record audit event
-						await insertRouteRecord(req.kora, 'audit_events', randomUUID(), {
-							formId: collab.formId,
-							actorId: userId,
-							actorType: 'user',
-							eventType: 'collaborator_accepted',
-							summary: `${userEmail} accepted invitation as ${collab.role}`,
-							metadata: { email: userEmail, role: collab.role },
-							createdAt: Date.now(),
-						})
-
-						return withCors({ status: 200, body: { message: 'Invitation accepted.', formId: collab.formId } })
-					} catch (error) {
-						console.error('Collaborator accept error:', error)
-						return withCors({ status: 500, body: { error: 'Failed to accept invitation.' } })
-					}
-				},
-			},
-			// Change a collaborator's role
-			{
-				path: '/api/forms/collaborators/role',
-				async handle(req: ProductionHttpRouteRequest): Promise<ProductionHttpRouteResponse> {
-					if (req.method === 'OPTIONS') return withCors({ status: 204 })
-					if (req.method !== 'PUT') return withCors({ status: 405, body: { error: 'Method not allowed' } })
-					const userId = await authenticatedRouteUserId(req)
-					if (!userId) return withCors({ status: 401, body: { error: 'Unauthorized' } })
-					const limited = rateLimit(req, 'collaborator_action')
-					if (limited) return limited
-
-					try {
-						const body = parseRequestBody<{ formId?: unknown; collaboratorId?: unknown; role?: unknown }>(req)
-						const formId = boundedString(body?.formId, 180)
-						const collaboratorId = boundedString(body?.collaboratorId, 180)
-						const role = boundedString(body?.role, 20)
-						if (!formId || !collaboratorId) {
-							return withCors({ status: 400, body: { error: 'Form ID and collaborator ID are required.' } })
-						}
-						if (role !== 'viewer' && role !== 'editor' && role !== 'admin') {
-							return withCors({ status: 400, body: { error: 'Role must be viewer, editor, or admin.' } })
-						}
-
-						const access = await checkFormAccess(req.kora, formId, userId, 'admin')
-						if (!access) {
-							return withCors({ status: 403, body: { error: 'Only form owners and admins can change roles.' } })
-						}
-						// Only owner can assign admin
-						if (access.role !== 'owner' && role === 'admin') {
-							return withCors({ status: 403, body: { error: 'Only the form owner can assign admin role.' } })
-						}
-
-						const collab = await req.kora.findById('form_collaborators', collaboratorId) as FormCollaboratorRecord | null
-						if (!collab || collab.formId !== formId) {
-							return withCors({ status: 404, body: { error: 'Collaborator not found.' } })
-						}
-
-						await updateRouteRecord(req.kora, 'form_collaborators', collaboratorId, { role })
-						if (collab.status === 'accepted') {
-							await grantFormMembership(req.access, { ...collab, role })
-						}
-
-						await insertRouteRecord(req.kora, 'audit_events', randomUUID(), {
-							formId,
-							actorId: userId,
-							actorType: 'user',
-							eventType: 'collaborator_role_changed',
-							summary: `Changed ${collab.email} role to ${role}`,
-							metadata: { email: collab.email, oldRole: collab.role, newRole: role },
-							createdAt: Date.now(),
-						})
-
-						return withCors({ status: 200, body: { message: 'Role updated.' } })
-					} catch (error) {
-						console.error('Collaborator role change error:', error)
-						return withCors({ status: 500, body: { error: 'Failed to update role.' } })
-					}
-				},
-			},
-			// Remove a collaborator
-			{
-				path: '/api/forms/collaborators/remove',
-				async handle(req: ProductionHttpRouteRequest): Promise<ProductionHttpRouteResponse> {
-					if (req.method === 'OPTIONS') return withCors({ status: 204 })
-					if (req.method !== 'POST') return withCors({ status: 405, body: { error: 'Method not allowed' } })
-					const userId = await authenticatedRouteUserId(req)
-					if (!userId) return withCors({ status: 401, body: { error: 'Unauthorized' } })
-					const limited = rateLimit(req, 'collaborator_action')
-					if (limited) return limited
-
-					try {
-						const body = parseRequestBody<{ formId?: unknown; collaboratorId?: unknown }>(req)
-						const formId = boundedString(body?.formId, 180)
-						const collaboratorId = boundedString(body?.collaboratorId, 180)
-						if (!formId || !collaboratorId) {
-							return withCors({ status: 400, body: { error: 'Form ID and collaborator ID are required.' } })
-						}
-
-						const access = await checkFormAccess(req.kora, formId, userId, 'admin')
-						if (!access) {
-							return withCors({ status: 403, body: { error: 'Only form owners and admins can remove collaborators.' } })
-						}
-
-						const collab = await req.kora.findById('form_collaborators', collaboratorId) as FormCollaboratorRecord | null
-						if (!collab || collab.formId !== formId) {
-							return withCors({ status: 404, body: { error: 'Collaborator not found.' } })
-						}
-
-						// Admins cannot remove other admins — only owner can
-						if (access.role !== 'owner' && collab.role === 'admin') {
-							return withCors({ status: 403, body: { error: 'Only the form owner can remove admins.' } })
-						}
-
-						// End the membership (their devices drop the form), then the collaborator row.
-						await endCollaboration(req.kora, req.access, { ...collab, id: collaboratorId })
-
-						await insertRouteRecord(req.kora, 'audit_events', randomUUID(), {
-							formId,
-							actorId: userId,
-							actorType: 'user',
-							eventType: 'collaborator_removed',
-							summary: `Removed ${collab.email}`,
-							metadata: { email: collab.email, role: collab.role },
-							createdAt: Date.now(),
-						})
-
-						return withCors({ status: 200, body: { message: 'Collaborator removed.' } })
-					} catch (error) {
-						console.error('Collaborator remove error:', error)
-						return withCors({ status: 500, body: { error: 'Failed to remove collaborator.' } })
-					}
-				},
-			},
-			// Leave a shared form (collaborator removes themselves)
-			{
-				path: '/api/forms/collaborators/leave',
-				async handle(req: ProductionHttpRouteRequest): Promise<ProductionHttpRouteResponse> {
-					if (req.method === 'OPTIONS') return withCors({ status: 204 })
-					if (req.method !== 'POST') return withCors({ status: 405, body: { error: 'Method not allowed' } })
-					const userId = await authenticatedRouteUserId(req)
-					if (!userId) return withCors({ status: 401, body: { error: 'Unauthorized' } })
-					const limited = rateLimit(req, 'collaborator_action')
-					if (limited) return limited
-
-					try {
-						const body = parseRequestBody<{ formId?: unknown }>(req)
-						const formId = boundedString(body?.formId, 180)
-						if (!formId) {
-							return withCors({ status: 400, body: { error: 'Form ID is required.' } })
-						}
-
-						const collabs = await req.kora.query('form_collaborators', { where: { formId, userId, status: 'accepted' }, limit: 1 })
-						const collab = collabs[0] as unknown as FormCollaboratorRecord | undefined
-						if (!collab) {
-							return withCors({ status: 404, body: { error: 'You are not a collaborator on this form.' } })
-						}
-
-						await endCollaboration(req.kora, req.access, { ...collab, id: String(collab.id) })
-
-						await insertRouteRecord(req.kora, 'audit_events', randomUUID(), {
-							formId,
-							actorId: userId,
-							actorType: 'user',
-							eventType: 'collaborator_left',
-							summary: `${collab.email} left the form`,
-							metadata: { email: collab.email, role: collab.role },
-							createdAt: Date.now(),
-						})
-
-						return withCors({ status: 200, body: { message: 'You have left this form.' } })
-					} catch (error) {
-						console.error('Collaborator leave error:', error)
-						return withCors({ status: 500, body: { error: 'Failed to leave form.' } })
-					}
-				},
-			},
+			})),
 			// Public API: save and retrieve partial responses (save & continue later)
 			{
 				path: '/api/public/partial',
@@ -1495,13 +1167,21 @@ async function main(): Promise<void> {
 	sideEffectProcessor = createSideEffectProcessor(server.kora)
 	sideEffectProcessor.start()
 
-	// Memberships follow the collaborators table before any device connects: a collaborator
-	// reconnecting at startup must find their access in place.
-	const reconciled = await reconcileFormMemberships(server.kora, server.access)
-	if (reconciled.granted + reconciled.revoked > 0) {
-		console.log(`Collaborator memberships: ${reconciled.granted} granted, ${reconciled.revoked} revoked`)
+	// Collaborators kept before schema v21 become members before any device connects, so
+	// nobody reconnects without access.
+	const moved = await sharing.migrateLegacyMembers(server.kora, server.access)
+	if (moved.members + moved.dropped + moved.retained > 0) {
+		console.log(`Collaborators moved to sharing: ${moved.members} members, ${moved.dropped} dropped, ${moved.retained} kept for the next start`)
 	}
 	const url = await server.start()
+	// Their pending invitations are sent again (new links) in the background: it waits on email.
+	void sharing.resendLegacyInvitations(server.kora, server.access)
+		.then((sent) => {
+			if (sent.invitations + sent.dropped + sent.retained > 0) {
+				console.log(`Pending invitations moved to sharing: ${sent.invitations} re-sent, ${sent.dropped} dropped, ${sent.retained} kept for the next start`)
+			}
+		})
+		.catch((error: unknown) => console.error('Re-sending pending invitations failed:', error))
 	createCentralBlobGarbageCollector(server, blobStore).start()
 	console.log(`KoraForms running at ${url}`)
 }
@@ -1908,6 +1588,21 @@ async function processCentralBlobGarbage(
 // Email notification (via Resend API, persisted delivery jobs)
 // ---------------------------------------------------------------------------
 
+/**
+ * Send an account email. Without a mailer outside production the link is logged, so
+ * development and tests can follow it.
+ */
+async function sendAppEmail(to: string, email: { subject: string; html: string; text: string }): Promise<void> {
+	if (!process.env.RESEND_API_KEY && process.env.NODE_ENV !== 'production') {
+		console.log(`[dev email] to ${to}: ${email.subject}\n${email.text}`)
+		// The end-to-end suite reads the emails it needs (verification links) from here.
+		const mailbox = process.env.KORAFORMS_DEV_MAILBOX
+		if (mailbox) appendFileSync(mailbox, `${JSON.stringify({ to, subject: email.subject, text: email.text })}\n`)
+		return
+	}
+	await deliverEmailNotification(to, email)
+}
+
 async function deliverEmailNotification(
 	toEmail: string,
 	email: Record<string, unknown>,
@@ -1925,6 +1620,7 @@ async function deliverEmailNotification(
 	try {
 		const res = await fetch('https://api.resend.com/emails', {
 			method: 'POST',
+			signal: AbortSignal.timeout(15_000),
 			headers: {
 				'Authorization': `Bearer ${resendKey}`,
 				'Content-Type': 'application/json',
@@ -2029,6 +1725,22 @@ function buildCollaboratorInviteEmailHtml(
 </div>
 <div style="padding:16px 32px;background:#f8fafc;border-top:1px solid #e2e8f0">
 <p style="margin:0;font-size:12px;color:#94a3b8">Sent by <a href="${publicBaseUrl()}" style="color:#dc2626;text-decoration:none">KoraForms</a></p>
+</div>
+</div>
+</body></html>`
+}
+
+function buildVerifyEmailHtml(url: string): string {
+	return `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f8fafc">
+<div style="max-width:520px;margin:40px auto;background:#fff;border-radius:16px;border:1px solid #e2e8f0;overflow:hidden">
+<div style="padding:32px 32px 24px">
+<div style="margin-bottom:24px"><img src="${publicBaseUrl()}/logo-icon.png" alt="KoraForms" width="40" height="40" style="border-radius:10px"></div>
+<h1 style="margin:0 0 8px;font-size:22px;font-weight:700;color:#0f172a">Verify your email</h1>
+<p style="margin:0 0 24px;font-size:15px;color:#64748b;line-height:1.5">Confirm this address to accept invitations to collaborate on forms. Open the link while signed in to your KoraForms account.</p>
+<a href="${url}" style="display:inline-block;padding:12px 28px;background:#dc2626;color:#fff;font-size:15px;font-weight:600;text-decoration:none;border-radius:10px">Verify email</a>
+<p style="margin:20px 0 0;font-size:13px;color:#94a3b8;line-height:1.5">The link expires in 24 hours. If you did not create a KoraForms account, ignore this email.</p>
 </div>
 </div>
 </body></html>`

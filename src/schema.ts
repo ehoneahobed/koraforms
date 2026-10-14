@@ -1,4 +1,5 @@
-import { and, defineSchema, member, memberOfKey, owner, t } from 'korajs'
+import { and, defineSchema, member, owner, serverOnly, t } from 'korajs'
+import { spacesCollections } from '@korajs/spaces'
 import type { FormField, FormSettings } from './types'
 
 type ResponseData = Record<string, unknown>
@@ -10,23 +11,26 @@ type ResponseExportPresetConfig = { selectedFieldIds: string[]; includeMetadata:
 /** A collaborator's access to a form: `member(field, 'viewer', FORM)`. */
 const FORM = { group: 'forms' } as const
 
+/**
+ * Sharing: a form is a space. Its creator owns it through `ownerId`; people join by email
+ * invitation (written by the @korajs/spaces routes) as viewer, editor or admin. Admins invite,
+ * change roles and remove people below their own role; only the owner grants admin.
+ */
+export const sharing = spacesCollections({
+	roles: ['viewer', 'editor', 'admin', 'owner'],
+	ownerRole: 'owner',
+	manageRole: 'admin',
+	groups: { forms: { owner: 'ownerId' } },
+})
+
 export default defineSchema({
-	version: 20,
+	version: 21,
 	// Who may read and write what, enforced by the sync server and followed live by
-	// every device: a form is a group; its creator is its 'owner', and accepted
-	// collaborators are members with their role (written by the collaborator routes).
-	access: {
-		memberships: 'members',
-		roles: ['viewer', 'editor', 'admin', 'owner'],
-		groups: { forms: { owner: 'ownerId', role: 'owner' } },
-	},
+	// every device: a form is a group; its creator is its 'owner', and members hold the
+	// role their invitation gave them.
+	access: sharing.access,
 	collections: {
-		// Form memberships of accepted collaborators. Server-written only.
-		members: {
-			fields: { userId: t.string(), group: t.string(), role: t.string() },
-			indexes: ['userId', 'group'],
-			access: { read: memberOfKey('group') },
-		},
+		...sharing.collections,
 
 		// A form definition (e.g. "Customer Feedback", "Event Registration")
 		forms: {
@@ -305,30 +309,22 @@ export default defineSchema({
 			access: { read: member('formId', 'viewer', FORM) },
 		},
 
+		// Collaborators before v21. Read once at startup, which moves them to the sharing
+		// collections and deletes them; devices no longer receive it. Remove in v22.
 		form_collaborators: {
 			fields: {
 				formId: t.string(),
 				userId: t.string().default(''),
 				email: t.string(),
 				role: t.enum(['viewer', 'editor', 'admin']).default('editor'),
-				status: t.enum(['pending', 'accepted', 'declined']).default('pending').transitions({
-					pending: ['accepted', 'declined'],
-					accepted: [],
-					declined: [],
-				}),
+				status: t.enum(['pending', 'accepted', 'declined']).default('pending'),
 				invitedBy: t.string().default(''),
 				inviteToken: t.string().default(''),
 				expiresAt: t.number(),
 				createdAt: t.number(),
 			},
 			indexes: ['formId', 'userId', 'email', 'status', 'inviteToken', 'invitedBy'],
-			constraints: [{
-				type: 'unique',
-				fields: ['formId', 'email'],
-				onConflict: 'last-write-wins',
-			}],
-			// Invitations are written by the collaborator routes.
-			access: { read: member('formId', 'viewer', FORM) },
+			access: { read: serverOnly() },
 		},
 
 		audit_events: {
