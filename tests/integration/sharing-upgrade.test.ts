@@ -33,7 +33,10 @@ test('a v20 database upgrades to sharing with access kept and invitations re-sen
 			await legacy('bob', { userId: 'bob', role: 'admin', status: 'accepted', invitedBy: 'alice' })
 			await server.access.grant({ userId: 'bob', group: ['forms', 'f1'], role: 'admin' })
 			await legacy('erin', { role: 'viewer', status: 'pending', invitedBy: 'bob' })
+			// A v20 removal that crashed after deleting the collaborator row, before the revoke.
+			await server.access.grant({ userId: 'zed', group: ['forms', 'f1'], role: 'editor' })
 			assert.equal((await server.access.roleOf('bob', ['forms', 'f1']))?.role, 'admin')
+			assert.equal((await server.access.roleOf('zed', ['forms', 'f1']))?.role, 'editor')
 			await server.stop?.()
 			await store.close()
 		}
@@ -58,6 +61,8 @@ test('a v20 database upgrades to sharing with access kept and invitations re-sen
 			assert.deepEqual(await sharing.resendLegacyInvitations(kora, server.access), { members: 0, invitations: 1, dropped: 0, retained: 0 })
 			assert.equal((await server.access.roleOf('bob', ['forms', 'f1']))?.role, 'admin')
 			assert.equal((await server.access.roleOf('alice', ['forms', 'f1']))?.role, 'owner')
+			// v21 memberships come from the moved collaborators only: the orphan grants nothing.
+			assert.equal(await server.access.roleOf('zed', ['forms', 'f1']), null)
 			assert.deepEqual(sent, ['erin@example.com'])
 			const [invitation] = await kora.query(SPACE_INVITATIONS, { where: { group: 'forms:f1' } })
 			assert.equal(invitation?.invitedBy, 'bob')
