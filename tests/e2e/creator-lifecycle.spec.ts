@@ -204,18 +204,68 @@ test('invite a collaborator who accepts, then sign out', async ({ page, browser,
 	await expect(page).toHaveURL(/\/signin/, { timeout: 20_000 })
 })
 
-/** The newest verification link the e2e server "sent" to `email` (its dev mailbox), as a token. */
-function verificationTokenFor(email: string): string {
+/** The newest token the e2e server "sent" to `email` (its dev mailbox) in a link to `path`. */
+function mailedTokenFor(email: string, path: string): string {
 	let lines: string[]
 	try {
 		lines = readFileSync(resolve('.kora/e2e/mailbox.jsonl'), 'utf8').trim().split('\n')
 	} catch {
 		return ''
 	}
+	const pattern = new RegExp(`/${path}#([A-Za-z0-9_-]+)`)
 	for (const line of lines.reverse()) {
 		const message = JSON.parse(line) as { to: string; text: string }
-		const match = message.to === email ? /\/verify-email#([A-Za-z0-9_-]+)/.exec(message.text) : null
+		const match = message.to === email ? pattern.exec(message.text) : null
 		if (match?.[1]) return match[1]
 	}
 	return ''
 }
+
+/** The newest verification link the e2e server "sent" to `email`, as a token. */
+function verificationTokenFor(email: string): string {
+	return mailedTokenFor(email, 'verify-email')
+}
+
+test('forgot password, reset from the email link, then change it in settings', async ({ page, browser }) => {
+	test.setTimeout(120_000)
+	const account = newAccount('reset')
+	await signUpThroughUi(page, account)
+
+	const other = await (await browser.newContext()).newPage()
+	await other.goto('/signin', { waitUntil: 'domcontentloaded' })
+	await other.getByRole('button', { name: /forgot password/i }).click()
+	await other.getByLabel(/^email$/i).fill(account.email)
+	await other.getByRole('button', { name: /send reset link/i }).click()
+	await expect(other.getByRole('heading', { name: /check your email/i })).toBeVisible({ timeout: 20_000 })
+	let token = ''
+	await expect.poll(() => (token = mailedTokenFor(account.email, 'reset-password')), { timeout: 20_000 }).not.toBe('')
+
+	await other.goto(`/reset-password#${token}`, { waitUntil: 'domcontentloaded' })
+	await other.getByLabel(/^new password$/i).fill('Reset-Passw0rd!')
+	await other.getByLabel(/^confirm new password$/i).fill('Reset-Passw0rd!')
+	await other.getByRole('button', { name: /set new password/i }).click()
+	await expect(other.getByRole('heading', { name: /password changed/i })).toBeVisible({ timeout: 20_000 })
+
+	await other.getByRole('button', { name: /^sign in$/i }).click()
+	await other.getByLabel(/^email$/i).fill(account.email)
+	await other.getByLabel(/^password$/i).fill('Reset-Passw0rd!')
+	await other.getByRole('button', { name: /^sign in$/i }).click()
+	await expect(other).toHaveURL(/\/dashboard$/, { timeout: 20_000 })
+
+	await other.goto('/dashboard/settings', { waitUntil: 'domcontentloaded' })
+	await other.getByLabel(/^current password$/i).fill('Reset-Passw0rd!')
+	await other.getByLabel(/^new password$/i).fill('Changed-Passw0rd!')
+	await other.getByLabel(/^confirm new password$/i).fill('Changed-Passw0rd!')
+	await other.getByRole('button', { name: /^change password$/i }).click()
+	await expect(other.getByText(/password changed/i)).toBeVisible({ timeout: 20_000 })
+
+	// This device stayed signed in; the new password signs in elsewhere.
+	await other.goto('/dashboard', { waitUntil: 'domcontentloaded' })
+	await expect(other).toHaveURL(/\/dashboard$/)
+	const third = await (await browser.newContext()).newPage()
+	await third.goto('/signin', { waitUntil: 'domcontentloaded' })
+	await third.getByLabel(/^email$/i).fill(account.email)
+	await third.getByLabel(/^password$/i).fill('Changed-Passw0rd!')
+	await third.getByRole('button', { name: /^sign in$/i }).click()
+	await expect(third).toHaveURL(/\/dashboard$/, { timeout: 20_000 })
+})

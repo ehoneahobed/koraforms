@@ -52,6 +52,8 @@ const TemplateLibrary = lazy(() => import('./pages/TemplateLibrary').then(m => (
 const TemplateDetail = lazy(() => import('./pages/TemplateDetail').then(m => ({ default: m.TemplateDetail })))
 const AcceptInvite = lazy(() => import('./pages/AcceptInvite').then(m => ({ default: m.AcceptInvite })))
 const VerifyEmail = lazy(() => import('./pages/VerifyEmail').then(m => ({ default: m.VerifyEmail })))
+const ForgotPassword = lazy(() => import('./pages/ForgotPassword').then(m => ({ default: m.ForgotPassword })))
+const ResetPassword = lazy(() => import('./pages/ResetPassword').then(m => ({ default: m.ResetPassword })))
 const HowItWorks = lazy(() => import('./pages/HowItWorks').then(m => ({ default: m.HowItWorks })))
 const Help = lazy(() => import('./pages/Help').then(m => ({ default: m.Help })))
 const Privacy = lazy(() => import('./pages/Privacy').then(m => ({ default: m.Privacy })))
@@ -1067,6 +1069,8 @@ export function App() {
 					<Route path="/invite" element={<Suspense fallback={<InlineLoader message="Loading..." />}><AcceptInvite /></Suspense>} />
 					<Route path="/invite/:legacyToken" element={<Suspense fallback={<InlineLoader message="Loading..." />}><AcceptInvite /></Suspense>} />
 					<Route path="/verify-email" element={<Suspense fallback={<InlineLoader message="Loading..." />}><VerifyEmail /></Suspense>} />
+					<Route path="/forgot-password" element={<Suspense fallback={<InlineLoader message="Loading..." />}><ForgotPassword /></Suspense>} />
+					<Route path="/reset-password" element={<Suspense fallback={<InlineLoader message="Loading..." />}><ResetPassword /></Suspense>} />
 					<Route path="/templates/:templateKey" element={<TemplateDetailPage />} />
 					<Route path="/templates" element={<PublicTemplatesPage />} />
 

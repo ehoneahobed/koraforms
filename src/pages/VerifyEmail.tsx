@@ -3,14 +3,10 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth, useAuthStatus } from '@korajs/auth/react'
 import { AlertCircle, Check, Loader2, LogIn } from 'lucide-react'
 import { pendingInvite, pendingVerification } from '../features/collaborators/pendingLinks'
-import { Card } from './AcceptInvite'
+import { Card } from '../components/shared/CenteredCard'
+import { serverCodeOf } from '../features/account/errors'
 
 type State = 'verifying' | 'verified' | 'wrong-account' | 'expired' | 'invalid' | 'error'
-
-function serverCodeOf(error: unknown): string | null {
-	const context = (error as { context?: { serverCode?: unknown } } | null)?.context
-	return typeof context?.serverCode === 'string' ? context.serverCode : null
-}
 
 /**
  * The page a verification link opens (`/verify-email#<token>`). The link works only for

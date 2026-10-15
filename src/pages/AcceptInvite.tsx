@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useAuth, useAuthStatus } from '@korajs/auth/react'
 import type { InvitationDescription } from '@korajs/spaces'
@@ -7,6 +7,7 @@ import { AlertCircle, Check, Loader2, LogIn, Mail, UserPlus } from 'lucide-react
 import { ensureSyncConnected } from '../kora'
 import { ROLE_LABELS, collaboratorRole } from '../features/collaborators/access'
 import { pendingInvite } from '../features/collaborators/pendingLinks'
+import { Card } from '../components/shared/CenteredCard'
 import { sharingErrorMessage, spaces } from '../features/collaborators/spaces'
 
 /** Refusals after which the kept invitation link is of no further use. */
@@ -253,25 +254,6 @@ function Spinner({ label }: { label: string }) {
 			<div className="text-center">
 				<Loader2 className="h-8 w-8 animate-spin text-brand-600 mx-auto mb-4" />
 				<p className="text-gray-500 dark:text-gray-400">{label}</p>
-			</div>
-		</div>
-	)
-}
-
-const TONES = {
-	brand: 'bg-brand-50 dark:bg-brand-900/25',
-	emerald: 'bg-emerald-50 dark:bg-emerald-900/25',
-	red: 'bg-red-50 dark:bg-red-900/25',
-	slate: 'bg-slate-100 dark:bg-gray-800',
-} as const
-
-export function Card({ icon, tone, title, children }: { icon: ReactNode; tone: keyof typeof TONES; title: string; children?: ReactNode }) {
-	return (
-		<div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950 px-4">
-			<div className="max-w-md w-full bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 p-8 text-center shadow-sm">
-				<div className={`mx-auto mb-5 h-14 w-14 rounded-2xl flex items-center justify-center ${TONES[tone]}`}>{icon}</div>
-				<h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">{title}</h1>
-				{children}
 			</div>
 		</div>
 	)

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@korajs/auth/react'
 import { Eye, EyeOff, ArrowRight, WifiOff, Zap, Shield } from 'lucide-react'
 
@@ -8,6 +9,7 @@ interface Props {
 
 export function SignIn({ navigate }: Props) {
 	const { signIn, error, isLoading } = useAuth()
+	const routerNavigate = useNavigate()
 	const [email, setEmail] = useState('')
 	const [password, setPassword] = useState('')
 	const [showPassword, setShowPassword] = useState(false)
@@ -106,9 +108,18 @@ export function SignIn({ navigate }: Props) {
 						</div>
 
 						<div>
-							<label htmlFor="password" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-								Password
-							</label>
+							<div className="flex items-center justify-between mb-1.5">
+								<label htmlFor="password" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+									Password
+								</label>
+								<button
+									type="button"
+									onClick={() => routerNavigate('/forgot-password', { state: { email } })}
+									className="text-xs font-medium text-brand-600 dark:text-brand-400 hover:underline"
+								>
+									Forgot password?
+								</button>
+							</div>
 							<div className="relative">
 								<input
 									id="password"
