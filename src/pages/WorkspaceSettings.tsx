@@ -1,3 +1,4 @@
+import { AccountPanel } from '../components/account/AccountPanel'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useSyncStatus } from '@korajs/react'
 import { Bug } from 'lucide-react'
@@ -168,10 +169,17 @@ export function WorkspaceSettings({ navigate, userId }: Props) {
 						Settings
 					</h1>
 					<p className="mt-3 text-[16px] text-slate-500 dark:text-gray-400">
-						Diagnostics and recovery tools — open this when something looks wrong.
+						Your account, plus diagnostics and recovery tools for when something looks wrong.
 					</p>
 				</div>
 			</div>
+
+			<section className="mb-8">
+				<h2 className="mb-3 text-[13px] font-semibold uppercase tracking-wide text-slate-400 dark:text-gray-500">
+					Account
+				</h2>
+				<AccountPanel />
+			</section>
 
 			<section className="mb-8">
 				<h2 className="mb-3 text-[13px] font-semibold uppercase tracking-wide text-slate-400 dark:text-gray-500">

@@ -249,8 +249,29 @@ async function main(): Promise<void> {
 			send: ({ to, url }) =>
 				sendAppEmail(to, {
 					subject: 'Verify your KoraForms email',
-					html: buildVerifyEmailHtml(url),
+					html: buildAccountEmailHtml({
+						title: 'Verify your email',
+						body: 'Confirm this address to accept invitations to collaborate on forms. Open the link while signed in to your KoraForms account.',
+						button: 'Verify email',
+						url,
+						footer: 'The link expires in 24 hours. If you did not create a KoraForms account, ignore this email.',
+					}),
 					text: `Verify your email address for KoraForms: ${url}\n\nIf you did not create a KoraForms account, ignore this email.`,
+				}),
+		},
+		passwordReset: {
+			url: (token) => `${publicBaseUrl()}/reset-password#${token}`,
+			send: ({ to, url }) =>
+				sendAppEmail(to, {
+					subject: 'Reset your KoraForms password',
+					html: buildAccountEmailHtml({
+						title: 'Reset your password',
+						body: 'Someone asked to reset the password of the KoraForms account for this address. Choose a new password with the link below; every device signed in to the account will be signed out.',
+						button: 'Reset password',
+						url,
+						footer: 'The link works once and expires in 1 hour. If you did not ask to reset your password, ignore this email: your password stays the same.',
+					}),
+					text: `Reset your KoraForms password: ${url}\n\nThe link works once and expires in 1 hour. If you did not ask to reset your password, ignore this email.`,
 				}),
 		},
 	})
@@ -1730,17 +1751,18 @@ function buildCollaboratorInviteEmailHtml(
 </body></html>`
 }
 
-function buildVerifyEmailHtml(url: string): string {
+/** An account email (verification, password reset): a title, a sentence, one button. */
+function buildAccountEmailHtml(email: { title: string; body: string; button: string; url: string; footer: string }): string {
 	return `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
 <body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f8fafc">
 <div style="max-width:520px;margin:40px auto;background:#fff;border-radius:16px;border:1px solid #e2e8f0;overflow:hidden">
 <div style="padding:32px 32px 24px">
 <div style="margin-bottom:24px"><img src="${publicBaseUrl()}/logo-icon.png" alt="KoraForms" width="40" height="40" style="border-radius:10px"></div>
-<h1 style="margin:0 0 8px;font-size:22px;font-weight:700;color:#0f172a">Verify your email</h1>
-<p style="margin:0 0 24px;font-size:15px;color:#64748b;line-height:1.5">Confirm this address to accept invitations to collaborate on forms. Open the link while signed in to your KoraForms account.</p>
-<a href="${url}" style="display:inline-block;padding:12px 28px;background:#dc2626;color:#fff;font-size:15px;font-weight:600;text-decoration:none;border-radius:10px">Verify email</a>
-<p style="margin:20px 0 0;font-size:13px;color:#94a3b8;line-height:1.5">The link expires in 24 hours. If you did not create a KoraForms account, ignore this email.</p>
+<h1 style="margin:0 0 8px;font-size:22px;font-weight:700;color:#0f172a">${escapeHtml(email.title)}</h1>
+<p style="margin:0 0 24px;font-size:15px;color:#64748b;line-height:1.5">${escapeHtml(email.body)}</p>
+<a href="${escapeHtml(email.url)}" style="display:inline-block;padding:12px 28px;background:#dc2626;color:#fff;font-size:15px;font-weight:600;text-decoration:none;border-radius:10px">${escapeHtml(email.button)}</a>
+<p style="margin:20px 0 0;font-size:13px;color:#94a3b8;line-height:1.5">${escapeHtml(email.footer)}</p>
 </div>
 </div>
 </body></html>`
