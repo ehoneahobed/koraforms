@@ -9,8 +9,8 @@ import schema from '../../src/schema'
 // two live links never resolve to different forms.
 test('the server refuses publishing a second form with a live slug; drafts and closed forms may share it', async () => {
 	const store = new MemoryServerStore()
-	await store.setSchema(schema, { accessRulesEnforced: true })
-	const server = createKoraServer({ store, schema, experimentalAccessRules: true, accessSweepIntervalMs: 0 })
+	await store.setSchema(schema)
+	const server = createKoraServer({ store, schema, accessSweepIntervalMs: 0 })
 	try {
 		const ctx = server.getKoraContext()
 		const insert = (recordId: string, data: Record<string, unknown>) =>

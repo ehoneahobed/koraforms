@@ -17,7 +17,7 @@ test('a legacy row with doubly encoded json fields reads back and accepts respon
 	const dir = mkdtempSync(join(tmpdir(), 'koraforms-legacy-'))
 	const store = createSqliteServerStore({ filename: join(dir, 'server.db') })
 	try {
-		await store.setSchema(schema, { accessRulesEnforced: true })
+		await store.setSchema(schema)
 		const questions = [
 			{ id: 'field_name', type: 'text', label: 'Full Name', required: true },
 			{ id: 'field_email', type: 'email', label: 'Email', required: true },

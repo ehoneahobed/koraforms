@@ -15,7 +15,7 @@ test('an ownerless legacy node is handed to its device owner once, never taken f
 	const dir = mkdtempSync(join(tmpdir(), 'koraforms-claims-'))
 	const store = createSqliteServerStore({ filename: join(dir, 'server.db') })
 	try {
-		await store.setSchema(schema, { accessRulesEnforced: true })
+		await store.setSchema(schema)
 		const legacy = '11111111-1111-4111-8111-111111111111'
 		const op = await createOperation({
 			nodeId: legacy,

@@ -25,8 +25,8 @@ const USERS: TestUser[] = [
 
 async function setup(options: { failMail?: boolean } = {}) {
 	const store = new MemoryServerStore()
-	await store.setSchema(schema, { accessRulesEnforced: true })
-	const server = createKoraServer({ store, schema, experimentalAccessRules: true, accessSweepIntervalMs: 0 })
+	await store.setSchema(schema)
+	const server = createKoraServer({ store, schema, accessSweepIntervalMs: 0 })
 	const kora = server.getKoraContext()
 	const sent: Array<{ to: string } & InvitationEmail> = []
 	const sharing = createFormSharing({
