@@ -232,8 +232,9 @@ async function main(): Promise<void> {
 	const rateLimiter = createRateLimiter(resolveRateLimitScale(process.env))
 	const jwtSecret = resolveAuthSecret()
 
-	// The schema declares access rules; the sync server below enforces them.
-	await store.setSchema(koraFormsSchema, { accessRulesEnforced: true })
+	// The schema declares access rules; the sync server enforces them (always, since Kora
+	// beta.15).
+	await store.setSchema(koraFormsSchema)
 	console.log('Materialized collection tables initialized')
 
 	// Node ids written before node claims existed (beta.12 and older) are claimed
@@ -451,7 +452,6 @@ async function main(): Promise<void> {
 			// schema's access rules say. Public respondent submissions are finalized
 			// through validated public routes that write through Kora's route data plane;
 			// anonymous sessions read and write nothing.
-			experimentalAccessRules: true,
 			auth: new MixedAuthProvider({
 				primary: auth.auth,
 				anonymousScopes: {},

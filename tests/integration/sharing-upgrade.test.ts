@@ -19,8 +19,8 @@ test('a v20 database upgrades to sharing with access kept and invitations re-sen
 		// v20: alice owns f1; bob is an accepted admin; erin has bob's pending invitation.
 		{
 			const store = createSqliteServerStore({ filename })
-			await store.setSchema(schemaV20, { accessRulesEnforced: true })
-			const server = createKoraServer({ store, schema: schemaV20, experimentalAccessRules: true, accessSweepIntervalMs: 0 })
+			await store.setSchema(schemaV20)
+			const server = createKoraServer({ store, schema: schemaV20, accessSweepIntervalMs: 0 })
 			const kora = server.getKoraContext()
 			await kora.apply({ collection: 'forms', type: 'insert', recordId: 'f1', data: { title: 'Survey', ownerId: 'alice' } })
 			const legacy = (recordId: string, data: Record<string, unknown>) =>
@@ -43,8 +43,8 @@ test('a v20 database upgrades to sharing with access kept and invitations re-sen
 
 		// v21 boot: schema, then the move, before devices connect.
 		const store = createSqliteServerStore({ filename })
-		await store.setSchema(schema, { accessRulesEnforced: true })
-		const server = createKoraServer({ store, schema, experimentalAccessRules: true, accessSweepIntervalMs: 0 })
+		await store.setSchema(schema)
+		const server = createKoraServer({ store, schema, accessSweepIntervalMs: 0 })
 		const kora = server.getKoraContext()
 		const sent: string[] = []
 		const sharing = createFormSharing({

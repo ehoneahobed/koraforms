@@ -14,7 +14,7 @@ The package manager is pinned to pnpm 10.11 through `packageManager` in `package
 
 ## Access Rules (Kora beta.15 canary)
 
-KoraForms runs on a Kora canary with access rules (`experimentalAccessRules`), schema version 20:
+KoraForms runs on a Kora canary with access rules, which Kora enforces for any schema that declares them (no option since the beta.15 canary of 2026-10-17):
 
 - A form is an access group and a sharing space (`@korajs/spaces`, schema v21). Its creator is its `owner` (`forms.ownerId` is `t.string().stamp('userId')`, filled on insert); people join by email invitation as `viewer`, `editor` or `admin` (`viewer` < `editor` < `admin` < `owner`). Invitations, roles, removal and leaving are the kit's routes (`/api/spaces`, `src/domain/sharing.ts`), each one server transaction; accepting needs a verified email (`@korajs/auth` email verification). Collaborators from before v21 (`form_collaborators`) are moved at startup: accepted ones become members before devices connect, pending invitations are re-sent with new links in the background.
 - Each signed-in user's devices sync only the forms they own or collaborate on, with their responses, analytics events, audit events, invitations and delivery status. Saved response views and export presets are their author's own. Respondent-only collections (`response_submissions`, `public_form_progress`) and `resume_links` never sync.

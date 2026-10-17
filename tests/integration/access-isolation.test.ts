@@ -85,12 +85,11 @@ class Device {
 test('forms and responses reach their owner and collaborators only, and leave on removal', async () => {
 	const dir = mkdtempSync(join(tmpdir(), 'koraforms-access-'))
 	const store = new MemoryServerStore()
-	await store.setSchema(schema, { accessRulesEnforced: true })
+	await store.setSchema(schema)
 	const server = createKoraServer({
 		store,
 		schema,
 		auth: new TokenAuthProvider({ validate: async (token) => ({ userId: token }) }),
-		experimentalAccessRules: true,
 		accessSweepIntervalMs: 0,
 	})
 	const alice = new Device(dir, 'alice', server)

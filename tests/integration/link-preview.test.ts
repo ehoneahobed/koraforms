@@ -26,7 +26,7 @@ function get(url: string, headers: Record<string, string>): Promise<{ status: nu
 
 async function seed(dbPath: string): Promise<void> {
 	const store = createSqliteServerStore({ filename: dbPath })
-	await store.setSchema(schema, { accessRulesEnforced: true })
+	await store.setSchema(schema)
 	const node = '11111111-1111-4111-8111-111111111111'
 	const clock = new HybridLogicalClock(node)
 	const forms: Array<[string, Record<string, unknown>]> = [
