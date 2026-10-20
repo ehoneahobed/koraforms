@@ -31,6 +31,7 @@ import { formLinkPreview, previewTargetFor } from './src/domain/linkPreview'
 import { createFormSharing } from './src/domain/sharing'
 import { MAX_PUBLIC_RESPONSE_BODY_BYTES, MAX_ROUTE_REQUEST_BODY_BYTES, SYNC_MAX_OPERATION_BYTES, resolveRateLimitScale } from './src/domain/limits'
 import type { FormField, FormSettings } from './src/types'
+import { FULL_RESYNC_MARKER, createPostgresTaskMarkers, createSqliteTaskMarkers, runFullResyncOnce } from './src/domain/fullResyncOnce'
 type AnalyticsEventMetadata = Record<string, unknown>
 type SavedAnalyticsFilters = Array<{ fieldId: string; value: string }>
 type ResponseExportPresetConfig = { selectedFieldIds: string[]; includeMetadata: boolean }
@@ -1194,6 +1195,9 @@ async function main(): Promise<void> {
 	if (moved.members + moved.dropped + moved.retained > 0) {
 		console.log(`Collaborators moved to sharing: ${moved.members} members, ${moved.dropped} dropped, ${moved.retained} kept for the next start`)
 	}
+	// One-time full resync (2026-10-20, Kora PR #54); see src/domain/fullResyncOnce.ts.
+	// Requested before devices connect; bounded so it never holds startup for long.
+	await requestFullResyncOnce(store, userStore)
 	const url = await server.start()
 	// Their pending invitations are sent again (new links) in the background: it waits on email.
 	void sharing.resendLegacyInvitations(server.kora, server.access)
@@ -1205,6 +1209,53 @@ async function main(): Promise<void> {
 		.catch((error: unknown) => console.error('Re-sending pending invitations failed:', error))
 	createCentralBlobGarbageCollector(server, blobStore).start()
 	console.log(`KoraForms running at ${url}`)
+}
+
+const FULL_RESYNC_STARTUP_WAIT_MS = 15_000
+
+/**
+ * One-time forced full resync of every user (2026-10-20): devices on earlier Kora
+ * canaries may hold records they lost access to (Kora PR #54). Remove with
+ * src/domain/fullResyncOnce.ts once devices have reconnected.
+ *
+ * `ProductionServer` does not expose `forceFullResync`; it persists the request with
+ * the store's `requestFullResync` and ends live sessions. This runs before
+ * `server.start()`, so there are no live sessions and the stored request alone makes
+ * every device re-download from watermark 0 at its next handshake.
+ *
+ * Never throws and waits at most FULL_RESYNC_STARTUP_WAIT_MS; on failure the marker
+ * stays absent and the next start retries.
+ */
+async function requestFullResyncOnce(store: ServerStore, userStore: UserStore): Promise<void> {
+	const task = (async () => {
+		const markers = usePostgres && DATABASE_URL
+			? await createPostgresTaskMarkers(DATABASE_URL)
+			: await createSqliteTaskMarkers(process.env.DB_PATH || './koraforms-server.db')
+		try {
+			const result = await runFullResyncOnce({
+				markers,
+				listUserIds: async () => (await userStore.listAll()).map((user) => String(user.id)),
+				requestFullResync: store.requestFullResync?.bind(store),
+			})
+			if (result.status === 'requested') {
+				console.log(`Kora full resync (${FULL_RESYNC_MARKER}) requested for ${result.users} users`)
+			}
+		} finally {
+			await markers.close().catch(() => {})
+		}
+	})().catch((error: unknown) => {
+		console.error(`Kora full resync (${FULL_RESYNC_MARKER}) failed; retrying at next start:`, error instanceof Error ? error.message : error)
+	})
+	let timer: NodeJS.Timeout | undefined
+	const waited = new Promise<void>((resolveWait) => {
+		timer = setTimeout(() => {
+			console.warn(`Kora full resync (${FULL_RESYNC_MARKER}) still running after ${FULL_RESYNC_STARTUP_WAIT_MS} ms; continuing startup`)
+			resolveWait()
+		}, FULL_RESYNC_STARTUP_WAIT_MS)
+		timer.unref?.()
+	})
+	await Promise.race([task, waited])
+	clearTimeout(timer)
 }
 
 async function insertRouteRecord(
