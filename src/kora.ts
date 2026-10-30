@@ -5,6 +5,7 @@ import { authClient } from './auth'
 import koraWorkerUrl from './kora-worker.ts?worker&url'
 import { SYNC_MAX_OPERATION_BYTES } from './domain/limits'
 import { createNoticeStore, NOTICE_EVENT_TYPES } from './features/sync/notices'
+import { logOverlayDiagnostics } from './features/sync/overlayDiagnostics'
 
 const syncUrl =
 	import.meta.env.VITE_SYNC_URL ||
@@ -29,6 +30,12 @@ export const app = createApp({
 		// Same limit as the sync server, so an oversized edit fails here, before
 		// it is queued, instead of being rejected and undone after upload.
 		maxOperationBytes: SYNC_MAX_OPERATION_BYTES,
+		// Show this tab's own writes in live queries before the SQLite commit.
+		// Roll back by removing this line. Individual writes that must appear
+		// only once stored can pass { durable: true }. Multi-record edits via
+		// app.mutation / app.transaction are not predicted yet (S6a): they appear
+		// at commit exactly as before. None of the app's UI uses them today.
+		instantUpdates: true,
 	},
 	devtools: import.meta.env.DEV,
 })
@@ -42,6 +49,9 @@ export const koraNotices = createNoticeStore()
 for (const type of NOTICE_EVENT_TYPES) {
 	app.events.on(type, event => koraNotices.handle(event))
 }
+// The dogfood week verifies instant updates by watching for zero
+// store:overlay-diverged lines in the console (collection and field names only).
+logOverlayDiagnostics(app)
 
 let syncBootstrapStarted = false
 let connectInFlight: Promise<boolean> | null = null

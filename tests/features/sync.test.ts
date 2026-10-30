@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import type { KoraEvent } from 'korajs'
 import { applyNoticeAction, createNoticeStore, noticeActionForEvent } from '../../src/features/sync/notices'
 import { describeSyncStatus } from '../../src/features/sync/status'
+import { describeOverlayEvent } from '../../src/features/sync/overlayDiagnostics'
 
 test('blocked storage shows a persistent notice that clears when the wait ends', () => {
 	const store = createNoticeStore()
@@ -73,4 +74,12 @@ test('rejection notices never evict a persistent storage or schema notice', () =
 	assert.ok(ids.includes('storage-blocked'))
 	assert.ok(ids.includes('schema-ahead'))
 	assert.deepEqual(ids.filter(id => id.startsWith('rejected:')), ['rejected:op-5', 'rejected:op-4', 'rejected:op-3'])
+})
+
+test('overlay diagnostics name the collection and fields but never values', () => {
+	const diverged: KoraEvent = { type: 'store:overlay-diverged', writeId: 'w1', collection: 'forms', fields: ['title', 'slug'] }
+	assert.equal(describeOverlayEvent(diverged), '[KoraForms] store:overlay-diverged collection=forms fields=title,slug')
+	const disabled: KoraEvent = { type: 'store:overlay-disabled', collection: 'forms', divergences: 3 }
+	assert.equal(describeOverlayEvent(disabled), '[KoraForms] store:overlay-disabled collection=forms divergences=3')
+	assert.equal(describeOverlayEvent({ type: 'store:durability-lost' } as KoraEvent), null)
 })
