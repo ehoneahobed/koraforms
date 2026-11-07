@@ -8,11 +8,22 @@ import { newPasswordProblem, passwordErrorMessage, serverCodeOf } from '../featu
 const INPUT =
 	'w-full rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-surface-elevated-dark px-4 py-3 text-sm text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 outline-none focus:border-brand-500 dark:focus:border-brand-400 focus:ring-2 focus:ring-brand-500/20 transition-smooth'
 
+/**
+ * The token of the link in this page load. It is taken out of the address bar once read, so a
+ * second mount of the page (Kora renders the app before its store is open, and the shell can
+ * mount the page again when the account arrives) must not read an empty fragment: the token
+ * stays here until the reset is used.
+ */
+let capturedToken = ''
+
 /** The token from the link's fragment, taken out of the address bar once read. */
 function takeToken(): string {
 	const token = window.location.hash.slice(1)
-	if (token) window.history.replaceState(window.history.state, '', window.location.pathname + window.location.search)
-	return token
+	if (token) {
+		capturedToken = token
+		window.history.replaceState(window.history.state, '', window.location.pathname + window.location.search)
+	}
+	return capturedToken
 }
 
 /** The page a reset link opens (`/reset-password#<token>`): choose a new password. */
@@ -39,6 +50,7 @@ export function ResetPassword() {
 		setError('')
 		try {
 			await resetPassword(token, password)
+			capturedToken = ''
 			setDone(true)
 		} catch (failure) {
 			const code = serverCodeOf(failure)

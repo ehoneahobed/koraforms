@@ -9,23 +9,23 @@ importers:
   .:
     dependencies:
       '@korajs/auth':
-        specifier: 0.0.0-canary-20261030080746
-        version: 0.0.0-canary-20261030080746(better-sqlite3@12.9.0)(postgres@3.4.9)(react@19.2.6)
+        specifier: 0.0.0-canary-20261107193553
+        version: 0.0.0-canary-20261107193553(better-sqlite3@12.9.0)(postgres@3.4.9)(react@19.2.6)
       '@korajs/core':
-        specifier: 0.0.0-canary-20261030080746
-        version: 0.0.0-canary-20261030080746
+        specifier: 0.0.0-canary-20261107193553
+        version: 0.0.0-canary-20261107193553
       '@korajs/react':
-        specifier: 0.0.0-canary-20261030080746
-        version: 0.0.0-canary-20261030080746(@sqlite.org/sqlite-wasm@3.51.0-build1)(react@19.2.6)
+        specifier: 0.0.0-canary-20261107193553
+        version: 0.0.0-canary-20261107193553(@sqlite.org/sqlite-wasm@3.51.0-build1)(react@19.2.6)
       '@korajs/server':
-        specifier: 0.0.0-canary-20261030080746
-        version: 0.0.0-canary-20261030080746(@types/better-sqlite3@7.6.13)(postgres@3.4.9)
+        specifier: 0.0.0-canary-20261107193553
+        version: 0.0.0-canary-20261107193553(@types/better-sqlite3@7.6.13)(postgres@3.4.9)
       '@korajs/spaces':
-        specifier: 0.0.0-canary-20261030080746
-        version: 0.0.0-canary-20261030080746(@korajs/react@0.0.0-canary-20261030080746(@sqlite.org/sqlite-wasm@3.51.0-build1)(react@19.2.6))(@korajs/server@0.0.0-canary-20261030080746(@types/better-sqlite3@7.6.13)(postgres@3.4.9))(react@19.2.6)
+        specifier: 0.0.0-canary-20261107193553
+        version: 0.0.0-canary-20261107193553(@korajs/react@0.0.0-canary-20261107193553(@sqlite.org/sqlite-wasm@3.51.0-build1)(react@19.2.6))(@korajs/server@0.0.0-canary-20261107193553(@types/better-sqlite3@7.6.13)(postgres@3.4.9))(react@19.2.6)
       '@korajs/store':
-        specifier: 0.0.0-canary-20261030080746
-        version: 0.0.0-canary-20261030080746(@sqlite.org/sqlite-wasm@3.51.0-build1)
+        specifier: 0.0.0-canary-20261107193553
+        version: 0.0.0-canary-20261107193553(@sqlite.org/sqlite-wasm@3.51.0-build1)
       '@sqlite.org/sqlite-wasm':
         specifier: '>=3.51.0-build1'
         version: 3.51.0-build1
@@ -54,8 +54,8 @@ importers:
         specifier: ^4.2.0
         version: 4.2.0
       korajs:
-        specifier: 0.0.0-canary-20261030080746
-        version: 0.0.0-canary-20261030080746(@korajs/react@0.0.0-canary-20261030080746(@sqlite.org/sqlite-wasm@3.51.0-build1)(react@19.2.6))(@sqlite.org/sqlite-wasm@3.51.0-build1)(react@19.2.6)
+        specifier: 0.0.0-canary-20261107193553
+        version: 0.0.0-canary-20261107193553(@korajs/react@0.0.0-canary-20261107193553(@sqlite.org/sqlite-wasm@3.51.0-build1)(react@19.2.6))(@sqlite.org/sqlite-wasm@3.51.0-build1)(react@19.2.6)
       lucide-react:
         specifier: ^0.468.0
         version: 0.468.0(react@19.2.6)
@@ -82,14 +82,14 @@ importers:
         version: 13.6.30
     devDependencies:
       '@korajs/cli':
-        specifier: 0.0.0-canary-20261030080746
-        version: 0.0.0-canary-20261030080746
+        specifier: 0.0.0-canary-20261107193553
+        version: 0.0.0-canary-20261107193553
       '@korajs/merge':
-        specifier: 0.0.0-canary-20261030080746
-        version: 0.0.0-canary-20261030080746
+        specifier: 0.0.0-canary-20261107193553
+        version: 0.0.0-canary-20261107193553
       '@korajs/sync':
-        specifier: 0.0.0-canary-20261030080746
-        version: 0.0.0-canary-20261030080746
+        specifier: 0.0.0-canary-20261107193553
+        version: 0.0.0-canary-20261107193553
       '@playwright/test':
         specifier: ^1.61.1
         version: 1.61.1
@@ -767,8 +767,8 @@ packages:
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
 
-  '@korajs/auth@0.0.0-canary-20261030080746':
-    resolution: {integrity: sha512-71hJ586wvjj0CzDvStKlXicu2IrEx/KbiLirJChjfWhl0aCvtz6EEyJBaEYcLxuaPx/ar20VYeautm75O8aEew==}
+  '@korajs/auth@0.0.0-canary-20261107193553':
+    resolution: {integrity: sha512-eOhdPRUhe12CeLqJLTPvGSyYaGZbz96c7ak/jAxo56GQ6cWKhQ+cQkA3tcOtm0VvNHGQBgIbIH0UJcc/2O1izg==}
     peerDependencies:
       better-sqlite3: ^12.0.0
       postgres: ^3.4.0
@@ -787,37 +787,37 @@ packages:
       vue:
         optional: true
 
-  '@korajs/cli@0.0.0-canary-20261030080746':
-    resolution: {integrity: sha512-3UdDkvIvvCtGkehah6Ko/B9JKp7nOi4hmP2sUpZiGRO4oVLH3Kvgb49VSsNFZWKxGa+VOsYBafi1SMRSV/9ejQ==}
+  '@korajs/cli@0.0.0-canary-20261107193553':
+    resolution: {integrity: sha512-oXYITh1hq8B6DddkggiXPCi5Qg+L9mjiXpVc5ANI765mkYfPECfTjmHEwKSLoJE1qDAbBRgYXmIxqUWl4F9PWA==}
     hasBin: true
 
-  '@korajs/core@0.0.0-canary-20261030080746':
-    resolution: {integrity: sha512-caI/KRIRzLCvts8rp+/PKlFfbb51dBgBkZ7vd7EiG5D7DHVA4E4lWf/Sl7IC2P4fr3X9GSTeK+eLN4IgSB/Zhw==}
+  '@korajs/core@0.0.0-canary-20261107193553':
+    resolution: {integrity: sha512-QVrLZpuitIjGGguJNReMCApeg7dSgvCzwK8IIHIBG+Kgxz+2UGxMJ+icvsuuBhdXcFeaCGwA/g84ZorxYNwZEA==}
 
-  '@korajs/devtools@0.0.0-canary-20261030080746':
-    resolution: {integrity: sha512-VzB9yzgpGvsBdv+ZZS8v+V7Ud24azVWErpp+LPdBVUnaPrZGjVMdb4Ppo4MrBZspy/l6bSjk9vJld9YaMN8gzA==}
+  '@korajs/devtools@0.0.0-canary-20261107193553':
+    resolution: {integrity: sha512-jT86oS+QrNMfadV9bBxssrKNOmucfRhFJWbXn3wqt0RJFP5w5tuTFtjbe51dLopUnlwenK4tpp4R74PuQHOb1g==}
 
-  '@korajs/merge@0.0.0-canary-20261030080746':
-    resolution: {integrity: sha512-tKoasVN+w5f6l+LWkEg5kJlmRT09XPZ8QV0zMYuX/e7sdvPqPYUsmSTngjF2hDIS5QyyfNgp2EQ5/wz4Re97Bw==}
+  '@korajs/merge@0.0.0-canary-20261107193553':
+    resolution: {integrity: sha512-nyBK1JOEdxm/XJ2nshzjmqtekh2EKHf9N+dGQeX/AgrBdzFWyd7aohzFiDztuhXaBSIK8+Rzg5HM93D2lcY7+A==}
 
-  '@korajs/react@0.0.0-canary-20261030080746':
-    resolution: {integrity: sha512-ejCGljFt1gljbI9P/HAetqN7/pqPs4t83pEqxQEAb2aBK+LD3gerCel8zmKefsBPnLsVToGz8Mf2TLcVNC7++Q==}
+  '@korajs/react@0.0.0-canary-20261107193553':
+    resolution: {integrity: sha512-qaMlucZc48xDR6ctFQsMZf8RlW5r/ZFKE+RzGADQcgJu/KWHjc7IFR4hZHCFKydX3FE62ueTwJKZgkyd0OQZxA==}
     peerDependencies:
       react: ^18.0.0 || ^19.0.0
 
-  '@korajs/server@0.0.0-canary-20261030080746':
-    resolution: {integrity: sha512-8ADWAeUTzPcZL0XTKqe2iuvGiojqMSHADOSY6fqv91sP/AoIoQpuwEuXWoftpieUjoEgGel5gt8MpiChGMp9uQ==}
+  '@korajs/server@0.0.0-canary-20261107193553':
+    resolution: {integrity: sha512-yXJ7iZdxRha+pCzIid1aOoMtNeU3RgKRHvm5eg018MaZQB4YXkPID+yIDNlOEuBmgsB623zUeeQKamIP46a/MQ==}
     peerDependencies:
       postgres: ^3.4.0
     peerDependenciesMeta:
       postgres:
         optional: true
 
-  '@korajs/spaces@0.0.0-canary-20261030080746':
-    resolution: {integrity: sha512-RCr1WW+NOOsO5krScPbgsOEfrEIdYUTKE1YysU8zWb19TlODxyRUsDp9Z6KGU6ENkZB76zylN7F/0GALkcjcDg==}
+  '@korajs/spaces@0.0.0-canary-20261107193553':
+    resolution: {integrity: sha512-Zc8acHCVhoAAgeueSZMm1oYoxic5GtgoKeqH0q/OiZUjk3UsvwaSD7YVp4dQsh0c6TORA4BYTUDsNq/WYNRHWQ==}
     peerDependencies:
-      '@korajs/react': ^0.0.0-canary-20261030080746
-      '@korajs/server': ^0.0.0-canary-20261030080746
+      '@korajs/react': ^0.0.0-canary-20261107193553
+      '@korajs/server': ^0.0.0-canary-20261107193553
       react: ^18.0.0 || ^19.0.0
     peerDependenciesMeta:
       '@korajs/react':
@@ -827,16 +827,16 @@ packages:
       react:
         optional: true
 
-  '@korajs/store@0.0.0-canary-20261030080746':
-    resolution: {integrity: sha512-5lTWC9b999lcsN+E1vXqO6ECoIrTsSUDSqT00F3USYNR3Dz+4bLjjhxnyeYocB+NADXZMBdQkUh+NpBmh+e7yQ==}
+  '@korajs/store@0.0.0-canary-20261107193553':
+    resolution: {integrity: sha512-l5VRsBU3fdtO2EW1GVebWA9T2WkS74XaOceiHFqXThp2c3efOROuSfIu2suHHo4Vtd1SXbmACoqcitu0CEr/bQ==}
     peerDependencies:
       '@sqlite.org/sqlite-wasm': '>=3.51.0-build1'
     peerDependenciesMeta:
       '@sqlite.org/sqlite-wasm':
         optional: true
 
-  '@korajs/sync@0.0.0-canary-20261030080746':
-    resolution: {integrity: sha512-8lTKMc4igdQIm6dQgWGvMHDtd6kvNXtlm421qrFS0AB/In29lpVfkFJmAZvPIRTW6xGf2/KsdHuIcesa6hIrJw==}
+  '@korajs/sync@0.0.0-canary-20261107193553':
+    resolution: {integrity: sha512-NQkTi25noG1AHjrCcAG5fpRdXiL2FVXI2V+DbHpQgG3dNuXQbs6KtDeVAsyuVTuzn1jn0M7tpRvCkR/OVblW9g==}
 
   '@playwright/test@1.61.1':
     resolution: {integrity: sha512-8nKv6+0RJSL9FE4jYOEGXnPeM/Hg12qZpmqzZjRh3qM0Y7c3z1mrOTfFLids72RDQYVh9WpLEfR5WdpNX4fkig==}
@@ -1697,12 +1697,12 @@ packages:
     engines: {node: '>=6'}
     hasBin: true
 
-  korajs@0.0.0-canary-20261030080746:
-    resolution: {integrity: sha512-yMkSPT7Hjmg/BWhthlHGblGCOH+pqAj0LQiJIaKvU1bRCzbXHWtyh2zyCyKMh6pU5cHPFBJu3F6BsB1tgAs8AA==}
+  korajs@0.0.0-canary-20261107193553:
+    resolution: {integrity: sha512-yAIGN4o/0pjaNEgoLoGZmzmoyOlnVL96hkkCP43a31Uc5nkdhu/gpb8eMrU3QAEavDPyLEFOfSg8lehSUleFxA==}
     peerDependencies:
-      '@korajs/react': 0.0.0-canary-20261030080746
-      '@korajs/svelte': 0.0.0-canary-20261030080746
-      '@korajs/vue': 0.0.0-canary-20261030080746
+      '@korajs/react': 0.0.0-canary-20261107193553
+      '@korajs/svelte': 0.0.0-canary-20261107193553
+      '@korajs/vue': 0.0.0-canary-20261107193553
       react: ^18.0.0 || ^19.0.0
       svelte: ^4.0.0 || ^5.0.0
       vue: ^3.4.0
@@ -2771,18 +2771,18 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
 
-  '@korajs/auth@0.0.0-canary-20261030080746(better-sqlite3@12.9.0)(postgres@3.4.9)(react@19.2.6)':
+  '@korajs/auth@0.0.0-canary-20261107193553(better-sqlite3@12.9.0)(postgres@3.4.9)(react@19.2.6)':
     dependencies:
-      '@korajs/core': 0.0.0-canary-20261030080746
+      '@korajs/core': 0.0.0-canary-20261107193553
     optionalDependencies:
       better-sqlite3: 12.9.0
       postgres: 3.4.9
       react: 19.2.6
 
-  '@korajs/cli@0.0.0-canary-20261030080746':
+  '@korajs/cli@0.0.0-canary-20261107193553':
     dependencies:
       '@clack/prompts': 1.3.0
-      '@korajs/core': 0.0.0-canary-20261030080746
+      '@korajs/core': 0.0.0-canary-20261107193553
       citty: 0.1.6
       conf: 15.1.0
       esbuild: 0.28.0
@@ -2792,35 +2792,35 @@ snapshots:
       - bufferutil
       - utf-8-validate
 
-  '@korajs/core@0.0.0-canary-20261030080746': {}
+  '@korajs/core@0.0.0-canary-20261107193553': {}
 
-  '@korajs/devtools@0.0.0-canary-20261030080746':
+  '@korajs/devtools@0.0.0-canary-20261107193553':
     dependencies:
-      '@korajs/core': 0.0.0-canary-20261030080746
+      '@korajs/core': 0.0.0-canary-20261107193553
       htm: 3.1.1
       preact: 10.29.1
 
-  '@korajs/merge@0.0.0-canary-20261030080746':
+  '@korajs/merge@0.0.0-canary-20261107193553':
     dependencies:
-      '@korajs/core': 0.0.0-canary-20261030080746
+      '@korajs/core': 0.0.0-canary-20261107193553
       lib0: 0.2.117
       yjs: 13.6.30
 
-  '@korajs/react@0.0.0-canary-20261030080746(@sqlite.org/sqlite-wasm@3.51.0-build1)(react@19.2.6)':
+  '@korajs/react@0.0.0-canary-20261107193553(@sqlite.org/sqlite-wasm@3.51.0-build1)(react@19.2.6)':
     dependencies:
-      '@korajs/core': 0.0.0-canary-20261030080746
-      '@korajs/store': 0.0.0-canary-20261030080746(@sqlite.org/sqlite-wasm@3.51.0-build1)
-      '@korajs/sync': 0.0.0-canary-20261030080746
+      '@korajs/core': 0.0.0-canary-20261107193553
+      '@korajs/store': 0.0.0-canary-20261107193553(@sqlite.org/sqlite-wasm@3.51.0-build1)
+      '@korajs/sync': 0.0.0-canary-20261107193553
       react: 19.2.6
       yjs: 13.6.30
     transitivePeerDependencies:
       - '@sqlite.org/sqlite-wasm'
 
-  '@korajs/server@0.0.0-canary-20261030080746(@types/better-sqlite3@7.6.13)(postgres@3.4.9)':
+  '@korajs/server@0.0.0-canary-20261107193553(@types/better-sqlite3@7.6.13)(postgres@3.4.9)':
     dependencies:
-      '@korajs/core': 0.0.0-canary-20261030080746
-      '@korajs/merge': 0.0.0-canary-20261030080746
-      '@korajs/sync': 0.0.0-canary-20261030080746
+      '@korajs/core': 0.0.0-canary-20261107193553
+      '@korajs/merge': 0.0.0-canary-20261107193553
+      '@korajs/sync': 0.0.0-canary-20261107193553
       better-sqlite3: 12.9.0
       drizzle-orm: 0.45.2(@types/better-sqlite3@7.6.13)(better-sqlite3@12.9.0)(postgres@3.4.9)
       ws: 8.20.0
@@ -2857,25 +2857,25 @@ snapshots:
       - sqlite3
       - utf-8-validate
 
-  '@korajs/spaces@0.0.0-canary-20261030080746(@korajs/react@0.0.0-canary-20261030080746(@sqlite.org/sqlite-wasm@3.51.0-build1)(react@19.2.6))(@korajs/server@0.0.0-canary-20261030080746(@types/better-sqlite3@7.6.13)(postgres@3.4.9))(react@19.2.6)':
+  '@korajs/spaces@0.0.0-canary-20261107193553(@korajs/react@0.0.0-canary-20261107193553(@sqlite.org/sqlite-wasm@3.51.0-build1)(react@19.2.6))(@korajs/server@0.0.0-canary-20261107193553(@types/better-sqlite3@7.6.13)(postgres@3.4.9))(react@19.2.6)':
     dependencies:
-      '@korajs/core': 0.0.0-canary-20261030080746
+      '@korajs/core': 0.0.0-canary-20261107193553
     optionalDependencies:
-      '@korajs/react': 0.0.0-canary-20261030080746(@sqlite.org/sqlite-wasm@3.51.0-build1)(react@19.2.6)
-      '@korajs/server': 0.0.0-canary-20261030080746(@types/better-sqlite3@7.6.13)(postgres@3.4.9)
+      '@korajs/react': 0.0.0-canary-20261107193553(@sqlite.org/sqlite-wasm@3.51.0-build1)(react@19.2.6)
+      '@korajs/server': 0.0.0-canary-20261107193553(@types/better-sqlite3@7.6.13)(postgres@3.4.9)
       react: 19.2.6
 
-  '@korajs/store@0.0.0-canary-20261030080746(@sqlite.org/sqlite-wasm@3.51.0-build1)':
+  '@korajs/store@0.0.0-canary-20261107193553(@sqlite.org/sqlite-wasm@3.51.0-build1)':
     dependencies:
-      '@korajs/core': 0.0.0-canary-20261030080746
+      '@korajs/core': 0.0.0-canary-20261107193553
       yjs: 13.6.30
     optionalDependencies:
       '@sqlite.org/sqlite-wasm': 3.51.0-build1
 
-  '@korajs/sync@0.0.0-canary-20261030080746':
+  '@korajs/sync@0.0.0-canary-20261107193553':
     dependencies:
-      '@korajs/core': 0.0.0-canary-20261030080746
-      '@korajs/merge': 0.0.0-canary-20261030080746
+      '@korajs/core': 0.0.0-canary-20261107193553
+      '@korajs/merge': 0.0.0-canary-20261107193553
       protobufjs: 8.0.3
 
   '@playwright/test@1.61.1':
@@ -3660,15 +3660,15 @@ snapshots:
 
   json5@2.2.3: {}
 
-  korajs@0.0.0-canary-20261030080746(@korajs/react@0.0.0-canary-20261030080746(@sqlite.org/sqlite-wasm@3.51.0-build1)(react@19.2.6))(@sqlite.org/sqlite-wasm@3.51.0-build1)(react@19.2.6):
+  korajs@0.0.0-canary-20261107193553(@korajs/react@0.0.0-canary-20261107193553(@sqlite.org/sqlite-wasm@3.51.0-build1)(react@19.2.6))(@sqlite.org/sqlite-wasm@3.51.0-build1)(react@19.2.6):
     dependencies:
-      '@korajs/core': 0.0.0-canary-20261030080746
-      '@korajs/devtools': 0.0.0-canary-20261030080746
-      '@korajs/merge': 0.0.0-canary-20261030080746
-      '@korajs/store': 0.0.0-canary-20261030080746(@sqlite.org/sqlite-wasm@3.51.0-build1)
-      '@korajs/sync': 0.0.0-canary-20261030080746
+      '@korajs/core': 0.0.0-canary-20261107193553
+      '@korajs/devtools': 0.0.0-canary-20261107193553
+      '@korajs/merge': 0.0.0-canary-20261107193553
+      '@korajs/store': 0.0.0-canary-20261107193553(@sqlite.org/sqlite-wasm@3.51.0-build1)
+      '@korajs/sync': 0.0.0-canary-20261107193553
     optionalDependencies:
-      '@korajs/react': 0.0.0-canary-20261030080746(@sqlite.org/sqlite-wasm@3.51.0-build1)(react@19.2.6)
+      '@korajs/react': 0.0.0-canary-20261107193553(@sqlite.org/sqlite-wasm@3.51.0-build1)(react@19.2.6)
       react: 19.2.6
     transitivePeerDependencies:
       - '@sqlite.org/sqlite-wasm'
