@@ -892,7 +892,9 @@ function FormBuilderPage({ navigate, userId }: { navigate: (path: string) => voi
 			theme: 'red',
 		}
 
-		app.forms.insert(data).then((record) => {
+		// Kora renders before the store is open: a direct write waits for `app.ready` (a hook
+		// write would wait on its own).
+		app.ready.then(() => app.forms.insert(data)).then((record) => {
 			void recordAuditEvent(app.audit_events, {
 				formId: String(record.id),
 				actorId: userId,

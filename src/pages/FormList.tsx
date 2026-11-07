@@ -156,6 +156,7 @@ export function FormList({ navigate, userId }: Props) {
 		if (!payload) return
 		setShowTemplates(false)
 		try {
+			await app.ready
 			const record = await app.forms.insert(payload)
 			void recordAuditEvent(app.audit_events, {
 				formId: String(record.id),
