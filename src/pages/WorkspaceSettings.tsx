@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useSyncStatus } from '@korajs/react'
 import { Bug } from 'lucide-react'
 import { app } from '../kora'
+import { SyncDiagnosticsPanel } from '../components/forms/SyncDiagnosticsPanel'
 import type { KoraInsert } from '../schemaTypes'
 import { setPageMeta } from '../utils/meta'
 import { downloadJsonFile } from '../utils/download'
@@ -211,6 +212,13 @@ export function WorkspaceSettings({ navigate, userId }: Props) {
 						{restoreStatus.message}
 					</div>
 				)}
+			</section>
+
+			<section className="mb-8">
+				<h2 className="mb-3 text-[13px] font-semibold uppercase tracking-wide text-slate-400 dark:text-gray-500">
+					Sync diagnostics
+				</h2>
+				<SyncDiagnosticsPanel localForms={allForms.length} localResponses={allResponses.length} />
 			</section>
 
 			<section>
