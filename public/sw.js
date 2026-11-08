@@ -1,5 +1,5 @@
 const KORAFORMS_SHELL_CACHE = 'koraforms-shell-v1'
-const KORAFORMS_RUNTIME_CACHE = 'koraforms-runtime-v1'
+const KORAFORMS_RUNTIME_CACHE = 'koraforms-runtime-v2'
 const KORAFORMS_RUNTIME_URLS = [
 	'/assets/sqlite3.wasm',
 	'/assets/sqlite3-opfs-async-proxy.js',
@@ -46,7 +46,7 @@ self.addEventListener('fetch', (event) => {
 		return
 	}
 
-	if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/kora-sync')) {
+	if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/kora-sync') || url.pathname === '/health') {
 		return
 	}
 

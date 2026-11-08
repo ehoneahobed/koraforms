@@ -15,7 +15,7 @@ async function readServerVersion(): Promise<string | null> {
 	try {
 		const controller = new AbortController()
 		const timer = window.setTimeout(() => controller.abort(), 3_000)
-		const response = await fetch('/health', { signal: controller.signal })
+		const response = await fetch('/health', { signal: controller.signal, cache: 'no-store' })
 		window.clearTimeout(timer)
 		if (!response.ok) return null
 		const body = (await response.json()) as { version?: unknown }
