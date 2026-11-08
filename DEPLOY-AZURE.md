@@ -146,9 +146,11 @@ Go to: **Settings → Environments → production → Variables**
 | Variable | Value | Purpose |
 |----------|-------|---------|
 | `AZURE_RG` | `koraforms-rg` | Resource group (only if non-default) |
-| `AZURE_APP` | `koraforms` | Container app name |
-| `AZURE_ENV` | `koraforms-env` | Environment name |
+| `AZURE_APP` | `koraforms-westus` | Container app name |
+| `AZURE_ENV` | `koraforms-env-westus` | Environment name |
 | `PUBLIC_URL` | `https://your-production-domain.com` | Canonical app URL |
+
+The app runs in West US, the same region as the `koraforms-db` Postgres. Keep them together: delivery issues many small database statements, and a cross-region database (about 65 ms each) turned a first download into minutes.
 
 The actual app runtime secrets live in Azure Container Apps, not GitHub:
 

@@ -11,10 +11,10 @@
 #   ./scripts/deploy-azure.sh
 #
 # Environment variables (override defaults):
-#   AZURE_LOCATION       — Azure region (default: eastus)
+#   AZURE_LOCATION       — Azure region (default: westus)
 #   AZURE_RG             — Resource group name (default: koraforms-rg)
-#   AZURE_ENV            — Container Apps environment (default: koraforms-env)
-#   AZURE_APP            — Container app name (default: koraforms)
+#   AZURE_ENV            — Container Apps environment (default: koraforms-env-westus)
+#   AZURE_APP            — Container app name (default: koraforms-westus)
 #   KORA_AUTH_SECRET     — Auth JWT secret (generated if not set)
 #   KORA_METRICS_TOKEN   — Bearer token for /api/ops/diagnostics (generated if not set)
 #   DATABASE_URL         — PostgreSQL connection string for production persistence
@@ -27,10 +27,10 @@
 set -euo pipefail
 
 # Defaults
-LOCATION="${AZURE_LOCATION:-eastus}"
+LOCATION="${AZURE_LOCATION:-westus}"
 RG="${AZURE_RG:-koraforms-rg}"
-ENV_NAME="${AZURE_ENV:-koraforms-env}"
-APP_NAME="${AZURE_APP:-koraforms}"
+ENV_NAME="${AZURE_ENV:-koraforms-env-westus}"
+APP_NAME="${AZURE_APP:-koraforms-westus}"
 
 # Generate auth secret if not provided
 if [ -z "${KORA_AUTH_SECRET:-}" ]; then
