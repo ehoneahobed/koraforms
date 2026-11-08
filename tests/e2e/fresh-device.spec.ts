@@ -31,4 +31,9 @@ test('a clean browser profile signing in downloads the account forms and settles
 	await expect(panel.getByText('Download complete')).toBeVisible()
 	await expect(panel.getByText(/^complete$/)).toBeVisible({ timeout: 15_000 })
 	await expect(panel.getByText('2 forms, 0 responses')).toBeVisible()
+
+	// The operation count is on request, and says which collection the log is made of.
+	await second.getByRole('button', { name: 'Count operations' }).click()
+	await expect(panel.getByText('Operations on this device')).toBeVisible()
+	await expect(panel.getByText(/^\s*forms\s*$/)).toBeVisible()
 })
