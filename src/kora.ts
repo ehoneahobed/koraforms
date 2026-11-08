@@ -24,6 +24,10 @@ export const app = createApp({
 		authClient: createKoraAuthSync({ authClient, schema }),
 		schemaVersion: 21,
 		autoConnect: false,
+		// A first visit on a device with no local data asks the server for what the page is
+		// showing (one request to <sync>/read) instead of waiting for the full download into
+		// the local database. Turn off by removing this line.
+		firstVisit: { readThrough: true },
 	},
 	store: {
 		adapter: 'sqlite-wasm',
