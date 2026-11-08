@@ -109,7 +109,10 @@ test('a first visit that goes offline right after the first render still submits
 
 		const posted = page.waitForResponse(response => response.url().endsWith('/api/public/responses'), { timeout: 30_000 })
 		await context.setOffline(false)
-		expect((await posted).status()).toBe(201)
+		// A 200 is the server recognising a resend of a response it already stored: when the connection
+		// returns before the runtime has loaded, the page reloads once and sends again. The creator still
+		// ends up with exactly one response, which is asserted below.
+		expect([200, 201]).toContain((await posted).status())
 		await expect.poll(async () => (await ownerResponses(seeded)).length, { timeout: 20_000 }).toBe(1)
 		expect((await ownerResponses(seeded))[0]).toMatchObject({ f_name: 'Ada First Visit', f_email: 'ada.first@example.com' })
 	} finally {
@@ -144,7 +147,10 @@ test('a first visit that goes offline right after the first render still submits
 		const posted = page.waitForResponse(response => response.url().endsWith('/api/public/responses'), { timeout: 30_000 })
 		await context.setOffline(false)
 		const response = await posted
-		expect(response.status()).toBe(201)
+		// A 200 is the server recognising a resend of a response it already stored: when the connection
+		// returns before the runtime has loaded, the page reloads once and sends again. The creator still
+		// ends up with exactly one response, which is asserted below.
+		expect([200, 201]).toContain(response.status())
 		const sent = JSON.parse(String((response.request().postDataJSON() as { data: string }).data)) as Record<string, string>
 		expect(sent.f_file).toContain('data:text/plain;base64,')
 		expect(Buffer.from(sent.f_file.split(',')[1] ?? '', 'base64').toString()).toBe('member card offline')
