@@ -6,6 +6,7 @@ import koraWorkerUrl from './kora-worker.ts?worker&url'
 import { SYNC_MAX_OPERATION_BYTES } from './domain/limits'
 import { createNoticeStore, NOTICE_EVENT_TYPES } from './features/sync/notices'
 import { logOverlayDiagnostics } from './features/sync/overlayDiagnostics'
+import { markSyncMilestone, observeSyncMilestones } from './features/sync/diagnostics'
 
 const syncUrl =
 	import.meta.env.VITE_SYNC_URL ||
@@ -54,6 +55,7 @@ for (const type of NOTICE_EVENT_TYPES) {
 logOverlayDiagnostics(app)
 
 let syncBootstrapStarted = false
+let milestonesObserved = false
 let connectInFlight: Promise<boolean> | null = null
 
 /**
@@ -65,6 +67,12 @@ export async function ensureSyncConnected(): Promise<boolean> {
 
 	connectInFlight = (async () => {
 		await app.ready
+		markSyncMilestone('ready')
+		if (!milestonesObserved && app.sync) {
+			milestonesObserved = true
+			// Timings since page load for Settings > Sync diagnostics.
+			observeSyncMilestones(app.sync)
+		}
 		const accessToken = await authClient.getAccessToken()
 		if (!accessToken) return false
 		await app.sync?.connect()
