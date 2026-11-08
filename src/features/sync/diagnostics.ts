@@ -67,11 +67,19 @@ export interface CollectionOperationSummary {
 	payloadBytes: number
 	/** The largest single operation payload, in bytes. */
 	largestPayloadBytes: number
+	/** Updates whose every changed field already held that value (a write that changed nothing). */
+	noOpUpdates: number
+	/** How many updates touched each field, so a hot field stands out. */
+	updatesByField: Record<string, number>
 }
 
 export interface OperationSummary {
 	total: number
 	payloadBytes: number
+	/** Wall-clock span of the log (ISO), and the busiest UTC day with its operation count. */
+	firstAt: string | null
+	lastAt: string | null
+	busiestDay: { day: string; operations: number } | null
 	byCollection: Record<string, CollectionOperationSummary>
 }
 
@@ -81,6 +89,15 @@ export interface SummarizableOperation {
 	type: string
 	data: unknown
 	previousData: unknown
+	timestamp?: { wallTime: number }
+}
+
+function sameValue(a: unknown, b: unknown): boolean {
+	try {
+		return JSON.stringify(a) === JSON.stringify(b)
+	} catch {
+		return false
+	}
 }
 
 function jsonSize(value: unknown): number {
@@ -100,21 +117,48 @@ function jsonSize(value: unknown): number {
 export function summarizeOperations(operations: readonly SummarizableOperation[]): OperationSummary {
 	const byCollection: Record<string, CollectionOperationSummary> = {}
 	let payloadBytes = 0
+	let first = Number.POSITIVE_INFINITY
+	let last = Number.NEGATIVE_INFINITY
+	const perDay = new Map<string, number>()
 	for (const operation of operations) {
 		const entry = byCollection[operation.collection] ?? {
 			total: 0, inserts: 0, updates: 0, deletes: 0, payloadBytes: 0, largestPayloadBytes: 0,
+			noOpUpdates: 0, updatesByField: {},
+		}
+		const wall = operation.timestamp?.wallTime
+		if (typeof wall === 'number' && Number.isFinite(wall)) {
+			first = Math.min(first, wall)
+			last = Math.max(last, wall)
+			const day = new Date(wall).toISOString().slice(0, 10)
+			perDay.set(day, (perDay.get(day) ?? 0) + 1)
 		}
 		const size = jsonSize(operation.data) + jsonSize(operation.previousData)
 		entry.total += 1
 		if (operation.type === 'insert') entry.inserts += 1
-		else if (operation.type === 'update') entry.updates += 1
+		else if (operation.type === 'update') {
+			entry.updates += 1
+			const data = operation.data !== null && typeof operation.data === 'object' ? operation.data as Record<string, unknown> : {}
+			const previous = operation.previousData !== null && typeof operation.previousData === 'object' ? operation.previousData as Record<string, unknown> : null
+			const keys = Object.keys(data)
+			for (const key of keys) entry.updatesByField[key] = (entry.updatesByField[key] ?? 0) + 1
+			if (previous && keys.length > 0 && keys.every((key) => key in previous && sameValue(data[key], previous[key]))) entry.noOpUpdates += 1
+		}
 		else if (operation.type === 'delete') entry.deletes += 1
 		entry.payloadBytes += size
 		entry.largestPayloadBytes = Math.max(entry.largestPayloadBytes, size)
 		byCollection[operation.collection] = entry
 		payloadBytes += size
 	}
-	return { total: operations.length, payloadBytes, byCollection }
+	let busiestDay: OperationSummary['busiestDay'] = null
+	for (const [day, count] of perDay) if (!busiestDay || count > busiestDay.operations) busiestDay = { day, operations: count }
+	return {
+		total: operations.length,
+		payloadBytes,
+		firstAt: Number.isFinite(first) ? new Date(first).toISOString() : null,
+		lastAt: Number.isFinite(last) ? new Date(last).toISOString() : null,
+		busiestDay,
+		byCollection,
+	}
 }
 
 function kib(bytes: number): string {
@@ -291,8 +335,12 @@ export function describeSyncDiagnostics(report: SyncDiagnosticsReport): SyncDiag
 	add('On this device', `${report.localForms} forms, ${report.localResponses} responses`)
 	if (report.operations) {
 		add('Operations on this device', `${report.operations.total} (${kib(report.operations.payloadBytes)})`)
+		if (report.operations.firstAt && report.operations.lastAt) {
+			add('Log spans', `${report.operations.firstAt.slice(0, 10)} to ${report.operations.lastAt.slice(0, 10)}`)
+		}
+		if (report.operations.busiestDay) add('Busiest day', `${report.operations.busiestDay.day}: ${report.operations.busiestDay.operations} operations`)
 		for (const [collection, entry] of Object.entries(report.operations.byCollection).sort((a, b) => b[1].total - a[1].total)) {
-			add(`  ${collection}`, `${entry.total}: ${entry.inserts} new, ${entry.updates} edits, ${entry.deletes} deletes, largest ${kib(entry.largestPayloadBytes)}`)
+			add(`  ${collection}`, `${entry.total}: ${entry.inserts} new, ${entry.updates} edits, ${entry.deletes} deletes, ${entry.noOpUpdates} changed nothing, largest ${kib(entry.largestPayloadBytes)}`)
 		}
 	}
 	add('Storage', `${report.storageBackend ?? 'unknown'}, ${report.localDurability}`, report.localDurability === 'durable' ? 'normal' : 'attention')

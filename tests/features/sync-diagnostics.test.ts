@@ -145,10 +145,8 @@ test('operations are counted by collection and type, with sizes and no values in
 		{ collection: 'responses', type: 'delete', data: null, previousData: null },
 	])
 	assert.equal(summary.total, 4)
-	assert.deepEqual(
-		{ ...summary.byCollection.forms, payloadBytes: 0, largestPayloadBytes: 0 },
-		{ total: 3, inserts: 1, updates: 2, deletes: 0, payloadBytes: 0, largestPayloadBytes: 0 },
-	)
+	const forms = summary.byCollection.forms
+	assert.deepEqual([forms?.total, forms?.inserts, forms?.updates, forms?.deletes], [3, 1, 2, 0])
 	assert.equal(summary.byCollection.responses?.deletes, 1)
 	assert.ok((summary.byCollection.forms?.largestPayloadBytes ?? 0) >= (summary.byCollection.forms?.payloadBytes ?? 1) / 3)
 	const rows = describeSyncDiagnostics(buildSyncDiagnosticsReport(input({ operations: summary })))
@@ -161,4 +159,17 @@ test('the operation summary is absent until it was counted', () => {
 	const report = buildSyncDiagnosticsReport(input())
 	assert.equal(report.operations, null)
 	assert.ok(!describeSyncDiagnostics(report).some((row) => row.label === 'Operations on this device'))
+})
+
+test('updates that changed nothing, the fields they touch and the busiest day are reported', () => {
+	const day = Date.UTC(2026, 9, 8, 10)
+	const summary = summarizeOperations([
+		{ collection: 'forms', type: 'update', data: { fields: [1] }, previousData: { fields: [1] }, timestamp: { wallTime: day } },
+		{ collection: 'forms', type: 'update', data: { fields: [2] }, previousData: { fields: [1] }, timestamp: { wallTime: day + 1000 } },
+		{ collection: 'forms', type: 'update', data: { title: 'b' }, previousData: { title: 'a' }, timestamp: { wallTime: day + 86_400_000 } },
+	])
+	assert.equal(summary.byCollection.forms?.noOpUpdates, 1)
+	assert.deepEqual(summary.byCollection.forms?.updatesByField, { fields: 2, title: 1 })
+	assert.deepEqual(summary.busiestDay, { day: '2026-10-08', operations: 2 })
+	assert.equal(summary.firstAt, new Date(day).toISOString())
 })
