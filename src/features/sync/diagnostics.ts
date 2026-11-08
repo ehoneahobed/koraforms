@@ -57,6 +57,70 @@ export function observeSyncMilestones(feed: {
 	return feed.subscribeStatus((info) => recordMilestonesFromStatus(info))
 }
 
+/** What the local operation log holds for one collection. */
+export interface CollectionOperationSummary {
+	total: number
+	inserts: number
+	updates: number
+	deletes: number
+	/** Serialized size of `data` plus `previousData` over every operation, in bytes. */
+	payloadBytes: number
+	/** The largest single operation payload, in bytes. */
+	largestPayloadBytes: number
+}
+
+export interface OperationSummary {
+	total: number
+	payloadBytes: number
+	byCollection: Record<string, CollectionOperationSummary>
+}
+
+/** The fields of an operation that the summary reads. */
+export interface SummarizableOperation {
+	collection: string
+	type: string
+	data: unknown
+	previousData: unknown
+}
+
+function jsonSize(value: unknown): number {
+	if (value === null || value === undefined) return 0
+	try {
+		return JSON.stringify(value).length
+	} catch {
+		return 0
+	}
+}
+
+/**
+ * Counts the operations a device holds, by collection and type, with their payload
+ * sizes. Counts and sizes only: no values leave this function, so the result is
+ * safe to copy into a bug report.
+ */
+export function summarizeOperations(operations: readonly SummarizableOperation[]): OperationSummary {
+	const byCollection: Record<string, CollectionOperationSummary> = {}
+	let payloadBytes = 0
+	for (const operation of operations) {
+		const entry = byCollection[operation.collection] ?? {
+			total: 0, inserts: 0, updates: 0, deletes: 0, payloadBytes: 0, largestPayloadBytes: 0,
+		}
+		const size = jsonSize(operation.data) + jsonSize(operation.previousData)
+		entry.total += 1
+		if (operation.type === 'insert') entry.inserts += 1
+		else if (operation.type === 'update') entry.updates += 1
+		else if (operation.type === 'delete') entry.deletes += 1
+		entry.payloadBytes += size
+		entry.largestPayloadBytes = Math.max(entry.largestPayloadBytes, size)
+		byCollection[operation.collection] = entry
+		payloadBytes += size
+	}
+	return { total: operations.length, payloadBytes, byCollection }
+}
+
+function kib(bytes: number): string {
+	return bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(bytes < 10 * 1024 ? 1 : 0)} KiB`
+}
+
 export interface SyncDiagnosticsInput {
 	status: SyncStatusInfo
 	/** `app.sync.exportDiagnostics()`, when sync is configured. */
@@ -69,6 +133,8 @@ export interface SyncDiagnosticsInput {
 	} | null
 	rejectedOperations: number
 	counts: { forms: number; responses: number }
+	/** Present once the person pressed "Count operations"; null before that. */
+	operations?: OperationSummary | null
 	milestones: Partial<Record<SyncMilestone, number>>
 	environment: {
 		online: boolean
@@ -116,6 +182,8 @@ export interface SyncDiagnosticsReport {
 	lastSuccessfulPush: string | null
 	localForms: number
 	localResponses: number
+	/** The local operation log by collection, or null until it was counted. */
+	operations: OperationSummary | null
 	sinceLoadMs: number
 	milestonesMs: Partial<Record<SyncMilestone, number>>
 	userAgent: string
@@ -183,6 +251,7 @@ export function buildSyncDiagnosticsReport(input: SyncDiagnosticsInput, now: num
 		lastSuccessfulPush: iso(status.lastSuccessfulPush),
 		localForms: input.counts.forms,
 		localResponses: input.counts.responses,
+		operations: input.operations ?? null,
 		sinceLoadMs: Math.round(input.environment.sinceLoadMs),
 		milestonesMs: input.milestones,
 		userAgent: input.environment.userAgent,
@@ -220,6 +289,12 @@ export function describeSyncDiagnostics(report: SyncDiagnosticsReport): SyncDiag
 	if (report.rejectedOperations > 0) add('Refused by the server', String(report.rejectedOperations), 'attention')
 	if (report.deliveryGapRepeatCount > 0) add('Repeated delivery gaps', String(report.deliveryGapRepeatCount), 'attention')
 	add('On this device', `${report.localForms} forms, ${report.localResponses} responses`)
+	if (report.operations) {
+		add('Operations on this device', `${report.operations.total} (${kib(report.operations.payloadBytes)})`)
+		for (const [collection, entry] of Object.entries(report.operations.byCollection).sort((a, b) => b[1].total - a[1].total)) {
+			add(`  ${collection}`, `${entry.total}: ${entry.inserts} new, ${entry.updates} edits, ${entry.deletes} deletes, largest ${kib(entry.largestPayloadBytes)}`)
+		}
+	}
 	add('Storage', `${report.storageBackend ?? 'unknown'}, ${report.localDurability}`, report.localDurability === 'durable' ? 'normal' : 'attention')
 	add('Last download', report.lastSuccessfulPull ?? 'never')
 	add('Last upload', report.lastSuccessfulPush ?? 'never')

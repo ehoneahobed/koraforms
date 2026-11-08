@@ -8,6 +8,7 @@ import {
 	markSyncMilestone,
 	observeSyncMilestones,
 	resetSyncMilestones,
+	summarizeOperations,
 	type SyncDiagnosticsInput,
 } from '../../src/features/sync/diagnostics'
 
@@ -134,4 +135,30 @@ test('observing a status feed records milestones, including one already reached'
 	stop()
 	assert.equal(unsubscribed, true)
 	resetSyncMilestones()
+})
+
+test('operations are counted by collection and type, with sizes and no values in the report', () => {
+	const summary = summarizeOperations([
+		{ collection: 'forms', type: 'insert', data: { title: 'secret' }, previousData: null },
+		{ collection: 'forms', type: 'update', data: { fields: [1, 2, 3] }, previousData: { fields: [1] } },
+		{ collection: 'forms', type: 'update', data: { title: 'x' }, previousData: { title: 'y' } },
+		{ collection: 'responses', type: 'delete', data: null, previousData: null },
+	])
+	assert.equal(summary.total, 4)
+	assert.deepEqual(
+		{ ...summary.byCollection.forms, payloadBytes: 0, largestPayloadBytes: 0 },
+		{ total: 3, inserts: 1, updates: 2, deletes: 0, payloadBytes: 0, largestPayloadBytes: 0 },
+	)
+	assert.equal(summary.byCollection.responses?.deletes, 1)
+	assert.ok((summary.byCollection.forms?.largestPayloadBytes ?? 0) >= (summary.byCollection.forms?.payloadBytes ?? 1) / 3)
+	const rows = describeSyncDiagnostics(buildSyncDiagnosticsReport(input({ operations: summary })))
+	assert.ok(rows.some((row) => row.label === 'Operations on this device' && row.value.startsWith('4 (')))
+	assert.ok(rows.some((row) => row.label.trim() === 'forms' && row.value.startsWith('3: 1 new, 2 edits')))
+	assert.ok(!JSON.stringify(buildSyncDiagnosticsReport(input({ operations: summary }))).includes('secret'))
+})
+
+test('the operation summary is absent until it was counted', () => {
+	const report = buildSyncDiagnosticsReport(input())
+	assert.equal(report.operations, null)
+	assert.ok(!describeSyncDiagnostics(report).some((row) => row.label === 'Operations on this device'))
 })

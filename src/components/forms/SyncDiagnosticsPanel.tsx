@@ -6,6 +6,8 @@ import {
 	buildSyncDiagnosticsReport,
 	describeSyncDiagnostics,
 	getSyncMilestones,
+	summarizeOperations,
+	type OperationSummary,
 	type SyncDiagnosticsReport,
 } from '../../features/sync/diagnostics'
 
@@ -43,6 +45,8 @@ export function SyncDiagnosticsPanel({ localForms, localResponses }: { localForm
 	const [tick, setTick] = useState(0)
 	const [rejected, setRejected] = useState(0)
 	const [serverVersion, setServerVersion] = useState<string | null>(null)
+	const [operations, setOperations] = useState<OperationSummary | null>(null)
+	const [counting, setCounting] = useState(false)
 	const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
 
 	useEffect(() => {
@@ -56,6 +60,20 @@ export function SyncDiagnosticsPanel({ localForms, localResponses }: { localForm
 		return () => {
 			cancelled = true
 			window.clearInterval(interval)
+		}
+	}, [])
+
+	// Reads the whole local operation log once, on request: it can be large, so it is
+	// never part of the 2 second refresh.
+	const countOperations = useCallback(async () => {
+		setCounting(true)
+		try {
+			await app.ready
+			setOperations(summarizeOperations(await app.getStore().getAllOperations()))
+		} catch (error) {
+			console.error('[koraforms] Counting local operations failed', error)
+		} finally {
+			setCounting(false)
 		}
 	}, [])
 
@@ -82,6 +100,7 @@ export function SyncDiagnosticsPanel({ localForms, localResponses }: { localForm
 				: null,
 			rejectedOperations: rejected,
 			counts: { forms: localForms, responses: localResponses },
+			operations,
 			milestones: getSyncMilestones(),
 			environment: {
 				online: navigator.onLine,
@@ -92,7 +111,7 @@ export function SyncDiagnosticsPanel({ localForms, localResponses }: { localForm
 				sinceLoadMs: performance.now(),
 			},
 		})
-	}, [status, tick, rejected, serverVersion, localForms, localResponses])
+	}, [status, tick, rejected, serverVersion, localForms, localResponses, operations])
 
 	const rows = useMemo(() => describeSyncDiagnostics(report), [report])
 
@@ -120,6 +139,15 @@ export function SyncDiagnosticsPanel({ localForms, localResponses }: { localForm
 						What sync is doing on this device. Copy it when something looks stuck: it holds counts and timings, never form content.
 					</p>
 				</div>
+				<div className="flex shrink-0 gap-2">
+				<button
+					type="button"
+					disabled={counting}
+					onClick={() => { void countOperations() }}
+					className="inline-flex shrink-0 items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-[13px] font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60 dark:border-slate-700 dark:text-gray-200 dark:hover:bg-slate-800"
+				>
+					{counting ? 'Counting...' : 'Count operations'}
+				</button>
 				<button
 					type="button"
 					onClick={() => { void copy() }}
@@ -128,6 +156,7 @@ export function SyncDiagnosticsPanel({ localForms, localResponses }: { localForm
 					{copyState === 'copied' ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
 					{copyState === 'copied' ? 'Copied' : copyState === 'failed' ? 'Copy unavailable' : 'Copy diagnostics'}
 				</button>
+				</div>
 			</div>
 			<dl className="grid grid-cols-1 gap-x-6 gap-y-1 sm:grid-cols-2" data-testid="sync-diagnostics">
 				{rows.map((row) => (
