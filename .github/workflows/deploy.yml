@@ -62,8 +62,8 @@ jobs:
         uses: azure/container-apps-deploy-action@v2
         with:
           resourceGroup: ${{ vars.AZURE_RG || 'koraforms-rg' }}
-          containerAppName: ${{ vars.AZURE_APP || 'koraforms' }}
-          containerAppEnvironment: ${{ vars.AZURE_ENV || 'koraforms-env' }}
+          containerAppName: ${{ vars.AZURE_APP || 'koraforms-westus' }}
+          containerAppEnvironment: ${{ vars.AZURE_ENV || 'koraforms-env-westus' }}
           targetPort: 3001
           ingress: external
           appSourcePath: ${{ github.workspace }}
@@ -80,7 +80,7 @@ jobs:
       - name: Keep sync replica warm
         run: |
           set -euo pipefail
-          APP="${{ vars.AZURE_APP || 'koraforms' }}"
+          APP="${{ vars.AZURE_APP || 'koraforms-westus' }}"
           RG="${{ vars.AZURE_RG || 'koraforms-rg' }}"
           az containerapp update \
             --name "$APP" \
@@ -92,7 +92,7 @@ jobs:
       - name: Health check
         run: |
           set -euo pipefail
-          APP="${{ vars.AZURE_APP || 'koraforms' }}"
+          APP="${{ vars.AZURE_APP || 'koraforms-westus' }}"
           RG="${{ vars.AZURE_RG || 'koraforms-rg' }}"
           FQDN=$(az containerapp show \
             --name "$APP" \
