@@ -281,6 +281,7 @@ async function main(): Promise<void> {
 	const port = Number(process.env.PORT) || 3001
 	const distDir = resolve('./dist')
 	let sideEffectProcessor: ReturnType<typeof createSideEffectProcessor> | null = null
+	let blobGarbageCollector: ReturnType<typeof createCentralBlobGarbageCollector> | null = null
 
 	// CORS headers for dev mode (client on different port)
 	const corsHeaders: Record<string, string> = process.env.NODE_ENV !== 'production'
@@ -1207,8 +1208,45 @@ async function main(): Promise<void> {
 			}
 		})
 		.catch((error: unknown) => console.error('Re-sending pending invitations failed:', error))
-	createCentralBlobGarbageCollector(server, blobStore).start()
+	blobGarbageCollector = createCentralBlobGarbageCollector(server, blobStore)
+	blobGarbageCollector.start()
+	installGracefulShutdown(server, () => Promise.all([
+		sideEffectProcessor?.stop(),
+		blobGarbageCollector?.stop(),
+	]))
 	console.log(`KoraForms running at ${url}`)
+}
+
+function installGracefulShutdown(
+	server: ProductionServer,
+	stopBackgroundWork: () => Promise<unknown>,
+): void {
+	let stopping = false
+	const stop = async (signal: NodeJS.Signals) => {
+		if (stopping) return
+		stopping = true
+		console.log(`Received ${signal}; closing KoraForms gracefully`)
+		const deadline = setTimeout(() => {
+			console.error('Graceful shutdown exceeded 20 seconds; forcing exit')
+			process.exit(1)
+		}, 20_000)
+		deadline.unref()
+
+		try {
+			await stopBackgroundWork()
+			await server.stop()
+			clearTimeout(deadline)
+			console.log('KoraForms stopped cleanly')
+			process.exit(0)
+		} catch (error) {
+			clearTimeout(deadline)
+			console.error('Graceful shutdown failed', error)
+			process.exit(1)
+		}
+	}
+
+	process.once('SIGTERM', () => void stop('SIGTERM'))
+	process.once('SIGINT', () => void stop('SIGINT'))
 }
 
 const FULL_RESYNC_STARTUP_WAIT_MS = 15_000
@@ -1519,20 +1557,42 @@ interface WebhookConfig {
 	active?: boolean
 }
 
-function createSideEffectProcessor(kora: ProductionHttpRouteContext): { start: () => void; runSoon: () => void } {
+function createSideEffectProcessor(kora: ProductionHttpRouteContext): {
+	start: () => void
+	runSoon: () => void
+	stop: () => Promise<void>
+} {
 	let timer: NodeJS.Timeout | null = null
+	let interval: NodeJS.Timeout | null = null
+	let activeRun: Promise<void> | null = null
 	let running = false
+	let stopped = false
 
 	const runSoon = () => {
+		if (stopped) return
 		if (timer) clearTimeout(timer)
 		timer = setTimeout(() => {
-			processDueDeliveries().catch(err => console.warn('Side-effect delivery processor failed:', err))
+			timer = null
+			activeRun = processDueDeliveries()
+				.catch(err => console.warn('Side-effect delivery processor failed:', err))
+				.finally(() => { activeRun = null })
 		}, 50)
+		timer.unref?.()
 	}
 
 	const start = () => {
 		runSoon()
-		setInterval(runSoon, 30_000)
+		interval = setInterval(runSoon, 30_000)
+		interval.unref?.()
+	}
+
+	const stop = async () => {
+		stopped = true
+		if (timer) clearTimeout(timer)
+		if (interval) clearInterval(interval)
+		timer = null
+		interval = null
+		if (activeRun) await activeRun
 	}
 
 	async function processDueDeliveries(): Promise<void> {
@@ -1557,7 +1617,7 @@ function createSideEffectProcessor(kora: ProductionHttpRouteContext): { start: (
 		}
 	}
 
-	return { start, runSoon }
+	return { start, runSoon, stop }
 }
 
 async function processDelivery(kora: ProductionHttpRouteContext, delivery: SideEffectDeliveryRecord): Promise<void> {
@@ -1605,16 +1665,21 @@ function retryDelayMs(attempts: number): number {
 function createCentralBlobGarbageCollector(
 	server: ProductionServer,
 	blobStore: FilesystemBlobStore,
-): { start: () => void; runSoon: () => void } {
+): { start: () => void; runSoon: () => void; stop: () => Promise<void> } {
 	let running = false
+	let stopped = false
+	let initialTimer: NodeJS.Timeout | null = null
+	let interval: NodeJS.Timeout | null = null
+	let activeRun: Promise<void> | null = null
 
 	const runSoon = () => {
-		if (running) return
+		if (running || stopped) return
 		running = true
-		processCentralBlobGarbage(server, blobStore)
+		activeRun = processCentralBlobGarbage(server, blobStore)
 			.catch(err => console.warn('Blob garbage collection failed:', err))
 			.finally(() => {
 				running = false
+				activeRun = null
 			})
 	}
 
@@ -1630,14 +1695,23 @@ function createCentralBlobGarbageCollector(
 			DEFAULT_BLOB_GC_INTERVAL_HOURS,
 		) * 60 * 60_000
 
-		const initialTimer = setTimeout(runSoon, startDelayMs)
+		initialTimer = setTimeout(runSoon, startDelayMs)
 		initialTimer.unref?.()
 
-		const interval = setInterval(runSoon, intervalMs)
+		interval = setInterval(runSoon, intervalMs)
 		interval.unref?.()
 	}
 
-	return { start, runSoon }
+	const stop = async () => {
+		stopped = true
+		if (initialTimer) clearTimeout(initialTimer)
+		if (interval) clearInterval(interval)
+		initialTimer = null
+		interval = null
+		if (activeRun) await activeRun
+	}
+
+	return { start, runSoon, stop }
 }
 
 async function processCentralBlobGarbage(
