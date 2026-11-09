@@ -88,11 +88,14 @@ for provider in Microsoft.Storage Microsoft.App Microsoft.OperationalInsights Mi
 done
 
 # 1. Resource group
-echo "==> Creating resource group..."
-az group create \
-  --name "$RG" \
-  --location "$LOCATION" \
-  --output none
+# A resource group keeps its original location, so only create one that does not exist.
+if ! az group show --name "$RG" --output none 2>/dev/null; then
+  echo "==> Creating resource group..."
+  az group create \
+    --name "$RG" \
+    --location "$LOCATION" \
+    --output none
+fi
 
 # 2. Container Apps environment
 echo "==> Creating Container Apps environment..."
