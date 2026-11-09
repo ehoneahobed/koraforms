@@ -1,4 +1,4 @@
-import { and, defineSchema, member, owner, serverOnly, t } from 'korajs'
+import { and, defineSchema, member, owner, serverOnly, t, where } from 'korajs'
 import { spacesCollections } from '@korajs/spaces'
 import type { FormField, FormSettings } from './types'
 
@@ -88,11 +88,10 @@ export default defineSchema({
 			indexes: ['formId', 'clientSubmissionId', 'formVersionHash', 'submittedAt'],
 			access: {
 				read: member('formId', 'viewer', FORM),
-				// Respondents submit through the public routes (server writes). Collected results
-				// are not editable by editors: only admins and the owner (sample responses, a
-				// workspace restore) write them from a device.
+				// Respondents submit through the public routes (server writes). Only admins and
+				// the owner add responses from a device (sample responses, a workspace restore) or
+				// delete them. No client rewrites a collected answer, so there is no update rule.
 				create: member('formId', 'admin', FORM),
-				update: member('formId', 'admin', FORM),
 				delete: member('formId', 'admin', FORM),
 			},
 		},
@@ -203,8 +202,8 @@ export default defineSchema({
 			}],
 			access: {
 				read: member('formId', 'viewer', FORM),
+				// A published revision is a permanent record: publishing again adds a new one.
 				create: member('formId', 'editor', FORM),
-				update: member('formId', 'editor', FORM),
 			},
 		},
 
@@ -363,8 +362,8 @@ export default defineSchema({
 			indexes: ['formId', 'actorId', 'eventType', 'createdAt'],
 			access: {
 				read: member('formId', 'viewer', FORM),
-				// A member records their own actions; the server records the rest.
-				create: and(owner('actorId'), member('formId', 'viewer', FORM)),
+				// A member records their own actions, as a user; the server records the rest.
+				create: and(owner('actorId'), where({ actorType: 'user' }), member('formId', 'viewer', FORM)),
 			},
 		},
 	},

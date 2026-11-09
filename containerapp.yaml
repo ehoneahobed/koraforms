@@ -30,6 +30,8 @@ properties:
         value: "" # Set via: az containerapp secret set --name koraforms --resource-group koraforms-rg --secrets kora-metrics-token=<value>
       - name: database-url
         value: "" # Set via: az containerapp secret set --name koraforms --resource-group koraforms-rg --secrets database-url=<postgres-url>
+      - name: resend-api-key
+        value: "" # Set via: az containerapp secret set --name koraforms --resource-group koraforms-rg --secrets resend-api-key=<value>
   template:
     containers:
       - name: koraforms
@@ -54,6 +56,20 @@ properties:
             value: "1"
           - name: PUBLIC_URL
             value: "" # Set to https://your-production-domain
+          - name: RESEND_API_KEY
+            secretRef: resend-api-key
+          - name: EMAIL_FROM
+            value: "KoraForms <info@korajs.dev>"
+          # Uploaded files outlive the container only on the mounted share below.
+          - name: BLOB_STORE_PATH
+            value: /data/blobs
+        volumeMounts:
+          - volumeName: blob-data
+            mountPath: /data/blobs
+    volumes:
+      - name: blob-data
+        storageType: AzureFile
+        storageName: koraforms-blob-storage
     scale:
       minReplicas: 1
       # Keep public launch single-replica until Kora exposes conditional

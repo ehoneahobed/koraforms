@@ -82,6 +82,79 @@ class Device {
 	}
 }
 
+test('collected answers and published revisions cannot be rewritten, and audit entries name a user', async () => {
+	const dir = mkdtempSync(join(tmpdir(), 'koraforms-access-'))
+	const store = new MemoryServerStore()
+	await store.setSchema(schema)
+	const server = createKoraServer({
+		store,
+		schema,
+		auth: new TokenAuthProvider({ validate: async (token) => ({ userId: token }) }),
+		accessSweepIntervalMs: 0,
+	})
+	const alice = new Device(dir, 'alice', server)
+	const bob = new Device(dir, 'bob', server)
+	const stored = async (collection: string, id: string): Promise<Record<string, unknown> | undefined> => {
+		const [row] = await server.getKoraContext().query(collection, { where: { id }, limit: 1 })
+		return row as Record<string, unknown> | undefined
+	}
+	const refusedBy = async (device: Device, write: () => Promise<unknown>): Promise<boolean> => {
+		const before = device.rejections.length
+		await write()
+		await settle()
+		return device.rejections.length > before
+	}
+	try {
+		await alice.open()
+		await bob.open()
+		await alice.connect()
+		await bob.connect()
+		const form = (await alice.store.collection('forms').insert({ title: 'Survey' })) as { id: string }
+		const kept = (await alice.store.collection('responses').insert({ formId: form.id, submittedAt: 1 })) as { id: string }
+		const removable = (await alice.store.collection('responses').insert({ formId: form.id, submittedAt: 2 })) as { id: string }
+		const revision = (await alice.store.collection('public_form_versions').insert({
+			slug: 'survey',
+			formId: form.id,
+			versionHash: 'v1',
+			title: 'Survey',
+			cachedAt: 1,
+			publishedAt: 1,
+		})) as { id: string }
+		await settle()
+		await server.access.grant({ userId: 'bob', group: ['forms', form.id], role: 'admin' })
+		await settle()
+
+		// Neither an admin nor the owner rewrites an answer someone submitted.
+		assert.ok(await refusedBy(bob, () => bob.store.collection('responses').update(kept.id, { submittedAt: 99 })))
+		assert.ok(await refusedBy(alice, () => alice.store.collection('responses').update(kept.id, { submittedAt: 98 })))
+		assert.equal((await stored('responses', kept.id))?.submittedAt, 1)
+
+		// Deleting a response stays with admins and the owner.
+		await bob.store.collection('responses').delete(removable.id)
+		await settle()
+		assert.equal(await stored('responses', removable.id), undefined)
+
+		// A published revision is permanent, for its owner too.
+		assert.ok(
+			await refusedBy(alice, () => alice.store.collection('public_form_versions').update(revision.id, { title: 'Rewritten' })),
+		)
+		assert.equal((await stored('public_form_versions', revision.id))?.title, 'Survey')
+
+		// A member's audit entry names them as a user, never the system or a respondent.
+		const entry = { formId: form.id, actorId: 'bob', eventType: 'form_updated', summary: 'Edited', createdAt: 1 }
+		assert.ok(await refusedBy(bob, () => bob.store.collection('audit_events').insert({ ...entry, actorType: 'system' })))
+		assert.equal(
+			await refusedBy(bob, () => bob.store.collection('audit_events').insert({ ...entry, actorType: 'user' })),
+			false,
+		)
+	} finally {
+		await alice.close()
+		await bob.close()
+		await server.stop?.()
+		rmSync(dir, { recursive: true, force: true })
+	}
+})
+
 test('forms and responses reach their owner and collaborators only, and leave on removal', async () => {
 	const dir = mkdtempSync(join(tmpdir(), 'koraforms-access-'))
 	const store = new MemoryServerStore()
