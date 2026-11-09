@@ -58,6 +58,29 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      # Settings are merged into the app with --set-env-vars before the new image
+      # rolls out. The deploy action's environmentVariables input replaces the
+      # whole list (it dropped the file storage path and email settings) and splits
+      # values on spaces, so it is not used for settings.
+      - name: Apply app settings
+        env:
+          APP: ${{ vars.AZURE_APP || 'koraforms-westus' }}
+          RG: ${{ vars.AZURE_RG || 'koraforms-rg' }}
+          PUBLIC_URL: ${{ vars.PUBLIC_URL || 'https://forms.korajs.dev' }}
+          EMAIL_FROM: ${{ vars.EMAIL_FROM || 'KoraForms <info@korajs.dev>' }}
+        run: |
+          set -euo pipefail
+          az containerapp update -n "$APP" -g "$RG" --output none --set-env-vars \
+            "KORA_AUTH_SECRET=secretref:kora-auth-secret" \
+            "KORA_METRICS_TOKEN=secretref:kora-metrics-token" \
+            "DATABASE_URL=secretref:database-url" \
+            "RESEND_API_KEY=secretref:resend-api-key" \
+            "EMAIL_FROM=$EMAIL_FROM" \
+            "BLOB_STORE_PATH=/data/blobs" \
+            "NODE_ENV=production" \
+            "KORA_TRUST_PROXY=1" \
+            "PUBLIC_URL=$PUBLIC_URL"
+
       - name: Deploy to Container Apps
         uses: azure/container-apps-deploy-action@v2
         with:
@@ -67,13 +90,6 @@ jobs:
           targetPort: 3001
           ingress: external
           appSourcePath: ${{ github.workspace }}
-          environmentVariables: >-
-            KORA_AUTH_SECRET=secretref:kora-auth-secret
-            KORA_METRICS_TOKEN=secretref:kora-metrics-token
-            DATABASE_URL=secretref:database-url
-            NODE_ENV=production
-            KORA_TRUST_PROXY=1
-            PUBLIC_URL=${{ vars.PUBLIC_URL || 'https://forms.korajs.dev' }}
 
       # container-apps-deploy-action resets scale to minReplicas=0. Sync is a
       # long-lived WebSocket — scaling to zero drops every session after cooldown.
