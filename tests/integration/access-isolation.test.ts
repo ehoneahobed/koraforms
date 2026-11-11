@@ -3,71 +3,48 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { Operation } from '@korajs/core'
-import { MemoryServerStore, TokenAuthProvider, createKoraServer } from '@korajs/server'
-import type { KoraSyncServer } from '@korajs/server'
 import { createServerTransportPair } from '@korajs/server/internal'
-import { Store } from '@korajs/store'
-import { BetterSqlite3Adapter } from '@korajs/store/better-sqlite3'
-import { SyncEngine } from '@korajs/sync'
 import type { SyncTransport } from '@korajs/sync'
-import { SimpleEventEmitter } from '@korajs/core/internal'
-import { ApplyPipeline, MergeAwareSyncStore, StoreQueueStorage, StoreSyncStatePersistence } from 'korajs/testing'
+import { TestDevice, TestServer } from '@korajs/test'
 import schema from '../../src/schema'
 
 // What each signed-in user's devices hold follows the schema's access rules: a form
 // and its responses reach the owner and accepted collaborators only, a removed
-// collaborator's devices drop them, and a viewer cannot edit.
-
-const settle = async (n = 15): Promise<void> => {
-	for (let i = 0; i < n; i++) await new Promise((resolve) => setTimeout(resolve, 20))
-}
+// collaborator's devices drop them, and a viewer cannot edit. Built on Kora's public
+// test harness: a TestServer that signs devices in, and a TestDevice per user.
 
 class Device {
-	readonly emitter = new SimpleEventEmitter()
-	readonly adapter: BetterSqlite3Adapter
-	readonly store: Store
-	readonly rejections: string[] = []
-	private engine: SyncEngine | null = null
-
-	constructor(
-		dir: string,
-		readonly user: string,
-		private readonly server: KoraSyncServer,
-	) {
-		this.adapter = new BetterSqlite3Adapter(join(dir, `${user}.db`))
-		this.store = new Store({ schema, adapter: this.adapter, emitter: this.emitter })
-		this.emitter.on('sync:operation-rejected', (event: { code: string }) => {
-			this.rejections.push(event.code)
+	readonly device: TestDevice
+	constructor(dir: string, readonly user: string, server: TestServer) {
+		this.device = new TestDevice({
+			name: `${user}-device`,
+			schema,
+			server,
+			tmpDir: dir,
+			user,
+			createTransportPair: () => {
+				const pair = createServerTransportPair()
+				return { client: pair.client as unknown as SyncTransport, serverTransport: pair.server }
+			},
 		})
+	}
+
+	get store() {
+		return this.device.store
+	}
+
+	/** Refusal codes the server sent this device, oldest first. */
+	async rejections(): Promise<string[]> {
+		return (await this.device.getRejectedOperations()).map((rejected) => rejected.code)
 	}
 
 	async open(): Promise<void> {
-		await this.store.open()
-		await this.store.bindPrincipal(this.user)
-		this.store.setLocalMutationHandler(
-			new ApplyPipeline({ store: this.store, emitter: this.emitter }),
-		)
+		await this.device.open()
 	}
 
-	async connect(): Promise<void> {
-		const pair = createServerTransportPair()
-		const client = pair.client as unknown as SyncTransport
-		const engine = new SyncEngine({
-			transport: client,
-			store: new MergeAwareSyncStore(this.store, this.emitter),
-			queueStorage: new StoreQueueStorage(this.adapter),
-			syncState: new StoreSyncStatePersistence(this.store),
-			config: { url: 'ws://test', schemaVersion: schema.version, auth: async () => ({ token: this.user }) },
-			emitter: this.emitter,
-		})
-		this.engine = engine
-		this.emitter.on('operation:created', (event: { operation: Operation }) => {
-			if (this.engine === engine && client.isConnected()) engine.pushOperation(event.operation).catch(() => {})
-		})
-		this.server.handleConnection(pair.server)
-		await engine.start()
-		await settle()
+	/** Sends this device's writes and takes in what the server has for it. */
+	async sync(): Promise<void> {
+		for (let round = 0; round < 3; round += 1) await this.device.sync()
 	}
 
 	async ids(collection: string): Promise<string[]> {
@@ -76,21 +53,19 @@ class Device {
 	}
 
 	async close(): Promise<void> {
-		await this.engine?.stop().catch(() => {})
-		await this.store.close()
+		await this.device.close()
 	}
+}
+
+async function createServer(): Promise<TestServer> {
+	const server = new TestServer(schema, { auth: true, accessSweepIntervalMs: 0 })
+	await server.ready
+	return server
 }
 
 test('collected answers and published revisions cannot be rewritten, and audit entries name a user', async () => {
 	const dir = mkdtempSync(join(tmpdir(), 'koraforms-access-'))
-	const store = new MemoryServerStore()
-	await store.setSchema(schema)
-	const server = createKoraServer({
-		store,
-		schema,
-		auth: new TokenAuthProvider({ validate: async (token) => ({ userId: token }) }),
-		accessSweepIntervalMs: 0,
-	})
+	const server = await createServer()
 	const alice = new Device(dir, 'alice', server)
 	const bob = new Device(dir, 'bob', server)
 	const stored = async (collection: string, id: string): Promise<Record<string, unknown> | undefined> => {
@@ -98,16 +73,14 @@ test('collected answers and published revisions cannot be rewritten, and audit e
 		return row as Record<string, unknown> | undefined
 	}
 	const refusedBy = async (device: Device, write: () => Promise<unknown>): Promise<boolean> => {
-		const before = device.rejections.length
+		const before = (await device.rejections()).length
 		await write()
-		await settle()
-		return device.rejections.length > before
+		await device.sync()
+		return (await device.rejections()).length > before
 	}
 	try {
 		await alice.open()
 		await bob.open()
-		await alice.connect()
-		await bob.connect()
 		const form = (await alice.store.collection('forms').insert({ title: 'Survey' })) as { id: string }
 		const kept = (await alice.store.collection('responses').insert({ formId: form.id, submittedAt: 1 })) as { id: string }
 		const removable = (await alice.store.collection('responses').insert({ formId: form.id, submittedAt: 2 })) as { id: string }
@@ -119,9 +92,9 @@ test('collected answers and published revisions cannot be rewritten, and audit e
 			cachedAt: 1,
 			publishedAt: 1,
 		})) as { id: string }
-		await settle()
+		await alice.sync()
 		await server.access.grant({ userId: 'bob', group: ['forms', form.id], role: 'admin' })
-		await settle()
+		await bob.sync()
 
 		// Neither an admin nor the owner rewrites an answer someone submitted.
 		assert.ok(await refusedBy(bob, () => bob.store.collection('responses').update(kept.id, { submittedAt: 99 })))
@@ -130,7 +103,7 @@ test('collected answers and published revisions cannot be rewritten, and audit e
 
 		// Deleting a response stays with admins and the owner.
 		await bob.store.collection('responses').delete(removable.id)
-		await settle()
+		await bob.sync()
 		assert.equal(await stored('responses', removable.id), undefined)
 
 		// A published revision is permanent, for its owner too.
@@ -149,70 +122,64 @@ test('collected answers and published revisions cannot be rewritten, and audit e
 	} finally {
 		await alice.close()
 		await bob.close()
-		await server.stop?.()
+		await server.close()
 		rmSync(dir, { recursive: true, force: true })
 	}
 })
 
 test('forms and responses reach their owner and collaborators only, and leave on removal', async () => {
 	const dir = mkdtempSync(join(tmpdir(), 'koraforms-access-'))
-	const store = new MemoryServerStore()
-	await store.setSchema(schema)
-	const server = createKoraServer({
-		store,
-		schema,
-		auth: new TokenAuthProvider({ validate: async (token) => ({ userId: token }) }),
-		accessSweepIntervalMs: 0,
-	})
+	const server = await createServer()
 	const alice = new Device(dir, 'alice', server)
 	const bob = new Device(dir, 'bob', server)
 	try {
 		await alice.open()
 		await bob.open()
-		await alice.connect()
-		await bob.connect()
 		// Alice creates a form (ownerId is filled with her id) and a sample response.
 		const form = (await alice.store.collection('forms').insert({ title: 'Survey' })) as { id: string; ownerId: string }
 		assert.equal(form.ownerId, 'alice')
 		const response = (await alice.store.collection('responses').insert({ formId: form.id, submittedAt: 1 })) as { id: string }
 		await alice.store.collection('response_filter_views').insert({ formId: form.id, name: 'Mine', createdAt: 1, updatedAt: 1 })
-		await settle()
+		await alice.sync()
+		await bob.sync()
 		assert.deepEqual(await bob.ids('forms'), [], 'nothing of Alice reaches Bob')
 		assert.deepEqual(await bob.ids('responses'), [])
 
 		// Bob accepts an invitation as a viewer.
 		await server.access.grant({ userId: 'bob', group: ['forms', form.id], role: 'viewer' })
-		await settle()
+		await bob.sync()
 		assert.deepEqual(await bob.ids('forms'), [form.id])
 		assert.deepEqual(await bob.ids('responses'), [response.id])
 		assert.deepEqual(await bob.ids('response_filter_views'), [], "Alice's saved views stay hers")
 
 		// A viewer cannot edit the form: refused by the server, undone on Bob's device.
 		await bob.store.collection('forms').update(form.id, { title: 'Hijacked' })
-		await settle()
-		assert.ok(bob.rejections.includes('ACCESS_DENIED'), `refusals: ${bob.rejections.join(', ')}`)
+		await bob.sync()
+		const refusals = await bob.rejections()
+		assert.ok(refusals.includes('ACCESS_DENIED'), `refusals: ${refusals.join(', ')}`)
 		const [stored] = await server.getKoraContext().query('forms', { where: { id: form.id }, limit: 1 })
 		assert.equal(stored?.title, 'Survey')
 
 		// An editor still cannot change collected results.
 		await server.access.grant({ userId: 'bob', group: ['forms', form.id], role: 'editor' })
-		await settle()
-		const refusalsBefore = bob.rejections.length
+		await bob.sync()
+		const refusalsBefore = (await bob.rejections()).length
 		await bob.store.collection('responses').insert({ formId: form.id, submittedAt: 2 })
-		await settle()
-		assert.ok(bob.rejections.length > refusalsBefore, 'an editor cannot add a response')
+		await bob.sync()
+		assert.ok((await bob.rejections()).length > refusalsBefore, 'an editor cannot add a response')
 		assert.equal((await server.getKoraContext().query('responses', { where: { formId: form.id } })).length, 1)
 
 		// Removed: Bob's device drops the form and its responses.
 		await server.access.revoke({ userId: 'bob', group: ['forms', form.id] })
-		await settle()
+		await bob.sync()
+		await alice.sync()
 		assert.deepEqual(await bob.ids('forms'), [])
 		assert.deepEqual(await bob.ids('responses'), [])
 		assert.deepEqual(await alice.ids('forms'), [form.id], "the owner's devices keep it")
 	} finally {
 		await alice.close()
 		await bob.close()
-		await server.stop?.()
+		await server.close()
 		rmSync(dir, { recursive: true, force: true })
 	}
 })
