@@ -309,7 +309,9 @@ test('a send that fails after another tab finished the same response does not br
 	})
 })
 
-test('with Web Locks, another tab forgetting a response waits for a flush in progress instead of pulling it away', async () => {
+// Needs a runtime with Web Locks (Node 24+, every current browser); Node 22 has none.
+const webLocksMissing = typeof (globalThis.navigator as { locks?: unknown } | undefined)?.locks === 'undefined'
+test('with Web Locks, another tab forgetting a response waits for a flush in progress instead of pulling it away', { skip: webLocksMissing && 'this runtime has no Web Locks' }, async () => {
 	await saveFallbackSubmission(submission('held'))
 	let release: () => void = () => undefined
 	const sending = new Promise<void>(resolve => { release = resolve })
