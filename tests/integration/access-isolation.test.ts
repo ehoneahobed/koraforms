@@ -9,7 +9,6 @@ import type { KoraSyncServer } from '@korajs/server'
 import { createServerTransportPair } from '@korajs/server/internal'
 import { Store } from '@korajs/store'
 import { BetterSqlite3Adapter } from '@korajs/store/better-sqlite3'
-import { MergeEngine } from '@korajs/merge'
 import { SyncEngine } from '@korajs/sync'
 import type { SyncTransport } from '@korajs/sync'
 import { SimpleEventEmitter } from '@korajs/core/internal'
@@ -47,7 +46,7 @@ class Device {
 		await this.store.open()
 		await this.store.bindPrincipal(this.user)
 		this.store.setLocalMutationHandler(
-			new ApplyPipeline({ store: this.store, mergeEngine: new MergeEngine(), emitter: this.emitter }),
+			new ApplyPipeline({ store: this.store, emitter: this.emitter }),
 		)
 	}
 
@@ -56,7 +55,7 @@ class Device {
 		const client = pair.client as unknown as SyncTransport
 		const engine = new SyncEngine({
 			transport: client,
-			store: new MergeAwareSyncStore(this.store, new MergeEngine(), this.emitter),
+			store: new MergeAwareSyncStore(this.store, this.emitter),
 			queueStorage: new StoreQueueStorage(this.adapter),
 			syncState: new StoreSyncStatePersistence(this.store),
 			config: { url: 'ws://test', schemaVersion: schema.version, auth: async () => ({ token: this.user }) },

@@ -8,8 +8,9 @@ import {
 	createProductionServer,
 	MixedAuthProvider,
 } from '@korajs/server'
-import { collectBlobGarbage, toServerBlobCallbacks } from '@korajs/store'
+import { collectBlobGarbage, type ContentAddressedBlobStore, toServerBlobCallbacks } from '@korajs/store'
 import { FilesystemBlobStore } from '@korajs/store/blob-fs'
+import { openBlobStoreFromEnv } from '@korajs/store/blob-object'
 import {
 	createKoraAuthServer,
 	createSqliteUserStore,
@@ -228,7 +229,10 @@ function resolveAuthSecret(): string {
 
 async function main(): Promise<void> {
 	const { store, userStore } = await createStores()
-	const blobStore = new FilesystemBlobStore(process.env.BLOB_STORE_PATH || DEFAULT_BLOB_DIR)
+	// Kora's standard store settings come first (KORA_BLOB_STORE_URL for object storage, KORA_BLOB_DIR
+	// for a directory): hosts such as Kora Cloud provide those. BLOB_STORE_PATH is kept for the
+	// existing Azure deployment, which mounts its file share there.
+	const blobStore: ContentAddressedBlobStore = openBlobStoreFromEnv(process.env) ?? new FilesystemBlobStore(process.env.BLOB_STORE_PATH || DEFAULT_BLOB_DIR)
 	// Production limits are fixed; only a non-production (e2e) server may scale them.
 	const rateLimiter = createRateLimiter(resolveRateLimitScale(process.env))
 	const jwtSecret = resolveAuthSecret()
@@ -1664,7 +1668,7 @@ function retryDelayMs(attempts: number): number {
 
 function createCentralBlobGarbageCollector(
 	server: ProductionServer,
-	blobStore: FilesystemBlobStore,
+	blobStore: ContentAddressedBlobStore,
 ): { start: () => void; runSoon: () => void; stop: () => Promise<void> } {
 	let running = false
 	let stopped = false
@@ -1716,7 +1720,7 @@ function createCentralBlobGarbageCollector(
 
 async function processCentralBlobGarbage(
 	server: ProductionServer,
-	blobStore: FilesystemBlobStore,
+	blobStore: ContentAddressedBlobStore,
 ): Promise<void> {
 	const liveRefs = await server.getLiveBlobRefs()
 	const result = await collectBlobGarbage(blobStore, liveRefs)
