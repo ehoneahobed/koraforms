@@ -19,7 +19,8 @@ if (testFiles.length === 0) {
 	process.exit(1)
 }
 
-const result = spawnSync(process.execPath, ['--import', 'tsx', '--test', ...testFiles], {
+// A per-test timeout, so one test that never finishes fails on its own instead of hiding the rest.
+const result = spawnSync(process.execPath, ['--import', 'tsx', '--test', '--test-timeout=60000', ...testFiles], {
 	stdio: 'inherit',
 })
 

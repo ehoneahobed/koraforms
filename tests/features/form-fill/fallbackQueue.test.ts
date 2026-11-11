@@ -282,12 +282,45 @@ test('the attachment owner of a flagged copy is decided by whether Kora really h
 	assert.deepEqual(await listFallbackSubmissions(), [])
 })
 
+/**
+ * Runs `work` as in a browser without Web Locks, where tabs don't coordinate. Node 24 ships
+ * `navigator.locks`, so scenarios about browsers that lack it have to remove it explicitly.
+ */
+async function withoutWebLocks(work: () => Promise<void>): Promise<void> {
+	const original = Object.getOwnPropertyDescriptor(globalThis.navigator, 'locks')
+	Object.defineProperty(globalThis.navigator, 'locks', { value: undefined, configurable: true })
+	try {
+		await work()
+	} finally {
+		if (original) Object.defineProperty(globalThis.navigator, 'locks', original)
+		else delete (globalThis.navigator as { locks?: unknown }).locks
+	}
+}
+
 test('a send that fails after another tab finished the same response does not bring it back', async () => {
-	await saveFallbackSubmission(submission('raced'))
-	await flushFallbackSubmissions(async () => {
-		// Another tab (no Web Locks) sent it and removed it meanwhile.
-		await forgetFallbackSubmissionHeldByKora('raced')
-		throw new Error('Attachment "card.txt" is no longer available on this device.')
+	await withoutWebLocks(async () => {
+		await saveFallbackSubmission(submission('raced'))
+		await flushFallbackSubmissions(async () => {
+			// Another tab (no Web Locks, so it doesn't wait for this flush) sent it and removed it meanwhile.
+			await forgetFallbackSubmissionHeldByKora('raced')
+			throw new Error('Attachment "card.txt" is no longer available on this device.')
+		})
+		assert.deepEqual(await listFallbackSubmissions(), [])
 	})
+})
+
+// Needs a runtime with Web Locks (Node 24+, every current browser); Node 22 has none.
+const webLocksMissing = typeof (globalThis.navigator as { locks?: unknown } | undefined)?.locks === 'undefined'
+test('with Web Locks, another tab forgetting a response waits for a flush in progress instead of pulling it away', { skip: webLocksMissing && 'this runtime has no Web Locks' }, async () => {
+	await saveFallbackSubmission(submission('held'))
+	let release: () => void = () => undefined
+	const sending = new Promise<void>(resolve => { release = resolve })
+	const flushed = flushFallbackSubmissions(async () => { await sending })
+	// Kora's queue turns out to hold it while the send is still in flight.
+	const forgotten = forgetFallbackSubmissionHeldByKora('held')
+	await new Promise(resolve => setTimeout(resolve, 20))
+	assert.equal((await listFallbackSubmissions()).length, 1, 'kept while the flush is sending it')
+	release()
+	await Promise.all([flushed, forgotten])
 	assert.deepEqual(await listFallbackSubmissions(), [])
 })
