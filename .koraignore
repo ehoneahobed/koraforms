@@ -1,0 +1,3 @@
+# Files the repository keeps but the deployed app never uses (kora deploy leaves them out).
+# Brand and design sources: the app ships its own copies under public/.
+koraforms-website-logo-package/
