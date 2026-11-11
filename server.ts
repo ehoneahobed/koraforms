@@ -8,8 +8,9 @@ import {
 	createProductionServer,
 	MixedAuthProvider,
 } from '@korajs/server'
-import { collectBlobGarbage, toServerBlobCallbacks } from '@korajs/store'
+import type { ContentAddressedBlobStore } from '@korajs/store'
 import { FilesystemBlobStore } from '@korajs/store/blob-fs'
+import { openBlobStoreFromEnv } from '@korajs/store/blob-object'
 import {
 	createKoraAuthServer,
 	createSqliteUserStore,
@@ -98,7 +99,6 @@ const DEVELOPMENT_AUTH_SECRET = 'koraforms-dev-secret-change-in-production'
 const DEFAULT_BLOB_DIR = './koraforms-blobs'
 const DEFAULT_SYNC_MAX_OPS_PER_MINUTE = 600
 const DEFAULT_BLOB_GC_INTERVAL_HOURS = 24
-const DEFAULT_BLOB_GC_START_DELAY_MINUTES = 15
 
 type RateLimitBucket =
 	| 'auth'
@@ -228,7 +228,10 @@ function resolveAuthSecret(): string {
 
 async function main(): Promise<void> {
 	const { store, userStore } = await createStores()
-	const blobStore = new FilesystemBlobStore(process.env.BLOB_STORE_PATH || DEFAULT_BLOB_DIR)
+	// Kora's standard store settings come first (KORA_BLOB_STORE_URL for object storage, KORA_BLOB_DIR
+	// for a directory): hosts such as Kora Cloud provide those. BLOB_STORE_PATH is kept for the
+	// existing Azure deployment, which mounts its file share there.
+	const blobStore: ContentAddressedBlobStore = openBlobStoreFromEnv(process.env) ?? new FilesystemBlobStore(process.env.BLOB_STORE_PATH || DEFAULT_BLOB_DIR)
 	// Production limits are fixed; only a non-production (e2e) server may scale them.
 	const rateLimiter = createRateLimiter(resolveRateLimitScale(process.env))
 	const jwtSecret = resolveAuthSecret()
@@ -281,7 +284,6 @@ async function main(): Promise<void> {
 	const port = Number(process.env.PORT) || 3001
 	const distDir = resolve('./dist')
 	let sideEffectProcessor: ReturnType<typeof createSideEffectProcessor> | null = null
-	let blobGarbageCollector: ReturnType<typeof createCentralBlobGarbageCollector> | null = null
 
 	// CORS headers for dev mode (client on different port)
 	const corsHeaders: Record<string, string> = process.env.NODE_ENV !== 'production'
@@ -436,6 +438,12 @@ async function main(): Promise<void> {
 		store,
 		port,
 		staticDir: distDir,
+		// Kora keeps uploaded files in this store and sweeps unused ones daily, sparing any
+		// uploaded in the last day (its response may still be on its way).
+		blobStore,
+		blobGarbageCollection: process.env.KORA_BLOB_GC_DISABLED === 'true'
+			? false
+			: { intervalHours: readPositiveIntegerEnv('KORA_BLOB_GC_INTERVAL_HOURS', DEFAULT_BLOB_GC_INTERVAL_HOURS) },
 		// Shared form links preview the form itself (title and description of a
 		// published form) instead of the generic KoraForms card.
 		shellMeta: async ({ path, kora }) => {
@@ -466,7 +474,6 @@ async function main(): Promise<void> {
 			// Shared with the creator app's store.maxOperationBytes (src/kora.ts).
 			maxOperationBytes: SYNC_MAX_OPERATION_BYTES,
 			maxOpsPerMinute: readPositiveIntegerEnv('KORA_SYNC_MAX_OPS_PER_MINUTE', DEFAULT_SYNC_MAX_OPS_PER_MINUTE),
-			...toServerBlobCallbacks(blobStore),
 		},
 		httpRoutes: [
 			// Auth routes — signup, signin, refresh, signout, me, devices
@@ -1208,11 +1215,8 @@ async function main(): Promise<void> {
 			}
 		})
 		.catch((error: unknown) => console.error('Re-sending pending invitations failed:', error))
-	blobGarbageCollector = createCentralBlobGarbageCollector(server, blobStore)
-	blobGarbageCollector.start()
 	installGracefulShutdown(server, () => Promise.all([
 		sideEffectProcessor?.stop(),
-		blobGarbageCollector?.stop(),
 	]))
 	console.log(`KoraForms running at ${url}`)
 }
@@ -1656,78 +1660,6 @@ async function processDelivery(kora: ProductionHttpRouteContext, delivery: SideE
 function retryDelayMs(attempts: number): number {
 	const capped = Math.min(Math.max(attempts, 1), 8)
 	return Math.min(60 * 60 * 1000, 1000 * Math.pow(2, capped - 1))
-}
-
-// ---------------------------------------------------------------------------
-// Central blob garbage collection
-// ---------------------------------------------------------------------------
-
-function createCentralBlobGarbageCollector(
-	server: ProductionServer,
-	blobStore: FilesystemBlobStore,
-): { start: () => void; runSoon: () => void; stop: () => Promise<void> } {
-	let running = false
-	let stopped = false
-	let initialTimer: NodeJS.Timeout | null = null
-	let interval: NodeJS.Timeout | null = null
-	let activeRun: Promise<void> | null = null
-
-	const runSoon = () => {
-		if (running || stopped) return
-		running = true
-		activeRun = processCentralBlobGarbage(server, blobStore)
-			.catch(err => console.warn('Blob garbage collection failed:', err))
-			.finally(() => {
-				running = false
-				activeRun = null
-			})
-	}
-
-	const start = () => {
-		if (process.env.KORA_BLOB_GC_DISABLED === 'true') return
-
-		const startDelayMs = readPositiveIntegerEnv(
-			'KORA_BLOB_GC_START_DELAY_MINUTES',
-			DEFAULT_BLOB_GC_START_DELAY_MINUTES,
-		) * 60_000
-		const intervalMs = readPositiveIntegerEnv(
-			'KORA_BLOB_GC_INTERVAL_HOURS',
-			DEFAULT_BLOB_GC_INTERVAL_HOURS,
-		) * 60 * 60_000
-
-		initialTimer = setTimeout(runSoon, startDelayMs)
-		initialTimer.unref?.()
-
-		interval = setInterval(runSoon, intervalMs)
-		interval.unref?.()
-	}
-
-	const stop = async () => {
-		stopped = true
-		if (initialTimer) clearTimeout(initialTimer)
-		if (interval) clearInterval(interval)
-		initialTimer = null
-		interval = null
-		if (activeRun) await activeRun
-	}
-
-	return { start, runSoon, stop }
-}
-
-async function processCentralBlobGarbage(
-	server: ProductionServer,
-	blobStore: FilesystemBlobStore,
-): Promise<void> {
-	const liveRefs = await server.getLiveBlobRefs()
-	const result = await collectBlobGarbage(blobStore, liveRefs)
-	if (result.collected > 0) {
-		console.log(JSON.stringify({
-			event: 'blob_gc_completed',
-			scanned: result.scanned,
-			live: result.live,
-			collected: result.collected,
-		}))
-	}
 }
 
 // ---------------------------------------------------------------------------
