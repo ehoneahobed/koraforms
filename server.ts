@@ -211,13 +211,22 @@ async function createStores(): Promise<{ store: ServerStore; userStore: UserStor
 	return { store, userStore }
 }
 
-function resolveAuthSecret(): string {
+/**
+ * KORA_AUTH_SECRET signs; earlier secrets in KORA_AUTH_SECRET_PREVIOUS (comma-separated) are
+ * still accepted, so changing the secret signs nobody out (each session moves over when it next
+ * refreshes).
+ */
+function resolveAuthSecret(): string | string[] {
 	const configured = process.env.KORA_AUTH_SECRET?.trim()
 	if (process.env.NODE_ENV === 'production') {
 		if (!configured || configured === DEVELOPMENT_AUTH_SECRET || configured.length < 32) {
 			throw new Error('KORA_AUTH_SECRET must be set to a strong production secret before starting KoraForms.')
 		}
-		return configured
+		const previous = (process.env.KORA_AUTH_SECRET_PREVIOUS ?? '')
+			.split(',')
+			.map((secret) => secret.trim())
+			.filter((secret) => secret.length >= 32 && secret !== configured)
+		return previous.length > 0 ? [configured, ...previous] : configured
 	}
 	return configured || DEVELOPMENT_AUTH_SECRET
 }
