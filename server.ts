@@ -478,7 +478,9 @@ async function main(): Promise<void> {
 		httpRoutes: [
 			// Auth routes — signup, signin, refresh, signout, me, devices
 			{
-				path: '/auth',
+				// The auth routes, wrapped with CORS and a rate limit; spreading auth.httpRoute keeps
+				// its sign-in activity in /__kora/insights.
+				...auth.httpRoute,
 				async handle(req) {
 					if (req.method === 'OPTIONS') {
 						return withCors({ status: 204 })
